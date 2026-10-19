@@ -41,15 +41,32 @@ TOOLKIT="${XBOXRECOMP_DIR:-$REPO/../xboxrecomp}"
 TOOLKIT="$(cd "$TOOLKIT" && pwd)"
 export XBOXRECOMP_DIR="$TOOLKIT"
 
+# The disc the release is for: BO3_REGION=NTSC-U (the default) or PAL
+# (docs/pal.md). It picks the build of supported.json, config/ or
+# config/pal/, and the manifest; and the packages' identity, so that the two
+# install side by side and their files never overwrite each other:
+# APP_TITLE (the app's name), PKG_TAG (in every package file name:
+# Takedawn-<version><tag>-...), ID_SUFFIX (after the macOS bundle id and the
+# Android package id).
+BO3_REGION="${BO3_REGION:-NTSC-U}"
+case "$BO3_REGION" in
+    NTSC-U) BUILD_ID=ntsc-u-retail; CFG="$REPO/config"; DISC_NAME="NTSC-U (North America)"
+            APP_TITLE="Takedawn"; PKG_TAG=""; ID_SUFFIX="" ;;
+    PAL)    BUILD_ID=pal-retail;    CFG="$REPO/config/pal"; DISC_NAME="PAL (Europe)"
+            APP_TITLE="Takedawn PAL"; PKG_TAG="-pal"; ID_SUFFIX=".pal" ;;
+    *) echo "BO3_REGION must be NTSC-U or PAL" >&2; exit 1 ;;
+esac
+export BO3_REGION
+
 GEN="$REPO/src/game/recomp/gen"
-WORK="${TAKEDAWN_WORK:-$REPO/build/release}"
+WORK="${TAKEDAWN_WORK:-$REPO/build/release$PKG_TAG}"
 DEPS="${TAKEDAWN_DEPS:-$HOME/.cache/takedawn-deps}"
 JOBS="${JOBS:-4}"
 NICE="${NICE:-10}"
 
 VERSION="$(sed -n 1p "$REPO/VERSION" | tr -d '\r ')"
 CODENAME="$(sed -n 2p "$REPO/VERSION" | tr -d '\r')"
-DIST="${TAKEDAWN_DIST:-$REPO/dist/$VERSION}"
+DIST="${TAKEDAWN_DIST:-$REPO/dist/$VERSION$PKG_TAG}"
 
 say()  { printf '==> %s\n' "$*"; }
 die()  { printf '!! %s\n' "$*" >&2; exit 1; }
@@ -82,13 +99,13 @@ build_commit_line() {
 regen_key() {
     local t
     t="$(mktemp -d)"
-    cmake -DBO3_ROOT="$REPO" -DXBOXRECOMP_DIR="$TOOLKIT" -DBO3_RELEASE_DIR="$t" \
+    cmake -DBO3_ROOT="$REPO" -DXBOXRECOMP_DIR="$TOOLKIT" -DBO3_RELEASE_DIR="$t" -DBO3_REGION="$BO3_REGION" \
           -P "$REPO/cmake/release_info.cmake" >/dev/null 2>&1 \
         || { rm -rf "$t"; die "cmake/release_info.cmake failed"; }
     sed -n 's/^#define BO3_REGEN_KEY "\(.*\)"/\1/p' "$t/bo3_release.h"
     rm -rf "$t"
 }
-manifest_id() { sed -n 's/^# id \([0-9a-f]*\).*/\1/p' "$REPO/config/disc/ntsc-u-retail.manifest"; }
+manifest_id() { sed -n 's/^# id \([0-9a-f]*\).*/\1/p' "$REPO/config/disc/$BUILD_ID.manifest"; }
 
 # The hash of the generated files: "<sha256>  <name>" a line, sorted by name,
 # hashed. The same rule is in cmake/release_info.cmake (BO3_RELEASE).

@@ -79,7 +79,8 @@ and no APK.
 
 ## The Takedawn package (0.1.0, BO-103)
 
-The app is `io.github.xenophobentx.takedawn`, label "Takedawn", with a second
+The app is `io.github.xenophobentx.takedawn`, label "Takedawn" (the PAL build,
+[pal.md](pal.md), is `io.github.xenophobentx.takedawn.pal`, "Takedawn PAL"), with a second
 launcher entry "Takedawn: graphics driver". versionName is `VERSION`'s first
 line; versionCode is major x 10 000 000 + minor x 100 000 + patch x 1 000 +
 build (0.1.0 is 100000), so every release is above the one before. The icon

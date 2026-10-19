@@ -46,6 +46,22 @@
   #error Icon (takedawn.ico) is required
 #endif
 
+; /DRegion=PAL: the PAL (Europe) build (BO3_REGION=PAL, docs/pal.md), installed
+; beside the NTSC-U one under its own name, folder and uninstall entry; its
+; game keeps its own per-user folders ("Takedawn PAL").
+#ifdef Region
+  #if Region == "PAL"
+    #define AppTitle "Takedawn PAL"
+    #define AppGuid "72D2A8B1-201D-518F-8BD8-FF15282D97C4"
+    #define FileTag "-pal"
+  #endif
+#endif
+#ifndef AppTitle
+  #define AppTitle "Takedawn"
+  #define AppGuid "8C1E5B0A-64D3-4C7E-A1F2-0D9B7E53A6C4"
+  #define FileTag ""
+#endif
+
 ; VersionInfoVersion takes numbers only: "0.1.2-beta" is 0.1.2 there.
 #define DashAt Pos("-", Version)
 #if DashAt > 0
@@ -55,16 +71,16 @@
 #endif
 
 [Setup]
-AppId={{8C1E5B0A-64D3-4C7E-A1F2-0D9B7E53A6C4}
-AppName=Takedawn
+AppId={{{#AppGuid}}
+AppName={#AppTitle}
 AppVersion={#Version}
-AppVerName=Takedawn {#Version}
+AppVerName={#AppTitle} {#Version}
 AppPublisher=Takedawn
 VersionInfoVersion={#VersionNumbers}
-VersionInfoProductName=Takedawn
+VersionInfoProductName={#AppTitle}
 VersionInfoDescription=Takedawn setup
 PrivilegesRequired=lowest
-DefaultDirName={localappdata}\Programs\Takedawn
+DefaultDirName={localappdata}\Programs\{#AppTitle}
 DisableProgramGroupPage=yes
 DisableWelcomePage=yes
 DisableReadyPage=no
@@ -75,15 +91,15 @@ Compression=lzma2/max
 SolidCompression=yes
 SetupIconFile={#Icon}
 UninstallDisplayIcon={app}\Takedawn.exe
-UninstallDisplayName=Takedawn
+UninstallDisplayName={#AppTitle}
 WizardStyle=modern
 CloseApplications=no
 #ifdef PayloadTest
-OutputBaseFilename=Takedawn-{#Version}-windows-x64-payloadtest
+OutputBaseFilename=Takedawn-{#Version}{#FileTag}-windows-x64-payloadtest
 Uninstallable=no
 CreateUninstallRegKey=no
 #else
-OutputBaseFilename=Takedawn-{#Version}-windows-x64-setup
+OutputBaseFilename=Takedawn-{#Version}{#FileTag}-windows-x64-setup
 #endif
 
 [Tasks]
@@ -94,8 +110,8 @@ Source: "{#Package}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
 
 #ifndef PayloadTest
 [Icons]
-Name: "{userprograms}\Takedawn"; Filename: "{app}\Takedawn.exe"; WorkingDir: "{app}"
-Name: "{userdesktop}\Takedawn"; Filename: "{app}\Takedawn.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{userprograms}\{#AppTitle}"; Filename: "{app}\Takedawn.exe"; WorkingDir: "{app}"
+Name: "{userdesktop}\{#AppTitle}"; Filename: "{app}\Takedawn.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}.prev"
@@ -106,7 +122,7 @@ Filename: "{app}\Takedawn.exe"; WorkingDir: "{app}"; Description: "Start Takedaw
 
 [Code]
 const
-  UninstKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{8C1E5B0A-64D3-4C7E-A1F2-0D9B7E53A6C4}_is1';
+  UninstKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{{#AppGuid}}_is1';
   NewVersion = '{#Version}';
 
 var
@@ -309,7 +325,7 @@ var
   Lines: TArrayOfString;
 begin
   Result := '';
-  if LoadStringsFromFile(ExpandConstant('{localappdata}') + '\Takedawn\data-folder.txt', Lines) and
+  if LoadStringsFromFile(ExpandConstant('{localappdata}') + '\{#AppTitle}\data-folder.txt', Lines) and
      (GetArrayLength(Lines) > 0) then
     Result := Trim(Lines[0]);
 end;
@@ -327,8 +343,8 @@ begin
     MsgBox('Takedawn was removed.' + #13#10#13#10 +
            'The game data installed from your disc, your saves and your settings were not removed:' + #13#10 +
            Chosen +
-           ExpandConstant('{localappdata}') + '\Takedawn  (game data, shader cache)' + #13#10 +
-           ExpandConstant('{userappdata}') + '\Takedawn  (saves, settings, logs)' + #13#10#13#10 +
+           ExpandConstant('{localappdata}') + '\{#AppTitle}  (game data, shader cache)' + #13#10 +
+           ExpandConstant('{userappdata}') + '\{#AppTitle}  (saves, settings, logs)' + #13#10#13#10 +
            'Delete those folders yourself if you want them gone.',
            mbInformation, MB_OK);
   end;

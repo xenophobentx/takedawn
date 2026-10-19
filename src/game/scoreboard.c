@@ -43,6 +43,7 @@
  * the HUD scene's objects whenever they change (S), for the curves in
  * BO-165; off unless set.
  */
+#include "region.h"
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -55,15 +56,15 @@
 
 extern ptrdiff_t g_xbox_mem_offset;
 
-#define SB_HUD          0x0054F900u   /* the HUD object */
-#define SB_HUD_ON       0x004D61D3u   /* sub_000536C0 draws the HUD scenes */
-#define SB_PLATE_CB     0x00048430u   /* the plate's callback (POS, LAP too) */
-#define SB_TEXT_CB      0x000F6DC0u   /* the board's texts (POS, LAP too) */
+#define SB_HUD          BO3_VA(0x0054F900u, 0x0054FC20u)   /* the HUD object */
+#define SB_HUD_ON       BO3_VA(0x004D61D3u, 0x004D64F3u)   /* sub_000536C0 draws the HUD scenes */
+#define SB_PLATE_CB     BO3_VA(0x00048430u, 0x000485F0u)   /* the plate's callback (POS, LAP too) */
+#define SB_TEXT_CB      BO3_VA(0x000F6DC0u, 0x000F7120u)   /* the board's texts (POS, LAP too) */
 #define SB_STEP         (1.0f / 6.0f + 0.001f)  /* the title's own fade step */
 
 /* Per player: the score board component (sub_00056DB0's esi), its frame
  * at + 8. */
-static const uint32_t k_board[2] = { 0x003FDC00u, 0x003FED50u };
+static const uint32_t k_board[2] = { BO3_VA(0x003FDC00u, 0x003FDF30u), BO3_VA(0x003FED50u, 0x003FF080u) };
 
 enum { SB_ORIGINAL, SB_SMOOTH };
 

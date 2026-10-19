@@ -47,6 +47,7 @@
  * lap; found from a finished race: 6th, 395.017 s, best lap 2:00.78 as the
  * results screen showed).
  */
+#include "region.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -57,14 +58,14 @@
 
 extern RECOMP_TLS uint32_t g_eax, g_ecx, g_edx, g_esi, g_esp;
 extern ptrdiff_t g_xbox_mem_offset;
-extern void sub_00179760(void);
+extern void BO3_SUB(sub_00179760, sub_00179A00)(void);
 
 #define AP_M8(va)  (*(uint8_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 #define AP_M16(va) (*(int16_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 #define AP_M32(va) (*(uint32_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 #define AP_MF(va)  (*(float *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 
-#define AP_CAR1         0x0073A1D0u     /* the world (0x60EA00) + 0x12B7D0: player 1's CB3PlayerCar */
+#define AP_CAR1         BO3_VA(0x0073A1D0u, 0x0073A4E0u)     /* the world (0x60EA00) + 0x12B7D0: player 1's CB3PlayerCar */
 #define AP_CAR_AI       0x27D8u         /* byte: the AI drives this player car */
 #define AP_CAR_PLAYER   0x27D0u         /* the player index */
 #define AP_CAR_PHASE    0x134Cu         /* 1 before the GO, 2 in play, 3 finished */
@@ -74,15 +75,15 @@ extern void sub_00179760(void);
 #define AP_CAR_TIME     0x10DCu         /* float: the race time, s */
 #define AP_CAR_LAPS     0x10E4u         /* the laps done */
 #define AP_CAR_BEST     0x110Cu         /* float: the best lap, s */
-#define AP_RACERS       0x0073A19Cu     /* the number of cars racing */
-#define AP_CTLS         0x004AE724u     /* the four controller records */
+#define AP_RACERS       BO3_VA(0x0073A19Cu, 0x0073A4ACu)     /* the number of cars racing */
+#define AP_CTLS         BO3_VA(0x004AE724u, 0x004AEA44u)     /* the four controller records */
 #define AP_CTL_SIZE     0x188u
 #define AP_CTL_ACTIVE   0x184u          /* float: the time of its last input */
-#define AP_NOW          0x004AE200u     /* float: the clock sub_00019A10 stamps it with */
-#define AP_MODULE       0x004D5370u     /* the current module */
-#define AP_VT_GAME      0x003A9ACCu     /* the game module's vtable */
-#define AP_PAUSED_BY    0x004D537Cu     /* -1 while not paused */
-#define AP_MODULE_STEP  0x004D53B4u     /* 6: the module is being left */
+#define AP_NOW          BO3_VA(0x004AE200u, 0x004AE520u)     /* float: the clock sub_00019A10 stamps it with */
+#define AP_MODULE       BO3_VA(0x004D5370u, 0x004D5690u)     /* the current module */
+#define AP_VT_GAME      BO3_VA(0x003A9ACCu, 0x003AA078u)     /* the game module's vtable */
+#define AP_PAUSED_BY    BO3_VA(0x004D537Cu, 0x004D569Cu)     /* -1 while not paused */
+#define AP_MODULE_STEP  BO3_VA(0x004D53B4u, 0x004D56D4u)     /* 6: the module is being left */
 
 static int s_driving;       /* the autopilot drove the last update */
 static uint32_t s_phase;    /* player 1's phase at the last update */
@@ -140,7 +141,7 @@ static void ap_update(void)
         AP_M32(car + AP_CAR_AI_RESET + 0xC) = 0;
         g_eax = car + AP_CAR_DRIVER;
         PUSH32(g_esp, 0);               /* the return address its ret takes */
-        sub_00179760();
+        BO3_SUB(sub_00179760, sub_00179A00)();
         g_eax = a; g_ecx = c; g_edx = d; g_esp = sp;
     }
     if (!s_driving)

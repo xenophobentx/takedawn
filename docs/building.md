@@ -7,7 +7,8 @@ The repository holds no game code and no game data. A build translates your
 own `default.xbe` into C and compiles that, so you need your own disc of the
 supported release (North America retail, `default.xbe` SHA-256
 `9f497acd82adb8edfb72cc31aeeb35010b45d32b13a3f1fc6540717ff24d13f9`, recorded
-in [`tools/install/supported.json`](../tools/install/supported.json)).
+in [`tools/install/supported.json`](../tools/install/supported.json)), or of
+the European release with `BO3_REGION=PAL` ([pal.md](pal.md)).
 
 The generated C (`src/game/recomp/gen/`), the build output and the disc files
 are ignored by git. Never commit or share them.

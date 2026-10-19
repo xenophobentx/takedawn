@@ -1,0 +1,945 @@
+{
+  "about": "PAL (Europe) twin of config/patches.json, written by tools/region/port_config.py: each va translated to the PAL default.xbe and checked to be the same instruction; each note starts with the NTSC-U address it came from and keeps its NTSC-U addresses. Opt-in guest patches (tools.recomp --patches, regen.sh). After each listed load (or store) the generated code calls RECOMP_PATCH_U32 / RECOMP_PATCH_F32, which keeps the title's value unless the setting reads 'when' (src/game/main.c enables game.speed_units: RECOMP_SPEED_UNITS=kmh, BO-79; and display.hud_fix: RECOMP_GFX_HUD_FIX=1, BO-89; both on the overlay's Display page and in settings.toml). The display.hud_fix values are expressions of 'aspect' (16/9 or 4/3, the picture the title was set up for): W = 480*aspect is the 640x480 layout's width at the picture's true shape, (640 - W)/2 its left edge, s = (4/3)/aspect the squeeze that undoes the anamorphic stretch; 'vis_x0' / 'vis_x1' are the frame columns the window shows of the picture as presented (the presenter's overscan crop and 16:10 fill), 'ref_x0' / 'ref_x1' those a 4:3 picture shows in the same window: the HUD's margins are kept from the visible edges at what they are in 4:3. The arithmetic (layout width 480*aspect, offset (640 - width)/2, HUD origin 320*(1 - s)) is that of the PS2 widescreen fix: ThirteenAG/WidescreenFixesPack, source/Burnout3.PCSX2F.WidescreenFix (MIT licence); the Xbox sites were found in this build, with Nahelam's PS2 symbol list (PS2-Game-Mods, Burnout 3 Takedown/Research/SLES_525.85.txt) as the guide to the names. display.ultrawide (RECOMP_DISPLAY_ULTRAWIDE=21:9|32:9|window, BO-94): the camera's aspect and field-of-view factor and the marks that tell the host a stage is set up, drew a frame, and a frame ended; 'aspect' is then the stage's wide aspect, 'frame_aspect' the shown frame's, 'fe_squeeze' the factor that keeps the front-end scene's 16:9 shape over a wide frame. graphics.bloom and graphics.motion_blur (RECOMP_GFX_BLOOM, RECOMP_GFX_MOTION_BLUR, BO-101, strengths 0 to 1 in tenths since BO-212; overlay Graphics page): the title's own bloom and blur, full strength (1) as shipped; at \"0\" the title's own conditions for drawing them read false, between 0 and 1 the bloom's weight in the frame pass and the blur's opacity are times 'bloom_strength' / 'blur_strength' (docs/effects.md). graphics.vehicle_detail (RECOMP_GFX_VEHICLE_DETAIL=far|farthest, BO-112; overlay Graphics page): the distances at which the title swaps a vehicle's model for a simpler one, times 'vehicle_lod_scale' (2 or 4); as shipped at 'original' (docs/draw-distance.md). graphics.scenery_detail (RECOMP_GFX_SCENERY_DETAIL=far, BO-177; overlay Graphics page): the distance at which a track prop with two models (the pine trees above all) swaps its detailed model for its simple one, times 'scenery_lod_scale'; as shipped at 'original' (docs/draw-distance.md). graphics.crash_60fps (RECOMP_GFX_CRASH_60FPS=1, BO-111; overlay Graphics page): the title's 30 Hz phases, the crash and takedown cameras, at 60: where a one-player stage's update chooses the rate, its 'a crash camera is on' byte reads 0 and the title takes its own full-rate path (docs/crash60.md); off as shipped. graphics.split_60fps (RECOMP_GFX_SPLIT_60FPS=1, BO-116; overlay Graphics page): two-player split screen, which the title runs at its half rate from the stage's set-up to its end, at 60: the request the set-up stores is stored as 0 (docs/split-screen.md); off as shipped. audio.split_music (RECOMP_AUDIO_SPLIT_MUSIC=1, BO-116; overlay Audio page): the title's music manager keeps EA GAMES TRAX silent while more than one player plays; where it compares the player count for that, the count reads 1 (docs/split-screen.md); off as shipped, and off the audio path is the title's own. game.race_clock (RECOMP_GAME_RACE_CLOCK=1, BO-159; overlay Graphics page): a one-player stage starts its simulation stepper in the mode that runs one step a frame whatever the time, and switches to its wall-clock mode only at the end of the first crash camera; the start stores the wall-clock mode instead, so a host below 60 keeps real time from the start (docs/race-clock.md); off as shipped.",
+  "patches": [
+    {
+      "va": "0x00059DA7",
+      "setting": "game.speed_units",
+      "when": "kmh",
+      "value": 2,
+      "note": "(NTSC-U 0x00059BF7) sub_00059BD0, the HUD speedometer's number: reads the language index MEM32(0x45B9BC), and only 0 and 1 (the US build's English) take the mph factor 2.2369 (0x38994C); any other takes km/h 3.6 (0x3B18A4). Index 2 stands for a language that is neither, so the text, which reads the real index, stays English. Latched with the label (below): the number follows the choice the label was built with.",
+      "latch": "use"
+    },
+    {
+      "va": "0x00059AA9",
+      "setting": "game.speed_units",
+      "when": "kmh",
+      "value": 2,
+      "note": "(NTSC-U 0x000598F9) sub_00059850, the speedometer's set-up: the same 0/1 test chooses the unit label's texture (the HUD resource's +0x1F0C for 0/1, +0x1F08 otherwise). Runs once, when the HUD is built, so this is the latch's set: a change made mid-race shows at the next race, label and number together.",
+      "latch": "set"
+    },
+    {
+      "va": "0x000506CA",
+      "setting": "game.speed_units",
+      "when": "kmh",
+      "value": 2,
+      "note": "(NTSC-U 0x0005051A) sub_000503E0 and its sub_000504E2 entry: a distance in miles (0.000621371) for 0/1, kilometres (0.001) otherwise, and the unit texture at +0x1F1C / +0x1F20."
+    },
+    {
+      "va": "0x00057AC0",
+      "setting": "game.speed_units",
+      "when": "kmh",
+      "value": 2,
+      "note": "(NTSC-U 0x00057910) sub_00057040: the same miles / kilometres choice and unit textures."
+    },
+    {
+      "va": "0x00059578",
+      "setting": "game.speed_units",
+      "when": "kmh",
+      "value": 2,
+      "note": "(NTSC-U 0x000593C8) sub_00058F80: the same miles / kilometres choice and unit textures."
+    },
+    {
+      "va": "0x00064264",
+      "setting": "game.speed_units",
+      "when": "kmh",
+      "value": 2,
+      "note": "(NTSC-U 0x000640B4) sub_000640B0: feet (3.28084, 0x38A760) for 0/1, metres otherwise."
+    },
+    {
+      "va": "0x00081A52",
+      "setting": "game.speed_units",
+      "when": "kmh",
+      "value": 2,
+      "note": "(NTSC-U 0x00081802) sub_00081800: feet for 0/1, metres otherwise."
+    },
+    {
+      "va": "0x0017AA08",
+      "setting": "game.speed_units",
+      "when": "kmh",
+      "value": 2,
+      "note": "(NTSC-U 0x0017A765) sub_0017A720: feet for 0/1, metres otherwise (1.0, 0x3B168C)."
+    },
+    {
+      "va": "0x001C1AC3",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + 320 * (1 - (4 / 3) / aspect)",
+      "if": {
+        "reg": "edi",
+        "in": [
+          "0x0054FC34",
+          "0x0054FCA4"
+        ]
+      },
+      "note": "(NTSC-U 0x001C17A3) sub_001C17A0, the 2D scene's root sync (PS2 CGt2dScene::Render's CGt2dFrame::Sync of the root, with the identity space): copies the root frame's local position to its world position (x here), then syncs the children (sub_001C1670: world = parent origin + parent scale * local). Three scenes use it; edi is the scene, and the patch is for the two HUD scenes only (CB3HUDManager at 0x54F900, one CB3HUD of 0x70 bytes per player from +0x10, its CGt2dScene at +4: 0x54F914, 0x54F984; rendered by sub_000536C0). The front-end scene (0x557A20: menus, loading screen, race intro, results) keeps its root, and the EA Trax scene (0x45BAD0) its origin. Origin x = 320*(1 - s): with the scale below, the HUD's 2D space is squeezed by s about the screen centre. PS2 counterpart: hudOrigin, written to the two HUD frames (0x6682B0, 0x669B30). Latch use: follows the choice the layout rectangle was built with."
+    },
+    {
+      "va": "0x001C1AC3",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + vis_x0 - ref_x0 * (4 / 3) / frame_aspect",
+      "if": {
+        "reg": "edi",
+        "in": [
+          "0x0045BDF0"
+        ]
+      },
+      "note": "(NTSC-U 0x001C17A3) sub_001C17A0 again, for the EA Trax scene (0x45BAD0): its root's origin, so that with the scale below the song pop-up (at x = 26) is as far from the visible left edge as in 4:3: origin = vis_x0 - s*ref_x0."
+    },
+    {
+      "va": "0x001C1ACE",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded * (4 / 3) / aspect",
+      "if": {
+        "reg": "edi",
+        "in": [
+          "0x0054FC34",
+          "0x0054FCA4"
+        ]
+      },
+      "note": "(NTSC-U 0x001C17AE) sub_001C17A0: the root frame's local x scale, copied to its world scale. s = (4/3)/aspect for the two HUD scenes: every HUD object's position and size (and its text, which scales with the object space) is multiplied by it. PS2 counterpart: the HUD scale that follows from the fix's 1/width (0x4E105C)."
+    },
+    {
+      "va": "0x001C1ACE",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded * (4 / 3) / frame_aspect",
+      "if": {
+        "reg": "edi",
+        "in": [
+          "0x0045BDF0"
+        ]
+      },
+      "note": "(NTSC-U 0x001C17AE) sub_001C17A0: the same x scale for the EA Trax scene (0x45BAD0, rendered by sub_0002EB50, which sets this root's scale to screen size / 640x480 every frame; its one object is the song pop-up, sub_0002DF00, PS2 CB3EATrax2dObject, at x = 26): with the origin above the pop-up keeps its shape and its distance from the visible left edge. It is squeezed in the menus too: one pop-up, one shape, and in a race it sits beside the HUD. frame_aspect is the shape the frame is shown at (the title's own outside a wide race), so the pop-up is right over a menu too."
+    },
+    {
+      "va": "0x0001A1AF",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "set",
+      "expr": "loaded + (vis_x0 - 320) * aspect / (4 / 3) + 320 - ref_x0",
+      "note": "(NTSC-U 0x0001A08F) sub_0001A000, a one-player stage's set-up with the rectangle code of sub_00053700 inlined: the left edge, 30.0, stored to MEMF(0x54F948) (HUD manager 0x54F900 + 0x48)."
+    },
+    {
+      "va": "0x0001A1CF",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "set",
+      "expr": "loaded + (vis_x1 - 320) * aspect / (4 / 3) + 320 - ref_x1",
+      "note": "(NTSC-U 0x0001A0AF) sub_0001A000: the right edge, MEMF(0x54FA98) = 640 - 30, stored to MEMF(0x54F950)."
+    },
+    {
+      "va": "0x0001AC67",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "set",
+      "expr": "loaded + (vis_x0 - 320) * aspect / (4 / 3) + 320 - ref_x0",
+      "note": "(NTSC-U 0x0001AB67) sub_0001A930, a one-player stage's set-up with the rectangle code of sub_00053700 inlined: the left edge, 30.0, stored to MEMF(0x54F948) (HUD manager 0x54F900 + 0x48)."
+    },
+    {
+      "va": "0x0001AC87",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "set",
+      "expr": "loaded + (vis_x1 - 320) * aspect / (4 / 3) + 320 - ref_x1",
+      "note": "(NTSC-U 0x0001AB87) sub_0001A930: the right edge, MEMF(0x54FA98) = 640 - 30, stored to MEMF(0x54F950)."
+    },
+    {
+      "va": "0x00053A08",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "set",
+      "expr": "loaded + (vis_x0 - 320) * aspect / (4 / 3) + 320 - ref_x0",
+      "note": "(NTSC-U 0x00053858) sub_00053700 (the HUD rectangles for one or two players, called by the stage set-up sub_000209A0; PS2: inside CB3HUDManager::Prepare, the fix's sites 0x1A1770 / 0x1A17D4), one player: the HUD's layout rectangle's left edge, 30.0 (the shared constant 0x3A7964), stored to HUD[0] at manager+0x48. CB3HUD::GetAlignPos (sub_00053BE0) places every HUD component at rect.min + k[align]*(rect.max - rect.min), so the rectangle is the layout. Moved out so that, squeezed, it is as far from the picture's visible left edge as in 4:3: with the root squeezed by s about 320, the edge lands on screen at 320 + s*(left - 320), and that has to be vis_x0 + s*(30 - ref_x0): left = 30 + (vis_x0 - 320)/s + 320 - ref_x0. vis_x0 is the first frame column the window shows of the picture as presented (21 with the overscan crop, 51 with the 16:10 fill on a 1280x800 panel), ref_x0 the first column a 4:3 picture shows in the same window (21 there): the 30 is measured from that in 4:3. Latch set: this runs when the HUD is built."
+    },
+    {
+      "va": "0x00053A22",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "set",
+      "expr": "loaded + (vis_x1 - 320) * aspect / (4 / 3) + 320 - ref_x1",
+      "note": "(NTSC-U 0x00053872) sub_00053700, one player: the rectangle's right edge, MEMF(0x54FA98) = 640 - 30 (static initialiser sub_00266D80), stored to manager+0x50. Right = 610 + (vis_x1 - 320)/s + 320 - ref_x1, with vis_x1 / ref_x1 the ends of the shown columns (619 with the overscan crop; 589 for the picture under the 16:10 fill)."
+    },
+    {
+      "va": "0x00053920",
+      "kind": "store_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "set",
+      "expr": "loaded + (vis_x0 - 320) * aspect / (4 / 3) + 320 - ref_x0",
+      "note": "(NTSC-U 0x00053770) sub_00053700, two players side by side: player 1's left edge, 30.0 stored to manager+0x48. A store patch, because the register (xmm1) also makes the margins at the screen's middle (320 - 30, 320 + 30), which stay: the squeeze is about the centre."
+    },
+    {
+      "va": "0x0005394F",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "set",
+      "expr": "loaded + (vis_x1 - 320) * aspect / (4 / 3) + 320 - ref_x1",
+      "note": "(NTSC-U 0x0005379F) sub_00053700, two players side by side: player 2's right edge, MEMF(0x54FA98), stored to manager+0xC0."
+    },
+    {
+      "va": "0x000539B0",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "set",
+      "expr": "loaded + (vis_x0 - 320) * aspect / (4 / 3) + 320 - ref_x0",
+      "note": "(NTSC-U 0x00053800) sub_00053700, two players one above the other: the left edge of both rectangles, 30.0 (manager+0x48 and +0xB8)."
+    },
+    {
+      "va": "0x000539B8",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "set",
+      "expr": "loaded + (vis_x1 - 320) * aspect / (4 / 3) + 320 - ref_x1",
+      "note": "(NTSC-U 0x00053808) sub_00053700, two players one above the other: the right edge of both rectangles, MEMF(0x54FA98) (manager+0x50 and +0xC0)."
+    },
+    {
+      "va": "0x00050D75",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + (640 - 480 * aspect) / 2",
+      "note": "(NTSC-U 0x00050BC5) sub_00050A70, set-up of the HUD's letterbox (the black bars with a line each, and a caption, of the crash and takedown cameras; objects on the HUD scene's root frame, so the squeeze would leave them covering the middle 3/4 of the picture): the top bar's x, MEMF(0x4A2570) = 0. Left = (640 - W)/2, with the width below the bar spans the picture again. PS2 counterpart: the offset / width globals the fix rewrites at 0x4CA638..0x4CA660. Latch use, like every site below: follows the choice the layout rectangle was built with."
+    },
+    {
+      "va": "0x00050DB2",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded - (640 - 480 * aspect)",
+      "note": "(NTSC-U 0x00050C02) sub_00050A70: the top bar's width, MEMF(0x54F7C8) = 640 (a copy of the unit's screen width 0x54F7AC), stored as the object's size. W = 480*aspect."
+    },
+    {
+      "va": "0x00050E36",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + (640 - 480 * aspect) / 2",
+      "note": "(NTSC-U 0x00050C86) sub_00050A70: the bottom bar's x, MEMF(0x4A2580) = 0."
+    },
+    {
+      "va": "0x00050E81",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded - (640 - 480 * aspect)",
+      "note": "(NTSC-U 0x00050CD1) sub_00050A70: the bottom bar's width, MEMF(0x54F7B0) = 640."
+    },
+    {
+      "va": "0x00050E9A",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + (640 - 480 * aspect) / 2",
+      "note": "(NTSC-U 0x00050CEA) sub_00050A70: the x of the line under the top bar (MEMF(0x4A2570), handed to sub_000B52A0)."
+    },
+    {
+      "va": "0x00050F3C",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + (640 - 480 * aspect) / 2",
+      "note": "(NTSC-U 0x00050D8C) sub_00050A70: the x of the line over the bottom bar (MEMF(0x4A2580))."
+    },
+    {
+      "va": "0x000B55C7",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded - (640 - 480 * aspect)",
+      "if": {
+        "reg": "eax",
+        "in": [
+          "0x003FD4A0"
+        ]
+      },
+      "note": "(NTSC-U 0x000B53C7) sub_000B52A0, the line object's set-up (shared by 17 callers): the width it copies from the size the caller points at. The patch is for the letterbox's two lines, whose size is the pair at 0x3FD170 (640, 2; written by the static initialiser sub_00266460, read by nothing else)."
+    },
+    {
+      "va": "0x0005119A",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + (640 - 480 * aspect) / 2",
+      "note": "(NTSC-U 0x00050FEA) sub_00050F60, the letterbox's per-frame update (the bars slide in and out vertically): the top bar's x, MEM32(0x4A2570), written to the object every frame."
+    },
+    {
+      "va": "0x000511F7",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + (640 - 480 * aspect) / 2",
+      "note": "(NTSC-U 0x00051047) sub_00050F60: the top line's x, MEMF(0x4A2570)."
+    },
+    {
+      "va": "0x00051223",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + (640 - 480 * aspect) / 2",
+      "note": "(NTSC-U 0x00051073) sub_00050F60: the bottom bar's x, MEM32(0x4A2580)."
+    },
+    {
+      "va": "0x00051272",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + (640 - 480 * aspect) / 2",
+      "note": "(NTSC-U 0x000510C2) sub_00050F60: the bottom line's x, MEMF(0x4A2580)."
+    },
+    {
+      "va": "0x00051087",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + (vis_x1 - 320) * aspect / (4 / 3) + 320 - ref_x1",
+      "note": "(NTSC-U 0x00050ED7) sub_00050A70: the x of the caption in the bottom bar (the crash's 'Into Taxi + 21m Skid' line), MEMF(0x54F7A0) = 640 - 30, right aligned: an absolute position on the root frame, so it moves out with the layout's right edge."
+    },
+    {
+      "va": "0x000512D9",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + (vis_x1 - 320) * aspect / (4 / 3) + 320 - ref_x1",
+      "note": "(NTSC-U 0x00051129) sub_00050F60: the caption's x again, MEM32(0x54F7A0), written every frame while its layer is shown."
+    },
+    {
+      "va": "0x001C1D24",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + (640 - 480 * aspect) / 2",
+      "if": {
+        "reg": "edx",
+        "in": [
+          "0x004A2890",
+          "0x004A28A0"
+        ]
+      },
+      "note": "(NTSC-U 0x001C1A04) sub_001C19A0, the image object's set-up (shared): the x it reads through the position pointer. For the letterbox's other set-up path (sub_00050A70 with mode 3: textured bars, which hands the function pointers to the same globals), so only where edx is 0x4A2570 or 0x4A2580."
+    },
+    {
+      "va": "0x001C1D52",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded - (640 - 480 * aspect)",
+      "if": {
+        "reg": "ecx",
+        "in": [
+          "0x0054FAE8",
+          "0x0054FAD0"
+        ]
+      },
+      "note": "(NTSC-U 0x001C1A32) sub_001C19A0: the width it copies through the size pointer; only for the letterbox's two size globals (mode 3, as above)."
+    },
+    {
+      "va": "0x0004EFE4",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded - (640 - 480 * aspect)",
+      "note": "(NTSC-U 0x0004EE34) sub_0004EDC0, set-up of the HUD's full-width caption strip (a 640x32 background, sub_000FA780, and a 640x25 scrolling text, sub_0004E3B0, on a frame at 0,0): the width of both, MEMF(0x54F5C0) = 640 (this unit's screen-width copy)."
+    },
+    {
+      "va": "0x0004F014",
+      "kind": "store_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + (640 - 480 * aspect) / 2",
+      "note": "(NTSC-U 0x0004EE64) sub_0004EDC0: the background's x, 0.0 stored to its position argument. A store patch: the zero register is also the pivot and the other object's values."
+    },
+    {
+      "va": "0x0004F05E",
+      "kind": "store_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "(vis_x1 - vis_x0) * aspect / (4 / 3) + 640 - (ref_x1 - ref_x0)",
+      "note": "(NTSC-U 0x0004EEAE) sub_0004EDC0: the scrolling text's width (the background keeps W, the whole frame): from the left edge above to its counterpart at the right, (vis_x1 - vis_x0)*aspect/(4/3) + 640 - (ref_x1 - ref_x0); 640 in 4:3."
+    },
+    {
+      "va": "0x0004F068",
+      "kind": "store_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + (vis_x0 - 320) * aspect / (4 / 3) + 320 - ref_x0",
+      "note": "(NTSC-U 0x0004EEB8) sub_0004EDC0: the scrolling text's x, 0.0 stored to its position argument: its box runs between the visible edges' counterparts (as the layout rectangle does), so the caption ends as far from the visible right edge as in 4:3."
+    },
+    {
+      "va": "0x0004F18C",
+      "kind": "store_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + (640 - 480 * aspect) / 2",
+      "note": "(NTSC-U 0x0004EFDC) sub_0004EF50, the strip's per-frame update (it slides in vertically; in a crash it carries the 'Into Taxi + 21m Skid' line): the background's x, 0.0, written to the object every frame."
+    },
+    {
+      "va": "0x00052DAB",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded - (640 - 480 * aspect)",
+      "note": "(NTSC-U 0x00052BFB) sub_00052AB0 (PS2 CB3HUDManager::Prepare), two players: each HUD gets a frame under its root that is its half of the screen (sub_00053AA0: position, and the size as the frame's scale). One above the other: the width of both halves, MEMF(0x54FA88) = 640, becomes W. PS2 counterpart: the fix's sites 0x1A1770 and 0x1A17D4, which set this width and the offset below. Not exercised: split screen needs a second controller, which the headless driver does not have."
+    },
+    {
+      "va": "0x00052DC6",
+      "kind": "store_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + (640 - 480 * aspect) / 2",
+      "note": "(NTSC-U 0x00052C16) sub_00052AB0, one above the other: the top half's x, 0.0, becomes (640 - W)/2. Not exercised."
+    },
+    {
+      "va": "0x00052DE9",
+      "kind": "store_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + (640 - 480 * aspect) / 2",
+      "note": "(NTSC-U 0x00052C39) sub_00052AB0, one above the other: the bottom half's x. Not exercised."
+    },
+    {
+      "va": "0x00052D2C",
+      "kind": "store_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded - (640 - 480 * aspect) / 2",
+      "note": "(NTSC-U 0x00052B7C) sub_00052AB0, side by side: the left half's width, 320, becomes 320 - (640 - W)/2: from the picture's left edge to its middle. Not exercised."
+    },
+    {
+      "va": "0x00052D36",
+      "kind": "store_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded + (640 - 480 * aspect) / 2",
+      "note": "(NTSC-U 0x00052B86) sub_00052AB0, side by side: the left half's x, 0.0, becomes (640 - W)/2. Not exercised."
+    },
+    {
+      "va": "0x00052D4F",
+      "kind": "store_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded - (640 - 480 * aspect) / 2",
+      "note": "(NTSC-U 0x00052B9F) sub_00052AB0, side by side: the right half's width (its x, 320, stays: the squeeze is about the centre). Not exercised."
+    },
+    {
+      "va": "0x0001A5F9",
+      "kind": "store_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded * (4 / 3) / aspect",
+      "note": "(NTSC-U 0x0001A4D9) sub_0001A1E0, the stage's own draw of the start countdown (3-2-1 as a number string, then the GO texture of the HUD resource), outside the 2D scenes: it builds a text object (sub_0005AA60) at the screen's middle with pivot (0.5, 0) and calls its render callback with an object space it makes itself. This is the pivot's x, 0.5, which becomes 0.5*s: with the width below the text keeps its middle where the title puts it. A store patch: the register is also the factor of the middle's x. PS2 counterpart: the fix's site 0x134F74 in CB3OnePlayerStage::Render, which stores hudScale * 0.5 the same way."
+    },
+    {
+      "va": "0x0001A64D",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded * (4 / 3) / aspect",
+      "note": "(NTSC-U 0x0001A52D) sub_0001A1E0: the object space's x scale for that text (viewport width / 640, 1.0), multiplied into the size handed to the callback. Times s: the countdown and GO keep their shape; their height and their place do not change."
+    },
+    {
+      "va": "0x0018F9DD",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded * (4 / 3) / aspect",
+      "note": "(NTSC-U 0x0018F6DD) sub_0018F060 (PS2 CB3RacePosition::DrawPositionMarker), the marker over a rival, drawn at the car's projected screen point (x at esp+0x30), outside the 2D scenes: the half width of the triangle (sub_001C7C90; its corners are x - hw, x + hw, x). Times s; the projected point is not touched, so the marker stays on the car."
+    },
+    {
+      "va": "0x0018FB3D",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded * (4 / 3) / aspect",
+      "note": "(NTSC-U 0x0018F83D) sub_0018F060: the width of the marker's first text (sub_001C1BF0, drawn instead of the triangle), as it goes into the object space for its render callback. Not exercised: no mode driven so far draws this variant."
+    },
+    {
+      "va": "0x0018FB44",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "f32[esp + 0x30] + (loaded - f32[esp + 0x30]) * (4 / 3) / aspect",
+      "note": "(NTSC-U 0x0018F844) sub_0018F060: that text's x: squeezed about the projected point, x' = px + s*(x - px), so its middle stays where the title puts it relative to the car. Not exercised."
+    },
+    {
+      "va": "0x001900AD",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded * (4 / 3) / aspect",
+      "note": "(NTSC-U 0x0018FDAD) sub_0018F060: the width of the position label ('4th', sub_001C4EE0 from the car's string at +0x1984), as it goes into the object space for its render callback."
+    },
+    {
+      "va": "0x001900B4",
+      "kind": "load_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "f32[esp + 0x30] + (loaded - f32[esp + 0x30]) * (4 / 3) / aspect",
+      "note": "(NTSC-U 0x0018FDB4) sub_0018F060: the position label's x, squeezed about the projected point (esp+0x30) the same way: the label keeps its shape and stays centred on the car's marker."
+    },
+    {
+      "va": "0x00058655",
+      "kind": "store_f32",
+      "setting": "display.hud_fix",
+      "when": "1",
+      "latch": "use",
+      "expr": "loaded * ((vis_x1 - vis_x0) / 2 * aspect / (4 / 3) + 320 - (ref_x1 - ref_x0) / 2) / 320",
+      "note": "(NTSC-U 0x000584A5) sub_000583B0, the slide of the race's centre messages (the slot set-up sub_00057FA0 of the component sub_00057040 updates: the gap to the car ahead, laps, distance): the x of the message's frame, an offset from the component's frame at the screen's middle, as it is stored on its way to the frame (MEM32(slot+4)). The slot's time (+0x8C) runs down from 5.0 s: the message comes in from the right (offset 320 to 0 in the first 0.2 s; phases and times are the static-init globals 0x54FBA0..0x54FC50, built from the screen width copy 0x54FC00), rests at 0, steps 50 to the right in 0.1 s and leaves to the left (to -320) in the last 0.2 s. An offset of 320 puts the message's middle on the 640-wide frame's edge, 21 columns past what the window shows; under the squeezed root that is only 3/4 of the way there, so the message would start and end its slide inside the picture. The offsets are scaled so that +-320 is again as far past the visible edge as in 4:3: the layout rectangle's form with 640 for 610, as an offset from 320, taken as the mean of the two sides (the crop is the same at both): ((vis_x1 - vis_x0)/2)/s + 320 - (ref_x1 - ref_x0)/2 over 320; 1 in 4:3. A store patch on the result: the phases themselves are mulss / addss memory operands."
+    },
+    {
+      "va": "0x0002F4BD",
+      "kind": "load_f32",
+      "setting": "display.ultrawide",
+      "when": "!off",
+      "expr": "aspect",
+      "note": "(NTSC-U 0x0002F3AD) sub_0002F380, the one-player camera set-up (called by the stage set-ups and the front end): in the title's widescreen mode the viewport's aspect is 16/9 (0x3B18EC, this its only use), stored to the viewport record at +0x104. The picture's real aspect instead. PS2 counterpart: the fix's aspect globals 0x4E0C70 / 0x4E0C7C."
+    },
+    {
+      "va": "0x0002F4CB",
+      "kind": "load_f32",
+      "setting": "display.ultrawide",
+      "when": "!off",
+      "expr": "loaded * aspect / (16 / 9)",
+      "note": "(NTSC-U 0x0002F3BB) sub_0002F380: the widescreen field-of-view factor, 1.2 (4:3 has 1.0): the horizontal view grows with it and the vertical is factor/aspect, 0.9 of 4:3's at 16:9. Scaled with the aspect, so the vertical view stays what 16:9 has and the picture only gains at the sides (hor+)."
+    },
+    {
+      "va": "0x0002F5D2",
+      "kind": "load_f32",
+      "setting": "display.ultrawide",
+      "when": "!off",
+      "expr": "2 * aspect",
+      "note": "(NTSC-U 0x0002F4C2) sub_0002F480, the two-player camera set-up, one above the other in widescreen: each half's aspect, 32/9 (0x3B18E8). PS2 counterpart: 0x4E0C80 = aspect * 2. Not exercised yet."
+    },
+    {
+      "va": "0x0002F5E0",
+      "kind": "load_f32",
+      "setting": "display.ultrawide",
+      "when": "!off",
+      "expr": "loaded * aspect / (16 / 9)",
+      "note": "(NTSC-U 0x0002F4D0) sub_0002F480, one above the other: the field-of-view factor, 1.62. Not exercised yet."
+    },
+    {
+      "va": "0x0002F62D",
+      "kind": "load_f32",
+      "setting": "display.ultrawide",
+      "when": "!off",
+      "expr": "aspect / 2",
+      "note": "(NTSC-U 0x0002F51D) sub_0002F480, side by side in widescreen: each half's aspect, 8/9 (0x3B18D8). Not exercised."
+    },
+    {
+      "va": "0x0002F63B",
+      "kind": "load_f32",
+      "setting": "display.ultrawide",
+      "when": "!off",
+      "expr": "loaded * aspect / (16 / 9)",
+      "note": "(NTSC-U 0x0002F52B) sub_0002F480, side by side: the field-of-view factor, 0.75. Not exercised."
+    },
+    {
+      "va": "0x0001A120",
+      "kind": "mark",
+      "name": "uw_stage_setup",
+      "note": "(NTSC-U 0x0001A000) sub_0001A000, a one-player stage's set-up (camera, HUD rectangle): display.ultrawide is sampled here (src/game/main.c). A mark changes nothing in the guest."
+    },
+    {
+      "va": "0x0001AA30",
+      "kind": "mark",
+      "name": "uw_stage_setup",
+      "note": "(NTSC-U 0x0001A930) sub_0001A930, the other one-player stage set-up."
+    },
+    {
+      "va": "0x00020AB0",
+      "kind": "mark",
+      "name": "uw_stage_setup",
+      "note": "(NTSC-U 0x000209A0) sub_000209A0, the stage set-up that also serves two players (sub_0002F480, sub_00053700)."
+    },
+    {
+      "va": "0x00026550",
+      "kind": "mark",
+      "name": "uw_stage_setup",
+      "note": "(NTSC-U 0x00026050) sub_00026050, a set-up that calls the two-player camera (sub_0002F480) and sub_00167EC0."
+    },
+    {
+      "va": "0x00027120",
+      "kind": "mark",
+      "name": "uw_stage_setup",
+      "note": "(NTSC-U 0x00026C20) sub_00026C20, likewise (sub_0002F480)."
+    },
+    {
+      "va": "0x00014920",
+      "kind": "mark",
+      "name": "uw_fe_setup",
+      "note": "(NTSC-U 0x00014860) sub_00014860, the front end's set-up, which calls the same camera set-up (sub_0002F380): the title's own 16:9 again."
+    },
+    {
+      "va": "0x001AE640",
+      "kind": "mark",
+      "name": "hdr_scene",
+      "note": "(NTSC-U 0x001AE340) BO-110: sub_001AE340, a player's view of the world (3D, bloom, the frame pass sub_0003DA90, the radial blur): its start. With RECOMP_DEBUG=hdr the draws from here to hdr_ui keep light past 1.0 (src/game/main.c: the D3D push pointer goes to the toolkit's stream marks). A mark changes nothing in the guest."
+    },
+    {
+      "va": "0x001AE9E6",
+      "kind": "mark",
+      "name": "hdr_ui",
+      "note": "(NTSC-U 0x001AE6E6) BO-110: sub_001AE340's end (after its last call, sub_000402C0, and the radial blur): what the stage draws after this (countdown, rival marker, the HUD scenes, sub_000536C0) stays at paper white."
+    },
+    {
+      "va": "0x001AE9F0",
+      "kind": "mark",
+      "name": "hdr_scene",
+      "note": "(NTSC-U 0x001AE6F0) BO-110: sub_001AE6F0, the front end's view of the world (garage, car select): its start."
+    },
+    {
+      "va": "0x001AED97",
+      "kind": "mark",
+      "name": "hdr_ui",
+      "note": "(NTSC-U 0x001AEA97) BO-110: sub_001AE6F0's end (ret 8), after its frame pass and sub_000402C0."
+    },
+    {
+      "va": "0x0001A7C0",
+      "kind": "mark",
+      "name": "uw_stage_render",
+      "note": "(NTSC-U 0x0001A6A0) sub_0001A6A0, a stage's render (the 3D world, then the HUD scenes, sub_000536C0): this frame is a wide one."
+    },
+    {
+      "va": "0x0001AE00",
+      "kind": "mark",
+      "name": "uw_stage_render",
+      "note": "(NTSC-U 0x0001AD00) sub_0001AD00, the second stage render."
+    },
+    {
+      "va": "0x00020C40",
+      "kind": "mark",
+      "name": "uw_stage_render",
+      "note": "(NTSC-U 0x00020B30) sub_00020B30, the third (the two-player stage's)."
+    },
+    {
+      "va": "0x0034D1B0",
+      "kind": "mark",
+      "name": "uw_flip",
+      "note": "(NTSC-U 0x0034CEB0) sub_0034CBF0 (D3D): writes NV097_FLIP_STALL (0x40130) to the push buffer: a frame ends. All five writers of that method are marked, so the count here is the GPU executor's flip count."
+    },
+    {
+      "va": "0x0034D345",
+      "kind": "mark",
+      "name": "uw_flip",
+      "note": "(NTSC-U 0x0034D045) sub_0034CEF0: FLIP_STALL."
+    },
+    {
+      "va": "0x00351010",
+      "kind": "mark",
+      "name": "uw_flip",
+      "note": "(NTSC-U 0x00350D10) sub_00350C10: FLIP_STALL (one of its two paths)."
+    },
+    {
+      "va": "0x0035102E",
+      "kind": "mark",
+      "name": "uw_flip",
+      "note": "(NTSC-U 0x00350D2E) sub_00350C10: FLIP_STALL (the other path)."
+    },
+    {
+      "va": "0x00351195",
+      "kind": "mark",
+      "name": "uw_flip",
+      "note": "(NTSC-U 0x00350E95) sub_00350DB0: FLIP_STALL."
+    },
+    {
+      "va": "0x001C1AC3",
+      "kind": "load_f32",
+      "setting": "display.ultrawide",
+      "when": "!off",
+      "expr": "loaded + 320 * (1 - fe_squeeze)",
+      "if": {
+        "reg": "edi",
+        "in": [
+          "0x00557D40"
+        ]
+      },
+      "note": "(NTSC-U 0x001C17A3) sub_001C17A0 once more, for the front-end scene (0x557A20) when it is drawn over a wide frame (pause menu, race intro banner, results over the 3D world): its root's origin, so that with the scale below it keeps the shape and size it has in 16:9, in the middle. fe_squeeze is 16:9 over the frame's aspect in a frame the stage drew, 1 in every other (menus, loading screens: untouched)."
+    },
+    {
+      "va": "0x001C1ACE",
+      "kind": "load_f32",
+      "setting": "display.ultrawide",
+      "when": "!off",
+      "expr": "loaded * fe_squeeze",
+      "if": {
+        "reg": "edi",
+        "in": [
+          "0x00557D40"
+        ]
+      },
+      "note": "(NTSC-U 0x001C17AE) sub_001C17A0: the front-end scene's root x scale over a wide frame."
+    },
+    {
+      "va": "0x00059D8C",
+      "kind": "mark",
+      "name": "drive_log",
+      "note": "(NTSC-U 0x00059BDC) sub_00059BD0, the HUD speedometer's update, once a frame while a race's HUD runs, with the HUD object in ebx: BO3_DRIVE_LOG=<file> logs the speed it shows ([[ebx+0x2C]+0xBC], m/s, a magnitude) and the pad bytes the title read that frame (src/game/main.c; tools/headless/reverse_scene.sh asserts on it, BO-96). A mark changes nothing in the guest."
+    },
+    {
+      "va": "0x001AE8AA",
+      "setting": "graphics.bloom",
+      "when": "0",
+      "value": 0,
+      "note": "(NTSC-U 0x001AE5AA) sub_001AE340, a player's view of the world: after the 3D, the title calls its bloom (sub_0003E520: PS2 CB3Bloom::Render; the frame's bright part into a 320x240 target, blurred through two 160x120 ones, then added over the frame: three render passes, with Threshold / Intensity from ValueDB/TrackBloom, 0.75 / 1.0 on the tracks seen, and a weight that grows with the boost) only while MEM32(0x4D537C) is -1, its own condition (under the pause menu the title draws no bloom either). Any other value takes the title's no-bloom path; memory keeps the real value for its other readers. graphics.bloom defaults to on, so the patch is its \"0\" (RECOMP_GFX_BLOOM=0, BO-101). Read once a frame: a change shows from the next frame built. docs/effects.md."
+    },
+    {
+      "va": "0x001AED0D",
+      "setting": "graphics.bloom",
+      "when": "0",
+      "value": 0,
+      "note": "(NTSC-U 0x001AEA0D) sub_001AE6F0, the front end's view of the world (the garage / car select): the same test before the same bloom call."
+    },
+    {
+      "va": "0x0003DB8A",
+      "kind": "load_f32",
+      "setting": "graphics.bloom",
+      "when": "!1",
+      "expr": "loaded * bloom_strength",
+      "note": "(NTSC-U 0x0003DC3A) BO-181: sub_0003DA90, the pass that puts the 3D frame on the back buffer after the bloom call (it runs whether the bloom ran or not), adds the bloom's last 160x120 result with a weight made from the bloom Intensity ([arg+4], the block's +0x54: clamped at 2.0, times 0.5, handed to the combiners as the constant's alpha). With graphics.bloom off the bloom call is skipped (0x001AE5AA), so that target keeps the last glow drawn and the frame went on adding it: a glow frozen on the picture. Here and at 0x0003DC55 the Intensity reads 0 at strength 0, so the weight is 0. BO-212: between 0 and 1 the Intensity is times the strength (bloom_strength, the setting in tenths), so the glow added over the frame is that fraction of the original (the weight is linear in it below the clamp: 0.5 x Intensity, 0.5 on the tracks seen); at 1 the patch does not run and nothing changes. Memory keeps the real value."
+    },
+    {
+      "va": "0x0003DBA5",
+      "kind": "load_f32",
+      "setting": "graphics.bloom",
+      "when": "!1",
+      "expr": "loaded * bloom_strength",
+      "note": "(NTSC-U 0x0003DC55) BO-181: the second load of the same Intensity in sub_0003DA90 (the path below the clamp); see 0x0003DC3A. BO-212: times the strength."
+    },
+    {
+      "va": "0x00041EC6",
+      "kind": "load_f32",
+      "setting": "graphics.motion_blur",
+      "when": "!1",
+      "expr": "loaded * blur_strength",
+      "note": "(NTSC-U 0x00041F76) BO-212: sub_00041EC0, the radial blur's draw back over the frame: fld dword ptr [esi + 0x1C], the blur block's opacity (the radial-blur params sub_00179FD0 fills), times 255 into the top byte of the four vertices' diffuse colour. The draw blends SRC_ALPHA / INV_SRC_ALPHA (sf 0x302, df 0x303), so the blurred picture is mixed over the frame by that alpha and its strength is the alpha: times blur_strength (the setting in tenths) the blur is that fraction of the original, and at 0 the alpha is 0 (the blur path itself is skipped at 0 by the sites above). At 1 the patch does not run and nothing changes. Memory keeps the real value. The other blur (sub_000461C0, patched by reading) and the front-end's (sub_000FAC70) stay on or off."
+    },
+    {
+      "va": "0x00042A25",
+      "kind": "load_u8",
+      "setting": "graphics.motion_blur",
+      "when": "0",
+      "value": 0,
+      "note": "(NTSC-U 0x00042AD5) sub_00042AD0, the radial blur of a player's view (the streaks towards the picture's edges at speed and while boosting; sub_00041480 draws the frame into a 320x240 target, sub_00041EC0 draws that back over the frame, scaled about the centre through the 'radialblurmask' texture: one more render pass and a second pass on the back buffer, every frame of a stage whatever the speed): drawn only while the graphics manager's 'blur' byte MEM8(0x4D61D2) is set (the manager at 0x4D6170, +0x62; its constructor sub_0002F260 sets it to 1 with its neighbours and nothing in the build writes it by address: a development switch with no menu entry). Read back as 0 the title takes its own blur-off path. graphics.motion_blur defaults to on, so the patch is its \"0\" (RECOMP_GFX_MOTION_BLUR=0, BO-101). Read every frame: a change shows from the next frame built. docs/effects.md."
+    },
+    {
+      "va": "0x001AE978",
+      "kind": "load_u8",
+      "setting": "graphics.motion_blur",
+      "when": "0",
+      "value": 0,
+      "note": "(NTSC-U 0x001AE678) sub_001AE340: the same byte before the other blur (sub_000461C0 + sub_000474D0; by the PS2 names CB3DirectionalBlur::Render), drawn instead of the radial one while sub_000459C0 says so. Patched by reading: no run reached this path (race, Road Rage and Crash drives, their crash cameras)."
+    },
+    {
+      "va": "0x000FB039",
+      "kind": "load_u8",
+      "setting": "graphics.motion_blur",
+      "when": "0",
+      "value": 0,
+      "note": "(NTSC-U 0x000FACD9) sub_000FAC70, the render callback of a 2D object a front-end page makes (sub_000DDCF0; PS2 CB3RadialBlur2dObject::Render): the same byte before the same radial blur (sub_00041480 + sub_00041EC0). Patched by reading: not seen in a run."
+    },
+    {
+      "va": "0x0018E15A",
+      "kind": "load_f32",
+      "setting": "graphics.vehicle_detail",
+      "when": "!original",
+      "expr": "loaded * vehicle_lod_scale",
+      "note": "(NTSC-U 0x0018DE5A) sub_0018DE00, a race car's draw (PS2 CB3RaceCar::Draw): the squared distance from the camera against the graphics manager's three switch distances times the camera's own factor (+0x90, 1.0). This one, MEM32F(0x4D61E0) = 60 m: beyond it the lowest model (level 0). The five distances are set once by sub_00017450 at 0x176BB..0x17703 (PS2 CB3GraphicsManagerBase::SetDefaultLODSwitchDistances): 15, 30, 60 for race cars, 20, 80 for traffic. Only the register changes; the manager keeps its values."
+    },
+    {
+      "va": "0x0018E180",
+      "kind": "load_f32",
+      "setting": "graphics.vehicle_detail",
+      "when": "!original",
+      "expr": "loaded * vehicle_lod_scale",
+      "note": "(NTSC-U 0x0018DE80) sub_0018DE00: MEM32F(0x4D61DC) = 30 m; beyond it level 1."
+    },
+    {
+      "va": "0x0018E1A3",
+      "kind": "load_f32",
+      "setting": "graphics.vehicle_detail",
+      "when": "!original",
+      "expr": "loaded * vehicle_lod_scale",
+      "note": "(NTSC-U 0x0018DEA3) sub_0018DE00: MEM32F(0x4D61D8) = 15 m; beyond it level 2, within it level 3 (the full model)."
+    },
+    {
+      "va": "0x001A4A8F",
+      "kind": "load_f32",
+      "setting": "graphics.vehicle_detail",
+      "when": "!original",
+      "expr": "loaded * vehicle_lod_scale",
+      "note": "(NTSC-U 0x001A478F) sub_001A4710, the traffic's draw (PS2 CB3TrafficSystem::Draw): MEM32F(0x4D61E8) = 80 m; beyond it a traffic vehicle's lowest model (level 0). The same two distances serve the third list (0x731E90). Not changed: the 275 m (75625 = 275^2, 0x3A5E44 through 0x60E944) beyond which traffic is not drawn, which the traffic's update (sub_001A6B40) shares; and the 32 vehicles a view draws at most."
+    },
+    {
+      "va": "0x001A4AA9",
+      "kind": "load_f32",
+      "setting": "graphics.vehicle_detail",
+      "when": "!original",
+      "expr": "loaded * vehicle_lod_scale",
+      "note": "(NTSC-U 0x001A47A9) sub_001A4710: MEM32F(0x4D61E4) = 20 m; beyond it level 1, within it level 2 (the full model)."
+    },
+    {
+      "va": "0x001AE186",
+      "kind": "load_f32",
+      "setting": "graphics.scenery_detail",
+      "when": "!original",
+      "expr": "loaded * scenery_lod_scale",
+      "note": "(NTSC-U 0x001ADE86) sub_001ADD60, the track's props for one view (pine trees, signs, barriers...; each prop type a 0x70-byte record in the static track's table, MEM32(0x7397B4) + 0x38, count + 0x34): a type with two models (flag +0x62 bit 0) draws its detailed one (+0x5C) where the camera is within its switch distance (+0x64, this load) and its simple one (+0x5E) beyond it, both up to its draw distance (+0x68); sub_0003A740 stores the squares in the draw context 0x549E50 (+0xD0, +0xD4), sub_0003A840 compares (mode 1 here: within). Both models are in the static track, resident for the whole race: no streaming. This load is the detailed model's pass."
+    },
+    {
+      "va": "0x001AE30F",
+      "kind": "load_f32",
+      "setting": "graphics.scenery_detail",
+      "when": "!original",
+      "expr": "loaded * scenery_lod_scale",
+      "note": "(NTSC-U 0x001AE00F) sub_001ADD60: the same switch distance (+0x64) for the simple model's pass (mode 2: beyond). Scaled with the load at 0x1ADE86, so each prop is drawn with exactly one of its two models; a switch distance past the draw distance (+0x68, not changed) leaves the detailed model to the end. Not changed: the track units' full / low-detail streams (sub_0019D100, 4 units), the mode-0 props (sub_001ACE00, the reflections in sub_001ADA40)."
+    },
+    {
+      "va": "0x0018C811",
+      "kind": "mark",
+      "name": "ap_update",
+      "note": "(NTSC-U 0x0018C511) sub_0018C510 (PS2 CB3PlayerCar::Update, vtable 0x3B11A0 slot 1), after `mov esi, ecx`: esi the player car. Before the update tests the car's 'AI controlled' byte (+0x27D8). RECOMP_DEBUG=autopilot=1 sets the byte here for player 1's car while it races, as the title does on the rolling start: the update takes the rivals' path (sub_00170820) and the physics the AI's (sub_00117870), not the pad's (src/game/autopilot.c, BO-130)."
+    },
+    {
+      "va": "0x00085472",
+      "kind": "mark",
+      "name": "si_items",
+      "note": "(NTSC-U 0x00085222) sub_00085170 (the Settings page's set-up, Driver Details > Settings; page object 0x55ABC4): after the fourth item's label is stored, esi the page, eax the items (page + 8) about to be pushed for the list widget sub_000F0EA0. interface.menu_entry: the four items go to a block of our own with a fifth, TAKEDAWN SETTINGS, the count (+6) becomes 5 and eax the block (the page has no room: the next state's object is at 0x55ABEC). src/game/menuentry.c, BO-133."
+    },
+    {
+      "va": "0x00085604",
+      "kind": "mark",
+      "name": "si_select",
+      "note": "(NTSC-U 0x000853B4) sub_000852B0 (the Settings page's input): after the call of sub_00017790 (A taken), al the answer. With the cursor (0x55ABC8) on the fifth line the answer becomes 0 and the overlay is asked to open, so the title never starts its exit for a line its next-page table (0x3EAF34) does not have. src/game/menuentry.c, BO-133."
+    },
+    {
+      "va": "0x0001C0E4",
+      "kind": "mark",
+      "name": "ua_eval",
+      "note": "(NTSC-U 0x0001BFC4) sub_0001BE60 (PS2 CB3Profile::Evaluate), just before its ret: the title has rebuilt what is open (cars 0x44CFC8, events 0x44D01F, crash junctions 0x44D068, their counts, from the profile). The overlay's Unlock everything keeps that set and opens everything in its place, without writing the profile (src/game/unlockall.c, BO-131)."
+    },
+    {
+      "va": "0x0008646A",
+      "kind": "mark",
+      "name": "pe_items",
+      "note": "(NTSC-U 0x0008621A) sub_00085F70 (the race's pause menu, page object 0x5593E4, ebx): after the item count is stored (+6), on the usual layout (+0x60 = 0). interface.menu_entry: QUIT moves one down and TAKEDAWN SETTINGS takes its place, with an action code (+0x44) the title does not have; the page has room for seven items and codes. src/game/menuentry.c, BO-133."
+    },
+    {
+      "va": "0x0008664C",
+      "kind": "mark",
+      "name": "pe_select",
+      "note": "(NTSC-U 0x000863FC) sub_000863F0 (the pause menu's input; esi the page, edi the controller record): before it tests A (record + 0x4C). With the cursor on TAKEDAWN SETTINGS the overlay is asked to open; the title's switch on the action code then does nothing for it. src/game/menuentry.c, BO-133."
+    },
+    {
+      "va": "0x001B5B5F",
+      "kind": "mark",
+      "name": "ctl_pad",
+      "note": "(NTSC-U 0x001B585F) sub_001B57E0, the pad manager's poll (once a frame, from sub_00021A50): the instruction after its XInputGetState call (sub_00363C86, the only one in the title), with ebx the port and esi the port's record + 4 (records of 0x20 at 0x4AE20C: state, handle, XINPUT_STATE). input.control_scheme = ps2 rewrites the XINPUT_GAMEPAD just read, while the title is driving (src/game/controls.c, BO-106); BO3_CTL_LOG logs it. The mark is after the inc, so ebx is the port + 1."
+    },
+    {
+      "va": "0x0001A29A",
+      "kind": "cmp_u8",
+      "setting": "graphics.crash_60fps",
+      "when": "1",
+      "value": 0,
+      "note": "(NTSC-U 0x0001A17A) sub_0001A130, the update of a one-player stage (race, Road Rage, Crash; vtable 0x3A9ACC +8), where the title chooses its frame rate: `cmp byte ptr [0x73BACA], bl` (bl = 0), the first player's 'a crash camera is on' byte (per player, 0x27E0 apart; set through a crash camera: a race's, and in Crash mode the camera, the tour of the wrecks and the replay behind Crash Results). Set, and the half-rate byte in force (game object 0x4A71A0 + 0x2E1EE = 0x4D538E) clear: it asks for the half rate (+0x2E1ED = 1, stepper mode +0x2E1F0 = 0); clear with the half rate in force: it asks for the full rate (+0x2E1ED = 0, mode 1). sub_00016EF0 (PS2 CB3Game::UpdatePreSimulation) copies the asked byte to the one in force and sets D3DRS_PRESENTATIONINTERVAL to 2 or 1; the stepper call in sub_000165F0 (0x16C17) then takes 2..8 or 1..4 steps a frame, and a HUD element (sub_000CBA80) doubles its per-frame time. A cmp_u8 patch: the compare reads 0, so the title takes its own 'no crash camera' path: the half rate is never asked for, and one in force (the switch turned on in a camera) is given up at once. Nothing is written and the byte's other readers (the HUD, the cameras, the audio) see the real one. The PS2 '60 FPS Crashes' patch (Nahelam: SLUS-21050 0x1320D8, a branch in CB3Game::UpdatePreSimulation) skips the block that puts the asked rate in force; this one stops the asking, which leaves no asked-but-unapplied state behind when the switch goes off. docs/crash60.md."
+    },
+    {
+      "va": "0x0001ADB5",
+      "kind": "load_u8",
+      "setting": "graphics.crash_60fps",
+      "when": "1",
+      "value": 0,
+      "note": "(NTSC-U 0x0001ACB5) sub_0001AC30, the update of the other one-player stage class (vtable 0x3A9E5C +8; its mode objects 0x4D4FFC and 0x4D5070 never take the half rate): `mov al, [0x73BACA]`, the same byte before the same choice (asks for the half rate when set, for the full rate when clear). Read back as 0. Patched by reading: no run reached this stage."
+    },
+    {
+      "va": "0x00020BBA",
+      "kind": "store_u8",
+      "setting": "graphics.split_60fps",
+      "when": "1",
+      "value": 0,
+      "note": "(NTSC-U 0x00020AAA) sub_000209A0, the two-player stage's set-up (vtable 0x3A939C; its last instructions): `mov byte ptr [0x4D538D], 1`, the half rate asked for (game object 0x4A71A0 + 0x2E1ED; BO-111, docs/crash60.md), with the stepper's mode 0 stored after it. Nothing in the two-player stage asks again (its update sub_00020AC0 does not look at the crash camera bytes), so split screen is at 30 from here to the stage's release. A store_u8 patch: the byte is stored again as 0, so sub_00016EF0 never puts the half rate in force: interval 1 and one step a frame for the whole stage, its crash cameras included. Sampled once a stage, here: a change shows from the next two-player event. docs/split-screen.md."
+    },
+    {
+      "va": "0x0001A23B",
+      "kind": "store_u32",
+      "setting": "game.race_clock",
+      "when": "1",
+      "value": 1,
+      "note": "(NTSC-U 0x0001A11B) sub_0001A000, the start of a one-player stage (vtable 0x3A9ACC: Race, Road Rage, Crash), its last store: `mov dword ptr [0x4D5390], 0`, the simulation stepper's mode (game object 0x4A71A0 + 0x2E1F0, copied into the step timer 0x4D5338 every frame at 0x16AB6). Mode 0 runs one 1/60 s step a frame whatever the time, so a host below 60 plays the race in slow motion; mode 1 runs as many whole steps as the time since the last frame holds (at most 4, the rest dropped; sub_001B58E0, loc_001B5A04 is the only place the two differ). The title stores 1 itself at the end of the first crash camera (0x1A19E), so from there to the finish every race already runs in mode 1 (apart from the crash cameras). A store_u32 patch: the mode is stored again as 1, and the race keeps real time from its start. At a steady 60 the stepper returns 1 step a frame in both modes. The crash cameras (0x1A18B, 0x1A19E), split screen (0x20AB1), pause and results keep their own stores. Sampled once a stage, here: a change shows from the next race. docs/race-clock.md, BO-159."
+    },
+    {
+      "va": "0x00154AAD",
+      "kind": "cmp_u32",
+      "setting": "audio.split_music",
+      "when": "1",
+      "value": 1,
+      "note": "(NTSC-U 0x0015480D) sub_00154800, the music manager's (0x4115E8) in-game state machine, called once a frame by its update sub_00153E50: `cmp dword ptr [0x73A1C0], 1` / `jg`: with more than one player (0x73A1C0 is the player count) the state (+0x5F4) is forced to 0xD, no music, as it is for an Xbox Live stage (0x5A3759), a network session (0x463AF4) and the manager's own mute (+0x62C). A cmp_u32 patch: the compare reads 1, and the title runs the state machine it runs for one player: EA GAMES TRAX or the chosen soundtrack through the same player and stream. The other three conditions are untouched. docs/split-screen.md."
+    },
+    {
+      "va": "0x00154D10",
+      "kind": "cmp_u32",
+      "setting": "audio.split_music",
+      "when": "1",
+      "value": 1,
+      "note": "(NTSC-U 0x00154A70) sub_00154A70, the state machine's 'a song plays' step (called by sub_00153E50): the same compare at its entry; with more than one player it stops the music (sub_00153310) and returns. Reads 1 with the setting."
+    },
+    {
+      "va": "0x0006C14B",
+      "kind": "mark",
+      "name": "tut_film",
+      "note": "(NTSC-U 0x0006BF9B) sub_0006BC40 (the front-end state that plays a mode's training film, TrD_xxx / TrC_xxx), the `push 0` before its call of sub_00086F70 (film id [0x463C48], caption string [0x463C4C], ...): the byte argument that becomes the film page's 'skippable' flag (page 0x55CB88 + 0xC). The title pushes 0 here, so no button skips the film; the mark makes it 1, and A or START leave through the page's own exit (src/game/tutorial.c)."
+    }
+  ]
+}

@@ -21,6 +21,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Dir,
     [Parameter(Mandatory = $true)][string]$Version,
     [string]$Disc = "",
+    [string]$Region = "NTSC-U",
     [string]$InnoUrl = "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe",
     [string]$InnoSha256 = "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732"
 )
@@ -120,6 +121,8 @@ if (-not (Test-Path $iscc)) { throw "ISCC.exe was not found in $inno" }
 
 $iss = Join-Path $Dir "takedawn.iss"
 $common = @("/Q", "/DPackage=$pkg", "/DVersion=$Version", "/DIcon=$(Join-Path $Dir 'takedawn.ico')", "/O$out")
+$tag = ""
+if ($Region -eq "PAL") { $common += "/DRegion=PAL"; $tag = "-pal" }
 & $iscc @common $iss
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed with status $LASTEXITCODE" }
 Write-Host "STEP setup OK"
@@ -128,7 +131,7 @@ if ($LASTEXITCODE -ne 0) { throw "ISCC (payload test) failed with status $LASTEX
 
 $itest = Join-Path $Dir "itest"
 if (Test-Path $itest) { Remove-Item -Recurse -Force $itest }
-$test = Join-Path $out "Takedawn-$Version-windows-x64-payloadtest.exe"
+$test = Join-Path $out "Takedawn-$Version$tag-windows-x64-payloadtest.exe"
 $p = Start-Process -Wait -PassThru -FilePath $test -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/CURRENTUSER", "/DIR=`"$itest`"", "/LOG=`"$(Join-Path $Dir 'itest.log')`""
 if ($p.ExitCode -ne 0) { throw "the payload-test setup ended with status $($p.ExitCode)" }
 $n = 0
@@ -146,4 +149,4 @@ if ($rc -ne 0) { throw "the installed Takedawn.exe --version ended with status $
 Remove-Item -Recurse -Force $itest
 Remove-Item -Force $test
 Write-Host "STEP payload OK $n files"
-Get-FileHash (Join-Path $out "Takedawn-$Version-windows-x64-setup.exe") -Algorithm SHA256 | ForEach-Object { Write-Host "RESULT OK $($_.Hash.ToLower())" }
+Get-FileHash (Join-Path $out "Takedawn-$Version$tag-windows-x64-setup.exe") -Algorithm SHA256 | ForEach-Object { Write-Host "RESULT OK $($_.Hash.ToLower())" }

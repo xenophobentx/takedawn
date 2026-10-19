@@ -119,7 +119,7 @@ def build(ctx, ninja_line):
     nice = "nice -n %d " % ctx.nice if ctx.nice else ""
     if ctx.build_mode == "container":
         cfg = ("CC=clang cmake -S /work -B /work/build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release "
-               "-DXBOXRECOMP_DIR=/toolkit -DBO3_BIN_DIR=/work/build/linux/bin")
+               "-DXBOXRECOMP_DIR=/toolkit -DBO3_BIN_DIR=/work/build/linux/bin -DBO3_REGION=%s" % ctx.region)
         mounts = {ctx.work: "/work", ctx.toolkit: "/toolkit:ro"}
         if container_run(ctx, "build", cfg, mounts, nice=False) != 0:
             raise StepError("configure-failed", "cmake could not configure the build in the container")
@@ -127,7 +127,8 @@ def build(ctx, ninja_line):
                            on_line=ninja_line, nice=False)
     else:
         cfg = ["cmake", "-S", ctx.work, "-B", build_dir, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
-               "-DXBOXRECOMP_DIR=" + ctx.toolkit, "-DBO3_BIN_DIR=" + os.path.join(build_dir, "bin")]
+               "-DXBOXRECOMP_DIR=" + ctx.toolkit, "-DBO3_BIN_DIR=" + os.path.join(build_dir, "bin"),
+               "-DBO3_REGION=" + ctx.region]
         if run(ctx, "build", cfg, cwd=ctx.work) != 0:
             raise StepError("configure-failed", "cmake could not configure the build")
         rc = run(ctx, "build", ["ninja", "-C", build_dir, "-j%d" % ctx.jobs, "burnout3"], cwd=ctx.work,

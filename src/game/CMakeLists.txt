@@ -8,6 +8,11 @@ project(burnout3_game C)
 file(GLOB RECOMP_GEN_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/recomp/gen/recomp_*.c"
 )
+# The PAL build's wrapped functions are named by their PAL addresses
+# (recomp_manual_pal.c; recomp_manual.c has the NTSC-U ones).
+if(BO3_REGION STREQUAL "PAL")
+    list(APPEND RECOMP_GEN_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/recomp/recomp_manual_pal.c")
+endif()
 
 if(ANDROID)
     # Android: the game is libmain.so, which SDL's activity loads and whose

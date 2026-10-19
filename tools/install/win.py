@@ -315,7 +315,7 @@ def build(ctx, ninja_line):
            "-Dglslang_DIR=" + f(os.path.join(p["glslang"], "lib", "cmake", "glslang")),
            "-DVulkan_INCLUDE_DIR=" + f(os.path.join(p["vulkan"], "include")),
            "-DVulkan_LIBRARY=" + f(os.path.join(p["vulkan"], "lib", "libvulkan-1.dll.a")),
-           "-DBO3_BIN_DIR=" + f(bin_dir),
+           "-DBO3_BIN_DIR=" + f(bin_dir), "-DBO3_REGION=" + ctx.region,
            # linker flags are split at spaces, so a path with one is quoted
            "-DCMAKE_EXE_LINKER_FLAGS=" + ('"%s"' % f(obj) if " " in obj else f(obj))]
     if run(ctx, "build", cfg, cwd=ctx.work, env=env, nice=False) != 0:

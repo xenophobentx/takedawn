@@ -36,6 +36,7 @@
  * The label is ours (the string table has no such text), UTF-16 in the
  * same block, drawn by the title's widget in its own font.
  */
+#include "region.h"
 #include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -49,13 +50,13 @@
 
 extern RECOMP_TLS uint32_t g_eax, g_ebx, g_ecx, g_edx, g_esi, g_edi, g_esp;
 extern ptrdiff_t g_xbox_mem_offset;
-extern void sub_001D2879(void);          /* the title's heap: (size, tag), stdcall */
+extern void BO3_SUB(sub_001D2879, sub_001D2B99)(void);          /* the title's heap: (size, tag), stdcall */
 
 #define ME_M8(va)  (*(uint8_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 #define ME_M16(va) (*(uint16_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 #define ME_M32(va) (*(uint32_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 
-#define ME_PAGE       0x0055ABC4u     /* the Settings page's object */
+#define ME_PAGE       BO3_VA(0x0055ABC4u, 0x0055AEE4u)     /* the Settings page's object */
 #define ME_CURSOR     (ME_PAGE + 4)
 #define ME_COUNT      (ME_PAGE + 6)
 #define ME_ITEMS      (ME_PAGE + 8)
@@ -85,7 +86,7 @@ static uint32_t me_block(void)
         PUSH32(g_esp, ME_HEAP_TAG);
         PUSH32(g_esp, size);
         PUSH32(g_esp, 0);               /* the return address its ret takes */
-        sub_001D2879();
+        BO3_SUB(sub_001D2879, sub_001D2B99)();
         s_block = g_eax;
         g_eax = a; g_ecx = c; g_edx = d; g_esp = sp;
         if (!s_block)
@@ -135,7 +136,7 @@ static void me_items(void)
  * to open then. The title stays paused on its menu under the overlay (the
  * overlay pauses the host on top) and is still on it when the overlay
  * closes; B and Start are the title's as before. */
-#define PE_PAGE      0x005593E4u
+#define PE_PAGE      BO3_VA(0x005593E4u, 0x00559704u)
 #define PE_CURSOR    (PE_PAGE + 4)
 #define PE_COUNT     (PE_PAGE + 6)
 #define PE_ITEMS     (PE_PAGE + 8)

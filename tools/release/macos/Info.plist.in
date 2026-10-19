@@ -2,8 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>Takedawn</string>
-    <key>CFBundleDisplayName</key><string>Takedawn</string>
+    <key>CFBundleName</key><string>@APP_TITLE@</string>
+    <key>CFBundleDisplayName</key><string>@APP_TITLE@</string>
     <key>CFBundleIdentifier</key><string>@BUNDLE_ID@</string>
     <key>CFBundleExecutable</key><string>Takedawn</string>
     <key>CFBundleIconFile</key><string>Takedawn</string>

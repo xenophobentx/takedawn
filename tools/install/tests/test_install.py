@@ -612,3 +612,37 @@ class BundleTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RegionTest(unittest.TestCase):
+    """The PAL disc builds the PAL program (docs/pal.md)."""
+
+    def test_every_build_names_its_region(self):
+        regions = {b["id"]: b["bo3_region"] for b in disc.load_supported()}
+        self.assertEqual(regions, {"ntsc-u-retail": "NTSC-U", "pal-retail": "PAL"})
+
+    def test_regen_inputs(self):
+        import regen
+        seeds, spin, manual = regen.inputs("/w", "PAL")
+        self.assertEqual((seeds, spin, manual), (os.path.join("/w", "config", "pal", "seed_functions.json"),
+                                                 os.path.join("/w", "config", "pal", "spin_waits.json"),
+                                                 os.path.join("/w", "src", "game", "recomp", "recomp_manual_pal.c")))
+        self.assertEqual(regen.inputs("/w")[2], os.path.join("/w", "src", "game", "recomp", "recomp_manual.c"))
+        for p in regen.inputs(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".."), "PAL"):
+            self.assertTrue(os.path.isfile(p), p)
+
+    def test_region_of_the_installed_xbe(self):
+        import install
+        import xbe as xbe_mod
+        pal = next(b for b in disc.load_supported() if b["id"] == "pal-retail")
+        with tempfile.TemporaryDirectory() as t:
+            open(os.path.join(t, "default.xbe"), "wb").close()
+            ctx = type("C", (), {"game_dir": t})()
+            real = xbe_mod.sha256_file
+            try:
+                xbe_mod.sha256_file = lambda p: pal["xbe"]["sha256"]
+                self.assertEqual(install.region_of(ctx), "PAL")
+                xbe_mod.sha256_file = lambda p: "0" * 64
+                self.assertEqual(install.region_of(ctx), "NTSC-U")
+            finally:
+                xbe_mod.sha256_file = real

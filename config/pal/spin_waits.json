@@ -1,0 +1,14 @@
+{
+  "about": "Guest busy-wait loops lowered to RECOMP_SPIN_WAIT by regen.sh (tools.recomp --spin-waits). In the default pacing (spin) they still spin; with RECOMP_PRESENT_PACING=sleep the thread blocks until the runtime signals a change or 1 ms passes (toolkit src/kernel/kernel_pacing.h).",
+  "auto": false,
+  "sites": [
+    {
+      "va": "0x00351EF0",
+      "note": "(NTSC-U 0x00351BF0) XDK D3D8 KickOff (sub_00351BD0, inlined into the wait-for-idle sub_00351A30 and others): sets bit 16 of the NV2A register at 0x100410 and polls it until the GPU clears it. The executor's ack thread clears it once everything submitted has run, which includes FLIP_STALL's hold for the vblank, so with flip pacing the title's main thread spun here 8-14 ms a frame (RECOMP_TRACE=frametime, BO-51). The ack wakes it (kick_cleared, xbox_memory_layout.c)."
+    },
+    {
+      "va": "0x00351D70",
+      "note": "(NTSC-U 0x00351A70) XDK D3D8 wait-for-idle in sub_00351A30, after its KickOff: polls the push buffer's GET against PUT and PGRAPH status. Woken when the executor advances GET (xbox_memory_layout.c)."
+    }
+  ]
+}

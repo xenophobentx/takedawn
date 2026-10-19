@@ -52,7 +52,10 @@ Before you open a pull request:
 - if it touches frame pacing, presentation or input, include frame times
   before and after from the same scene (`RECOMP_TRACE=pacing=all,frametime=<file>`);
 - run the tests that cover it: `python3 -m unittest discover -s tools/install/tests`
-  for the installer driver, and the toolkit's own tests for the runtime.
+  for the installer driver, `python3 -m tools.region.check` when you add or
+  change a guest address, a patch site or a wrapped function (the PAL build's
+  twin, [docs/pal.md](docs/pal.md)), and the toolkit's own tests for the
+  runtime.
   [docs/testing.md](docs/testing.md) lists them, with the scratch profile to
   use, the game's built-in AI driver for unattended races and the other test
   tools;

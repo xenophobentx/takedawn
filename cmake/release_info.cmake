@@ -43,17 +43,40 @@ if(BO3_CODENAME MATCHES "[\"\\\\]")
 endif()
 
 # ── the regen key ────────────────────────────────────────────────────
+# The disc: BO3_REGION (NTSC-U, the default, or PAL) picks the build of
+# tools/install/supported.json, its recompiler inputs and its manifest.
+if(NOT DEFINED BO3_REGION OR BO3_REGION STREQUAL "")
+    set(BO3_REGION "NTSC-U")
+endif()
+if(BO3_REGION STREQUAL "PAL")
+    set(_build_id "pal-retail")
+    set(_cfg "config/pal")
+    set(_manual_names src/game/recomp/recomp_manual.c src/game/recomp/recomp_manual_pal.c)
+else()
+    set(_build_id "ntsc-u-retail")
+    set(_cfg "config")
+    set(_manual_names src/game/recomp/recomp_manual.c)
+endif()
 file(READ "${BO3_ROOT}/tools/install/supported.json" _supported)
-string(REGEX MATCH "\"sha256\": *\"([0-9a-f]+)\"" _m "${_supported}")
-set(_key_text "default.xbe ${CMAKE_MATCH_1}\n")
-set(_inputs
-    "${BO3_ROOT}/config/patches.json"
-    "${BO3_ROOT}/config/seed_functions.json"
-    "${BO3_ROOT}/config/spin_waits.json"
-    "${BO3_ROOT}/regen.sh"
-    "${BO3_ROOT}/src/game/recomp/recomp_manual.c")
-set(_names config/patches.json config/seed_functions.json config/spin_waits.json regen.sh
-    src/game/recomp/recomp_manual.c)
+string(JSON _nb LENGTH "${_supported}" builds)
+set(_xbe_sha "")
+math(EXPR _nb_last "${_nb} - 1")
+foreach(_b RANGE ${_nb_last})
+    string(JSON _id GET "${_supported}" builds ${_b} id)
+    if(_id STREQUAL _build_id)
+        string(JSON _xbe_sha GET "${_supported}" builds ${_b} xbe sha256)
+    endif()
+endforeach()
+if(NOT _xbe_sha)
+    message(FATAL_ERROR "tools/install/supported.json has no build '${_build_id}'")
+endif()
+set(_key_text "default.xbe ${_xbe_sha}\n")
+set(_names ${_cfg}/patches.json ${_cfg}/seed_functions.json ${_cfg}/spin_waits.json regen.sh
+    ${_manual_names})
+set(_inputs "")
+foreach(_n ${_names})
+    list(APPEND _inputs "${BO3_ROOT}/${_n}")
+endforeach()
 foreach(_stage xbe_parser disasm func_id abi_analysis recomp)
     file(GLOB_RECURSE _py RELATIVE "${XBOXRECOMP_DIR}" "${XBOXRECOMP_DIR}/tools/${_stage}/*.py")
     list(SORT _py)
@@ -85,9 +108,9 @@ string(SHA256 BO3_REGEN_KEY "${_key_text}")
 string(SUBSTRING "${BO3_REGEN_KEY}" 0 16 BO3_REGEN_KEY)
 
 # ── the disc manifest ────────────────────────────────────────────────
-set(_manifest "${BO3_ROOT}/config/disc/ntsc-u-retail.manifest")
+set(_manifest "${BO3_ROOT}/config/disc/${_build_id}.manifest")
 file(STRINGS "${_manifest}" _lines)
-set(_inc "/* Made by cmake/release_info.cmake from config/disc/ntsc-u-retail.manifest. */\n")
+set(_inc "/* Made by cmake/release_info.cmake from config/disc/${_build_id}.manifest. */\n")
 set(_count 0)
 foreach(_line ${_lines})
     if(_line MATCHES "^# id ([0-9a-f]+)")

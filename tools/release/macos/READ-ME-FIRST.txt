@@ -12,17 +12,17 @@ Takedawn @VERSION@ for macOS (Apple silicon)
    On macOS 14 and earlier: right-click (or Control-click) Takedawn in
    Applications, choose Open, then Open again.
 
-   Or, in Terminal:   xattr -dr com.apple.quarantine /Applications/Takedawn.app
+   Or, in Terminal:   xattr -dr com.apple.quarantine "/Applications/@APP_TITLE@.app"
 
    You do this once.
 
 3. Takedawn needs the game's data from your own disc: a disc image
    (.iso / .xiso) or an extracted disc folder of Burnout 3: Takedown,
-   NTSC-U (North America). It checks every file and copies them to
+   @DISC@. It checks every file and copies them to
    ~/Library/Application Support/Takedawn/Game. Without the setup window,
    from Terminal:
 
-     /Applications/Takedawn.app/Contents/MacOS/Takedawn --install <image-or-folder>
+     "/Applications/@APP_TITLE@.app/Contents/MacOS/Takedawn" --install <image-or-folder>
 
 Saves and settings are in ~/Library/Application Support/Takedawn, the shader
 cache in ~/Library/Caches/Takedawn.
@@ -39,4 +39,4 @@ How to update
   updates (only when you press it; nothing is downloaded).
 
 The licences of everything inside are in
-Takedawn.app/Contents/Resources/licenses.
+@APP_TITLE@.app/Contents/Resources/licenses.

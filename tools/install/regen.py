@@ -23,8 +23,18 @@ LAUNCH = ("import os, runpy, sys; "
 STAGES = ("xbe_parser", "disasm", "func_id", "abi_analysis", "recomp")
 
 
-def regen(ctx, python, xbe, out, gen_dir, toolkit, work, force_disasm=False, on_stage=None, site=None):
-    """Run the pipeline. `ctx` supplies logs/env/nice (see common.run)."""
+def inputs(work, region="NTSC-U"):
+    """The region's seed list, spin waits and manual file (regen.sh: BO3_REGION)."""
+    cfg = os.path.join(work, "config", "pal") if region == "PAL" else os.path.join(work, "config")
+    manual = "recomp_manual_pal.c" if region == "PAL" else "recomp_manual.c"
+    return (os.path.join(cfg, "seed_functions.json"), os.path.join(cfg, "spin_waits.json"),
+            os.path.join(work, "src", "game", "recomp", manual))
+
+
+def regen(ctx, python, xbe, out, gen_dir, toolkit, work, force_disasm=False, on_stage=None, site=None,
+          region="NTSC-U"):
+    """Run the pipeline. `ctx` supplies logs/env/nice (see common.run). `region`
+    is the disc's (supported.json bo3_region): NTSC-U or PAL."""
     env = dict(ctx.env, PYTHONIOENCODING="utf-8", PYTHONDONTWRITEBYTECODE="1")
     if site:
         env["BO3_SITE"] = site
@@ -45,8 +55,7 @@ def regen(ctx, python, xbe, out, gen_dir, toolkit, work, force_disasm=False, on_
             raise StepError("regen-failed", "%s failed with status %d (log: %s)"
                             % (name, rc, log_to or os.path.join(ctx.logs, "regen.log")))
 
-    seeds = os.path.join(work, "config", "seed_functions.json")
-    spin = os.path.join(work, "config", "spin_waits.json")
+    seeds, spin, manual = inputs(work, region)
     # regen.sh: SPIN_WAITS="" generates without the spin-wait lowering.
     spin_env = os.environ.get("SPIN_WAITS", spin)
     if force_disasm or not os.path.isfile(j("disasm", "functions.json")):
@@ -66,7 +75,7 @@ def regen(ctx, python, xbe, out, gen_dir, toolkit, work, force_disasm=False, on_
         trace = os.path.join(work, trace)
     stage("recomp", "tools.recomp",
           [xbe, "--all", "--split", "1000", "--disasm-dir", j("disasm"), "--func-id-dir", j("func_id"),
-           "--abi-dir", j("abi"), "--exclude-manual", os.path.join(work, "src", "game", "recomp", "recomp_manual.c")]
+           "--abi-dir", j("abi"), "--exclude-manual", manual]
           + (["--spin-waits", spin_env] if spin_env and os.path.isfile(spin_env) else [])
           + (["--trace-functions", trace] if trace else [])
           + ["--gen-dir", gen_dir, "-o", j("recomp")], log_to=j("recomp.log"))

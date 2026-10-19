@@ -67,6 +67,7 @@ extern void xbox_InputPanicStop(int wait_ms);
 #include "kernel.h"
 #include "xbox_memory_layout.h"
 #include "usb/ohci.h"
+#include "region.h"                   /* BO3_VA: NTSC-U or PAL addresses */
 #include "controls.h"                 /* input.control_scheme (BO-106) */
 #include "install.h"                  /* the data root, --install, --version (BO-103) */
 #include "fatal.h"                    /* a start-up failure the player sees */
@@ -460,7 +461,7 @@ static int bo3_voice_tag(uint32_t *out, int max)
         if ((a & 0xFFFu) == 0 && i && a >= 0x04000000u)
             break;
         v = *(const uint32_t *)(mem + a);
-        if (v < 0x00011010u || v >= 0x002CC200u)
+        if (v < 0x00011010u || v >= BO3_VA(0x002CC200u, 0x002CC500u))  /* region: not an address, a code range for a stack scan */
             continue;
         /* call rel32, or an indirect call (FF /2) of 2, 3 or 6 bytes. */
         if (mem[v - 5] == 0xE8 ||
@@ -488,7 +489,7 @@ static void print_guest_stack(void)
     fprintf(stderr, "\n  guest stack return candidates:");
     for (i = 0; i < 256 && shown < 12; i++) {
         uint32_t v = sp[i];
-        if (v >= 0x00011000u && v < 0x00400000u) {
+        if (v >= 0x00011000u && v < 0x00400000u) {  /* region: not an address, a code range for a stack scan */
             fprintf(stderr, " %08X", v);
             shown++;
         }
@@ -643,7 +644,7 @@ static int hm_ok(uint32_t p)
 
 static void hud_mon_flip(uint32_t flip)
 {
-    static const uint32_t scenes[4] = { 0x54F914, 0x54F984, 0x557A20, 0x45BAD0 };
+    static const uint32_t scenes[4] = { BO3_VA(0x54F914, 0x54FC34), BO3_VA(0x54F984, 0x54FCA4), BO3_VA(0x557A20, 0x557D40), BO3_VA(0x45BAD0, 0x45BDF0) };
     static double last_x0 = -1.0, last_x1 = -1.0, last_aspect = -1.0;
     static int last_fix = -1;
     const double eps = 0.5;
@@ -741,7 +742,7 @@ static void hud_mon_flip(uint32_t flip)
  * connected pad: the port, wButtons and the eight analog bytes (A B X Y
  * Black White, LT, RT). tools/headless/reverse_scene.sh asserts on it. Off
  * unless set. */
-#define DL_PADS   0x004AE20Cu           /* the pad manager (sub_00021A50's edi) */
+#define DL_PADS   BO3_VA(0x004AE20Cu, 0x004AE52Cu)           /* the pad manager (sub_00021A50's edi) */
 static FILE *s_dl_f;
 static volatile uint32_t s_uw_flips;    /* the title's flips (uw_flip, below) */
 
@@ -831,17 +832,17 @@ static void pace_log(uint32_t flip)
 
     if (!s_pl_f || !m)
         return;
-    stage = HD_M32(0x4D5370);
+    stage = HD_M32(BO3_VA(0x4D5370, 0x4D5690));
     fprintf(s_pl_f, "P %u t %.3f req %u cur %u mode %u/%u steps %d gs %u"
             " wt %u slow %u run %u crash %u%u st %u obj %08X gt %u ft %.5f"
             " pl %u mu %u/%u\n",
-            flip, pace_ms(), m[0x4D538D], m[0x4D538E], HD_M32(0x4D5390),
-            HD_M32(0x4D5394), (int)HD_M32(0x4D53AC), HD_M32(0x4A1EB4),
-            HD_M32(0x60EA0C), HD_M32(0x60EA18), m[0x60EA28],
-            m[0x73BACA], m[0x73BACA + 0x27E0], HD_M32(0x4D53B4),
+            flip, pace_ms(), m[BO3_VA(0x4D538D, 0x4D56AD)], m[BO3_VA(0x4D538E, 0x4D56AE)], HD_M32(BO3_VA(0x4D5390, 0x4D56B0)),
+            HD_M32(BO3_VA(0x4D5394, 0x4D56B4)), (int)HD_M32(BO3_VA(0x4D53AC, 0x4D56CC)), HD_M32(BO3_VA(0x4A1EB4, 0x4A21D4)),
+            HD_M32(BO3_VA(0x60EA0C, 0x60ED1C)), HD_M32(BO3_VA(0x60EA18, 0x60ED28)), m[BO3_VA(0x60EA28, 0x60ED38)],
+            m[BO3_VA(0x73BACA, 0x73BDDA)], m[BO3_VA(0x73BACA, 0x73BDDA) + 0x27E0], HD_M32(BO3_VA(0x4D53B4, 0x4D56D4)),
             (stage >= 0x10000u && stage < 0x08000000u) ? HD_M32(stage + 0x1B8) : 0,
-            HD_M32(0x4AE1EC), HD_MF(0x4D53B0),
-            HD_M32(0x73A1C0), HD_M32(0x4115E8 + 0x5F4), HD_M32(0x4115E8 + 0x5F8));
+            HD_M32(BO3_VA(0x4AE1EC, 0x4AE50C)), HD_MF(BO3_VA(0x4D53B0, 0x4D56D0)),
+            HD_M32(BO3_VA(0x73A1C0, 0x73A4D0)), HD_M32(BO3_VA(0x4115E8, 0x411918) + 0x5F4), HD_M32(BO3_VA(0x4115E8, 0x411918) + 0x5F8));
 }
 
 static void pace_log_start(void)
@@ -956,7 +957,7 @@ static void scenery_props_dump(void)
     uint32_t trk, tab;
     int n, i;
 
-    if (!g_xbox_mem_offset || !(trk = HD_M32(0x7397B4)))
+    if (!g_xbox_mem_offset || !(trk = HD_M32(BO3_VA(0x7397B4, 0x739AC4))))
         return;
     n = *(const int16_t *)((uintptr_t)g_xbox_mem_offset + trk + 0x34);
     tab = HD_M32(trk + 0x38);
@@ -1034,11 +1035,11 @@ static void fx_at_flip(uint32_t flip)
             fprintf(stderr, "BO3_FX_AT: flip %u, graphics.vehicle_detail = %s"
                     " (x%.0f; title's distances %.0f %.0f %.0f / %.0f %.0f)\n",
                     flip, k[v], vehicle_lod_scale(),
-                    g_xbox_mem_offset ? HD_MF(0x4D61D8) : 0.0f,
-                    g_xbox_mem_offset ? HD_MF(0x4D61DC) : 0.0f,
-                    g_xbox_mem_offset ? HD_MF(0x4D61E0) : 0.0f,
-                    g_xbox_mem_offset ? HD_MF(0x4D61E4) : 0.0f,
-                    g_xbox_mem_offset ? HD_MF(0x4D61E8) : 0.0f);
+                    g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D61D8, 0x4D64F8)) : 0.0f,
+                    g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D61DC, 0x4D64FC)) : 0.0f,
+                    g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D61E0, 0x4D6500)) : 0.0f,
+                    g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D61E4, 0x4D6504)) : 0.0f,
+                    g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D61E8, 0x4D6508)) : 0.0f);
             continue;
         }
         if (!strcmp(what, "sdetail")) {
@@ -1078,9 +1079,9 @@ static void fx_at_flip(uint32_t flip)
         fprintf(stderr, "BO3_FX_AT: flip %u, %s = %g (bloom threshold %.3f"
                 " intensity %.3f, blur strength %.3f)\n", flip,
                 blur ? "graphics.motion_blur" : "graphics.bloom", dv,
-                g_xbox_mem_offset ? HD_MF(0x7397C0) : 0.0f,
-                g_xbox_mem_offset ? HD_MF(0x7397C4) : 0.0f,
-                g_xbox_mem_offset ? HD_MF(0x4D6340 + 0x58) : 0.0f);
+                g_xbox_mem_offset ? HD_MF(BO3_VA(0x7397C0, 0x739AD0)) : 0.0f,
+                g_xbox_mem_offset ? HD_MF(BO3_VA(0x7397C4, 0x739AD4)) : 0.0f,
+                g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D6340, 0x4D6660) + 0x58) : 0.0f);
     }
     fclose(f);
 }
@@ -1128,13 +1129,13 @@ static void hud_dump_frames(FILE *f, uint32_t fr, int depth)
 
 static void hud_dump_scenes(FILE *f)
 {
-    static const uint32_t scenes[4] = { 0x54F914, 0x54F984, 0x557A20, 0x45BAD0 };
+    static const uint32_t scenes[4] = { BO3_VA(0x54F914, 0x54FC34), BO3_VA(0x54F984, 0x54FCA4), BO3_VA(0x557A20, 0x557D40), BO3_VA(0x45BAD0, 0x45BDF0) };
     int s;
 
     fprintf(f, "rect0 %.2f %.2f %.2f %.2f rect1 %.2f %.2f %.2f %.2f nplayers %u\n",
-            HD_MF(0x54F948), HD_MF(0x54F94C), HD_MF(0x54F950), HD_MF(0x54F954),
-            HD_MF(0x54F9B8), HD_MF(0x54F9BC), HD_MF(0x54F9C0), HD_MF(0x54F9C4),
-            HD_M32(0x54FA70));
+            HD_MF(BO3_VA(0x54F948, 0x54FC68)), HD_MF(BO3_VA(0x54F94C, 0x54FC6C)), HD_MF(BO3_VA(0x54F950, 0x54FC70)), HD_MF(BO3_VA(0x54F954, 0x54FC74)),
+            HD_MF(BO3_VA(0x54F9B8, 0x54FCD8)), HD_MF(BO3_VA(0x54F9BC, 0x54FCDC)), HD_MF(BO3_VA(0x54F9C0, 0x54FCE0)), HD_MF(BO3_VA(0x54F9C4, 0x54FCE4)),
+            HD_M32(BO3_VA(0x54FA70, 0x54FD90)));
     for (s = 0; s < 4; s++) {
         uint32_t sc = scenes[s], root = HD_M32(sc + 0x14), nl = HD_M32(sc + 0x30);
         uint32_t la = HD_M32(sc + 0x2C), l;
@@ -1733,8 +1734,13 @@ static const char *s_save_dir = BO3_SAVE_DIR;
 static void host_fatal(const char *what, const char *todo)
 {
 #if defined(__ANDROID__)
+#if defined(BO3_REGION_PAL) && BO3_REGION_PAL
+    const char *log = "takedawn.log in the app's files folder"
+                      " (Android/data/io.github.xenophobentx.takedawn.pal/files)";
+#else
     const char *log = "takedawn.log in the app's files folder"
                       " (Android/data/io.github.xenophobentx.takedawn/files)";
+#endif
 #else
     char log[1200];
 
@@ -1916,7 +1922,7 @@ static int host_main(void)
      * fence as an honest acknowledgement of everything submitted; the chain
      * is re-read and bounds-checked on every poll, so registering before the
      * device exists is harmless. */
-    xbox_Nv2aMirrorFence(0x0035FB48u, 0x2Cu, 0x30u);
+    xbox_Nv2aMirrorFence(BO3_VA(0x0035FB48u, 0x0035FE48u), 0x2Cu, 0x30u);
 
     /* The vblank count the XMV player paces on. sub_0034E0A0 hands back
      * [device+0x1DE8], which only D3D's vblank handler (sub_00356DA0, inc at
@@ -1930,7 +1936,7 @@ static int host_main(void)
      * it run at 60 + flips per second, so it is registered only where no
      * vblank is delivered. */
 #if !defined(BO3_FORK_RUNTIME)
-    xbox_Nv2aFrameCounter(0x0035FB48u, 0x1DE8u);
+    xbox_Nv2aFrameCounter(BO3_VA(0x0035FB48u, 0x0035FE48u), 0x1DE8u);
 #endif
 
 #if defined(BO3_HAVE_REPORTS)
@@ -1943,7 +1949,11 @@ static int host_main(void)
     xbox_BugReportArm();        /* RECOMP_DEBUG=bug_report=<seconds>[:shot] */
 #endif
 
+#if defined(BO3_REGION_PAL) && BO3_REGION_PAL
+    printf("\nStarting game at entry point 0x001D2B27 (PAL)...\n");
+#else
     printf("\nStarting game at entry point 0x001D2807...\n");
+#endif
     RECOMP_ICALL_FEEDBACK_INIT();
     xbe_entry_point();
 
@@ -2103,7 +2113,7 @@ static void hdr_mark(uint32_t tag)
      * switch marked, so the setting alone never gave the scene its light. */
     if (!nv2a_host_hdr())
         return;
-    dev = HD_M32(0x35FB48);
+    dev = HD_M32(BO3_VA(0x35FB48, 0x35FE48));
     if (!dev)
         return;
     put = HD_M32(dev);
@@ -2137,7 +2147,7 @@ static void uw_flip(void)
      * see BO3_PACE_LOG), for the overlay's frame-time graph: a frame of two
      * steps moves the world twice as far (present_cadence.h, BO-115). */
     if (g_xbox_mem_offset)
-        xbox_PresentCadenceSteps(n, (int)HD_M32(0x4D53AC));
+        xbox_PresentCadenceSteps(n, (int)HD_M32(BO3_VA(0x4D53AC, 0x4D56CC)));
     s_uw_frame = 0.0;
 }
 
@@ -2178,7 +2188,7 @@ static double hud_frame_aspect(void)
 static int uw_fe_owns_picture(void)
 {
     const uint8_t *m = (const uint8_t *)(uintptr_t)g_xbox_mem_offset;
-    uint32_t layers = *(const uint32_t *)(m + 0x557A20u + 0x2Cu);
+    uint32_t layers = *(const uint32_t *)(m + BO3_VA(0x557A20u, 0x557D40u) + 0x2Cu);
     return layers && *(const uint32_t *)(m + layers + 8u) != 0;
 }
 
@@ -2902,10 +2912,15 @@ int main(int argc, char **argv)
      * size and SHA-256, the install manifest's) or none: the overlay keeps
      * its own font. */
     {
-        static const xbox_overlay_bitmap_font global_font = { 0x3b9198, 182, 0x3ba958, 256, 256 };
-        static const xbox_overlay_bitmap_font head_font = { 0x3ca978, 47, 0x3cb058, 128, 256 };
+        static const xbox_overlay_bitmap_font global_font = { 0x3b9198, 182, 0x3ba958, 256, 256 };  /* region: not an address, file offsets in default.xbe */
+        static const xbox_overlay_bitmap_font head_font = { 0x3ca978, 47, 0x3cb058, 128, 256 };  /* region: not an address, file offsets in default.xbe */
+        /* The PAL default.xbe has both fonts at the same file offsets. */
         xbox_OverlaySetGameFonts(s_xbe_path, 4308992ull,
+#if defined(BO3_REGION_PAL) && BO3_REGION_PAL
+                                 "6f7f6b46352749f760d1c41e1c4cae1dbc9b5c5356887976c6db27327136afa2",
+#else
                                  "9f497acd82adb8edfb72cc31aeeb35010b45d32b13a3f1fc6540717ff24d13f9",
+#endif
                                  &global_font, &head_font);
     }
     /* The menu's own pictures, for the overlay's sprites (BO-80): the arrows,
@@ -2917,12 +2932,12 @@ int main(int argc, char **argv)
     {
         static const xbox_overlay_sprite art[XBOX_OVERLAY_ART_COUNT] = {
             { 0x2480, 64, 32, 5 },      /* Arrow */
-            { 0x5fe00, 128, 64, 5 },    /* Buttons */
-            { 0x79700, 32, 16, 5 },     /* dpad */
-            { 0x9d200, 16, 16, 1 },     /* grid (DXT1) */
+            { 0x5fe00, 128, 64, 5 },    /* region: not an address, offset in Global.txd; Buttons */
+            { 0x79700, 32, 16, 5 },     /* region: not an address, offset in Global.txd; dpad */
+            { 0x9d200, 16, 16, 1 },     /* region: not an address, offset in Global.txd; grid (DXT1) */
             { 0x8b80, 128, 128, 5 },    /* big_curve */
-            { 0x5f500, 32, 32, 5 },     /* box_curve */
-            { 0x5f980, 32, 32, 5 },     /* box_curveb */
+            { 0x5f500, 32, 32, 5 },     /* region: not an address, offset in Global.txd; box_curve */
+            { 0x5f980, 32, 32, 5 },     /* region: not an address, offset in Global.txd; box_curveb */
             { 0xc80, 16, 16, 5 },       /* 16_curve */
             { 0xe00, 16, 16, 5 },       /* 16_curveb */
         };
@@ -2950,10 +2965,10 @@ int main(int argc, char **argv)
             snprintf(front, sizeof front, "%.*sData/Frontend.txd", slash ? (int)(slash - s_xbe_path + 1) : 0,
                      s_xbe_path);
             xbox_overlay_sprite_file more[XBOX_OVERLAY_ART2_COUNT];
-            more[XBOX_OVERLAY_ART2_VOLUMEBAR] = (xbox_overlay_sprite_file){ txd, 1470080ull, global_sha, 0x155d80, 128, 32, 8 };
-            more[XBOX_OVERLAY_ART2_TICK] = (xbox_overlay_sprite_file){ txd, 1470080ull, global_sha, 0x144b80, 64, 64, 5 };
-            more[XBOX_OVERLAY_ART2_CIRCLE] = (xbox_overlay_sprite_file){ txd, 1470080ull, global_sha, 0x69f00, 32, 32, 5 };
-            more[XBOX_OVERLAY_ART2_PADLOCK] = (xbox_overlay_sprite_file){ front, 7067008ull, front_sha, 0x355c80, 32, 32, 8 };
+            more[XBOX_OVERLAY_ART2_VOLUMEBAR] = (xbox_overlay_sprite_file){ txd, 1470080ull, global_sha, 0x155d80, 128, 32, 8 };  /* region: not an address, offset in the .txd */
+            more[XBOX_OVERLAY_ART2_TICK] = (xbox_overlay_sprite_file){ txd, 1470080ull, global_sha, 0x144b80, 64, 64, 5 };  /* region: not an address, offset in the .txd */
+            more[XBOX_OVERLAY_ART2_CIRCLE] = (xbox_overlay_sprite_file){ txd, 1470080ull, global_sha, 0x69f00, 32, 32, 5 };  /* region: not an address, offset in the .txd */
+            more[XBOX_OVERLAY_ART2_PADLOCK] = (xbox_overlay_sprite_file){ front, 7067008ull, front_sha, 0x355c80, 32, 32, 8 };  /* region: not an address, offset in the .txd */
             xbox_OverlaySetGameArtMore(more);
         }
         xbox_OverlaySetGameArt(txd, 1470080ull,
@@ -2981,9 +2996,9 @@ int main(int argc, char **argv)
         const int dl = slash ? (int)(slash - s_xbe_path + 1) : 0;
         snprintf(fe, sizeof fe, "%.*ssound/Fe.awd", dl, s_xbe_path);
         snprintf(gen, sizeof gen, "%.*ssound/Generic.awd", dl, s_xbe_path);
-        const xbox_overlay_sound vertical = { fe, 3180544ull, fe_sha, 0x430a0, 15912, 32000, -15.5f };
-        const xbox_overlay_sound select = { gen, 1681408ull, gen_sha, 0x175d00, 29376, 22050, -16.8f };
-        const xbox_overlay_sound back = { fe, 3180544ull, fe_sha, 0x7d030, 35584, 32000, -22.8f };
+        const xbox_overlay_sound vertical = { fe, 3180544ull, fe_sha, 0x430a0, 15912, 32000, -15.5f };  /* region: not an address, offset in the .awd */
+        const xbox_overlay_sound select = { gen, 1681408ull, gen_sha, 0x175d00, 29376, 22050, -16.8f };  /* region: not an address, offset in the .awd */
+        const xbox_overlay_sound back = { fe, 3180544ull, fe_sha, 0x7d030, 35584, 32000, -22.8f };  /* region: not an address, offset in the .awd */
         xbox_overlay_sound cues[XBOX_OVERLAY_SND_COUNT];
         cues[XBOX_OVERLAY_SND_MOVE] = vertical;
         cues[XBOX_OVERLAY_SND_CHANGE] = vertical;

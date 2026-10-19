@@ -22,7 +22,7 @@ JOBS="${JOBS:-4}"
 B=/out/build
 A=/out/AppDir
 
-cmake -S /src/game -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Release -DBO3_RELEASE=ON \
+cmake -S /src/game -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Release -DBO3_RELEASE=ON -DBO3_REGION="${BO3_REGION:-NTSC-U}" \
     -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
     -DXBOXRECOMP_DIR=/src/toolkit -DBO3_BIN_DIR="$B/bin" \
     -DSDL2_DIR=/sdl/lib/cmake/SDL2 -DSDL3_DIR=/sdl/lib/cmake/SDL3 \

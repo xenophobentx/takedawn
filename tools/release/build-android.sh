@@ -110,7 +110,7 @@ export XBOXRECOMP_DIR="\$PWD/../xboxrecomp" BUILD_DIR="\$PWD/../../build" SIGN=0
 export TAKEDAWN_ANDROID_BUILD="${TAKEDAWN_ANDROID_BUILD:-0}"
 $LICENV
 tools/android/fetch-deps.sh > ../../fetch-deps.log 2>&1 || { tail -20 ../../fetch-deps.log; exit 1; }
-tools/android/build-apk.sh -DBO3_RELEASE=ON \${TAKEDAWN_PYTHON:+-DBO3_GLYPHS_PYTHON=\$TAKEDAWN_PYTHON} > ../../build-apk.log 2>&1 || { grep -n "error" ../../build-apk.log | head -20; tail -5 ../../build-apk.log; exit 1; }
+tools/android/build-apk.sh -DBO3_RELEASE=ON -DBO3_REGION=$BO3_REGION \${TAKEDAWN_PYTHON:+-DBO3_GLYPHS_PYTHON=\$TAKEDAWN_PYTHON} > ../../build-apk.log 2>&1 || { grep -n "error" ../../build-apk.log | head -20; tail -5 ../../build-apk.log; exit 1; }
 grep -a -m1 "regen key" ../../build-apk.log || true
 grep -a "versionCode\|with Mesa\|licence files" ../../build-apk.log || true
 TDIR=turnip-a725; [ "\${BO3_ANDROID_TURNIP:-1}" = mesa ] && TDIR=turnip
@@ -128,11 +128,11 @@ rm -f "$log"
 if [ "$STAMPED" = 1 ]; then
     [ "$rkey" = "$GEN_KEY" ] || die "the build's regen key is '$rkey', this checkout's is '$GEN_KEY'"
 fi
-U="$DIST/Takedawn-$VERSION-android-arm64-unsigned.apk"
-scp -q "$H:$D/src/takedawn/out/takedawn-android-arm64-unsigned.apk" "$U"
+U="$DIST/Takedawn-$VERSION$PKG_TAG-android-arm64-unsigned.apk"
+scp -q "$H:$D/src/takedawn/out/takedawn$PKG_TAG-android-arm64-unsigned.apk" "$U"
 [ "$STAMPED" = 0 ] || check_apk_licenses "$U"
 say "unsigned: $U ($(wc -c < "$U" | tr -d ' ') bytes, sha256 $(sha256_of "$U"))"
 say "generated code $GEN_TREE${rkey:+, regen key $rkey}"
 if [ "${1:-}" = "--no-sign" ]; then exit 0; fi
-"$HERE/sign-android.sh" "$U" "$DIST/Takedawn-$VERSION-android-arm64.apk"
-[ "$STAMPED" = 0 ] || check_apk_licenses "$DIST/Takedawn-$VERSION-android-arm64.apk"
+"$HERE/sign-android.sh" "$U" "$DIST/Takedawn-$VERSION$PKG_TAG-android-arm64.apk"
+[ "$STAMPED" = 0 ] || check_apk_licenses "$DIST/Takedawn-$VERSION$PKG_TAG-android-arm64.apk"

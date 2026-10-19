@@ -54,7 +54,7 @@ done
 "${TAKEDAWN_PYTHON:-python3}" "$REPO/tools/release/make_ico.py" "$B/takedawn.ico" "${pngs[@]}"
 
 say "configuring (x86_64-w64-mingw32, SDL2 + Vulkan)"
-cmake -S "$REPO" -B "$B/build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DBO3_RELEASE=ON \
+cmake -S "$REPO" -B "$B/build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DBO3_RELEASE=ON -DBO3_REGION="$BO3_REGION" \
     -DCMAKE_TOOLCHAIN_FILE="$REPO/cmake/llvm-mingw-x86_64.cmake" -DLLVM_MINGW_ROOT="$D/llvm-mingw" \
     -DXBOXRECOMP_DIR="$TOOLKIT" -DBO3_BIN_DIR="$B/bin" -DBO3_WIN_ICON="$B/takedawn.ico" \
     -DCMAKE_PREFIX_PATH="$D/SDL2/x86_64-w64-mingw32;$D/glslang" \
@@ -72,7 +72,7 @@ rm -rf "$PKG"; mkdir -p "$PKG"
 cp "$B/bin/Takedawn.exe" "$PKG/"
 cp "$D/SDL2/x86_64-w64-mingw32/bin/SDL2.dll" "$PKG/"
 copy_licenses "$PKG/licenses"
-sed -e "s/@VERSION@/$VERSION/g" "$REPO/tools/release/windows/README.txt" | sed 's/$/\r/' > "$PKG/README.txt"
+sed -e "s/@VERSION@/$VERSION/g" -e "s/@DISC@/$DISC_NAME/g" "$REPO/tools/release/windows/README.txt" | sed 's/$/\r/' > "$PKG/README.txt"
 HAVE_SETUP=no
 if [ "$WITH_SETUP" = 1 ]; then
     # The setup window, cross-built against the pinned qt.io kit for llvm-mingw
@@ -85,7 +85,7 @@ if [ "$WITH_SETUP" = 1 ]; then
     icon_py=(); [ -n "${TAKEDAWN_PYTHON:-}" ] && icon_py=(-DTAKEDAWN_ICON_PYTHON="$TAKEDAWN_PYTHON")
     LLVM_MINGW="$D/llvm-mingw" cmake -S "$REPO/tools/install/gui" -B "$B/setup" -G Ninja -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_TOOLCHAIN_FILE="$REPO/tools/install/gui/packaging/windows-toolchain.cmake" \
-        -DCMAKE_PREFIX_PATH="$QTW" -DQT_HOST_PATH="$QTH" -DTAKEDAWN_ICO="$B/takedawn.ico" \
+        -DCMAKE_PREFIX_PATH="$QTW" -DQT_HOST_PATH="$QTH" -DTAKEDAWN_ICO="$B/takedawn.ico" -DTAKEDAWN_REGION="$BO3_REGION" \
         ${icon_py[@]+"${icon_py[@]}"} > "$B/setup-configure.log" 2>&1 \
         || { tail -20 "$B/setup-configure.log" >&2; die "setup window: configure failed"; }
     LLVM_MINGW="$D/llvm-mingw" nice -n "$NICE" cmake --build "$B/setup" --target takedawn-setup -j"$JOBS" \
@@ -132,12 +132,12 @@ imports="$(printf '%s\n' "$pe" | sed -n 's/^ *DLL Name: //p' | tr 'A-Z' 'a-z' | 
 bad="$(printf '%s\n' "$imports" | grep -v -E '^(sdl2|vulkan-1|kernel32|user32|gdi32|dbghelp|advapi32|shell32|ole32|oleaut32|winmm|ws2_32|bcrypt|ntdll|dxgi|version|imm32|setupapi|shlwapi|psapi|winhttp|api-ms-win-crt-[a-z0-9-]+)\.dll$' || true)"
 [ -z "$bad" ] || die "Takedawn.exe imports DLLs the package does not carry: $bad"
 case "$pe" in *"(Windows GUI)"*) ;; *) die "Takedawn.exe is not a window program" ;; esac
-say "program folder: $(du -sh "$PKG" | cut -f1), Takedawn.exe $(( $(stat -f %z "$PKG/Takedawn.exe" 2>/dev/null || stat -c %s "$PKG/Takedawn.exe") / 1024 / 1024 )) MB (setup window: $HAVE_SETUP)"
+say "program folder: $(du -sh "$PKG" | cut -f1), Takedawn.exe $(( $(stat -c %s "$PKG/Takedawn.exe" 2>/dev/null || stat -f %z "$PKG/Takedawn.exe") / 1024 / 1024 )) MB (setup window: $HAVE_SETUP)"
 
 HOST="${TAKEDAWN_WIN_HOST:-}"
 if [ "$SETUP" = 0 ] || [ -z "$HOST" ]; then
     say "NOT DONE: the setup exe. Compile tools/release/windows/takedawn.iss with Inno Setup $INNOSETUP_VERSION on Windows:"
-    say "  ISCC.exe /DPackage=<copy of $PKG> /DVersion=$VERSION /DIcon=<copy of $B/takedawn.ico> takedawn.iss"
+    say "  ISCC.exe /DPackage=<copy of $PKG> /DVersion=$VERSION /DIcon=<copy of $B/takedawn.ico>$([ "$BO3_REGION" = PAL ] && printf ' /DRegion=PAL') takedawn.iss"
     say "  (set TAKEDAWN_WIN_HOST and TAKEDAWN_WIN_DIR to have this script do it over ssh)"
     exit 0
 fi
@@ -153,12 +153,12 @@ scp -q -r "$PKG" "$B/takedawn.ico" "$REPO/tools/release/windows/takedawn.iss" \
 disc_arg=""
 [ -n "${TAKEDAWN_WIN_DISC:-}" ] && disc_arg="-Disc '$TAKEDAWN_WIN_DISC'"
 say "running on Windows: --version, the setup compile, the payload check"
-ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -File '$WDIR\\remote.ps1' -Dir '$WDIR' -Version $VERSION $disc_arg" \
+ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -File '$WDIR\\remote.ps1' -Dir '$WDIR' -Version $VERSION -Region $BO3_REGION $disc_arg" \
     > "$B/remote.log" 2>&1 || { tail -15 "$B/remote.log" >&2; die "the Windows step failed ($B/remote.log)"; }
 grep -a "^STEP\|^RESULT" "$B/remote.log" | tr -d '\r' | sed 's/^/    /'
 mkdir -p "$DIST"
-EXE="$DIST/Takedawn-$VERSION-windows-x64-setup.exe"
-scp -q "$HOST:$WFWD/out/Takedawn-$VERSION-windows-x64-setup.exe" "$EXE" || die "could not fetch the setup exe"
+EXE="$DIST/Takedawn-$VERSION$PKG_TAG-windows-x64-setup.exe"
+scp -q "$HOST:$WFWD/out/Takedawn-$VERSION$PKG_TAG-windows-x64-setup.exe" "$EXE" || die "could not fetch the setup exe"
 scp -q "$HOST:$WFWD/version.txt" "$B/version.txt"
 scp -q "$HOST:$WFWD/version-installed.txt" "$B/version-installed.txt"
 [ -n "$disc_arg" ] && scp -q "$HOST:$WFWD/check.txt" "$B/check.txt"

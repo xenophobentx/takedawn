@@ -50,9 +50,16 @@
 #ifndef BO3_INSTALL_H
 #define BO3_INSTALL_H
 
-/* What the user sees, and the per-user folders (saves and settings, cache). */
+/* What the user sees, and the per-user folders (saves and settings, cache).
+ * The PAL build keeps folders of its own ("Takedawn PAL"), so that it never
+ * takes the NTSC-U build's game data for its own (another manifest: the
+ * setup would install over it) and both can be installed side by side. */
 #define BO3_APP_NAME "Takedawn"
+#if defined(BO3_REGION_PAL) && BO3_REGION_PAL
+#define BO3_USER_DIR BO3_APP_NAME " PAL"
+#else
 #define BO3_USER_DIR BO3_APP_NAME
+#endif
 
 #define BO3_EXIT_NO_DATA 3
 

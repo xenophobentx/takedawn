@@ -1,9 +1,10 @@
 {
-  "_comment": "The one place the installer learns which disc it supports. The recompiler's seeds (config/seed_functions.json), the spin-wait list and the entry point in src/game/main.c are all addresses in this exact default.xbe, so any other build (PAL, Japan, a patched or trimmed XBE) must be refused, not tried. To support another build, add an entry here AND regenerate/verify against it.",
+  "_comment": "The one place the installer learns which discs it supports. The recompiler's seeds, the spin-wait list, the patch list and the guest addresses in src/game are all addresses in one exact default.xbe, so each build is its own program: ntsc-u-retail is the default, pal-retail the one made with BO3_REGION=PAL (regen.sh, cmake -DBO3_REGION=PAL; config/pal/ and the PAL values of src/game/region.h's BO3_VA, written by tools/region/). Any other build (Japan, a patched or trimmed XBE) must be refused, not tried. To support another build, add an entry here AND regenerate/verify against it.",
   "builds": [
     {
       "id": "ntsc-u-retail",
       "name": "Burnout 3: Takedown, North America (NTSC-U) retail",
+      "bo3_region": "NTSC-U",
       "game_dir": "Burnout 3 Takedown",
       "xbe": {
         "file": "default.xbe",
@@ -13,6 +14,21 @@
         "region": "North America",
         "base": "0x10000",
         "entry": "0x001D2807"
+      }
+    },
+    {
+      "id": "pal-retail",
+      "name": "Burnout 3: Takedown, Europe (PAL) retail",
+      "bo3_region": "PAL",
+      "game_dir": "Burnout 3 Takedown",
+      "xbe": {
+        "file": "default.xbe",
+        "sha256": "6f7f6b46352749f760d1c41e1c4cae1dbc9b5c5356887976c6db27327136afa2",
+        "size": 4308992,
+        "title_id": "0x4541005B",
+        "region": "Europe",
+        "base": "0x10000",
+        "entry": "0x001D2B27"
       }
     }
   ]

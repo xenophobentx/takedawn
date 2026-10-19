@@ -23,6 +23,7 @@
  * script then stands in for a controller (tools/headless/controls_scene.sh),
  * face layout included: its buttons are then positions on the pad.
  */
+#include "region.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,19 +45,19 @@ extern ptrdiff_t g_xbox_mem_offset;
 #define M32(va) (*(uint32_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 
 /* The title's state (docs/controls.md has the evidence for each). */
-#define CTL_PADS        0x004AE20Cu     /* the pad manager's four records */
-#define CTL_MODULE      0x004D5370u     /* the current module ([app + 0x2E1D0], app 0x4A71A0) */
-#define CTL_VT_GAME     0x003A9ACCu     /* the game module's vtable (the front end's: 0x3A9E7C) */
-#define CTL_PAUSED_BY   0x004D537Cu     /* the player who paused, -1 while not paused */
-#define CTL_MODULE_STEP 0x004D53B4u     /* the module switch: 4 and 5 coming up, 6 leaving */
-#define CTL_P1          0x004D0738u     /* player 1's race record; player 2's is CTL_P_SIZE on */
+#define CTL_PADS        BO3_VA(0x004AE20Cu, 0x004AE52Cu)     /* the pad manager's four records */
+#define CTL_MODULE      BO3_VA(0x004D5370u, 0x004D5690u)     /* the current module ([app + 0x2E1D0], app 0x4A71A0) */
+#define CTL_VT_GAME     BO3_VA(0x003A9ACCu, 0x003AA078u)     /* the game module's vtable (the front end's: 0x3A9E7C) */
+#define CTL_PAUSED_BY   BO3_VA(0x004D537Cu, 0x004D569Cu)     /* the player who paused, -1 while not paused */
+#define CTL_MODULE_STEP BO3_VA(0x004D53B4u, 0x004D56D4u)     /* the module switch: 4 and 5 coming up, 6 leaving */
+#define CTL_P1          BO3_VA(0x004D0738u, 0x004D0A58u)     /* player 1's race record; player 2's is CTL_P_SIZE on */
 #define CTL_P_SIZE      0x0C50u
 #define CTL_P_RESULTS   0x00u           /* byte: the event is over for the player, results up */
 #define CTL_P_STATE     0x08u           /* the camera: 4 chase, 0x40 crash, 0x400 fly-by (logged only) */
 #define CTL_P_INTRO     0x2Fu           /* byte: a crash event's fly-by or captions are up */
-#define CTL_PHASE       0x0073B51Cu     /* player 1's event: 1 before the GO, 2 in play, 3 finished */
-#define CTL_COUNTDOWN   0x0073B520u     /* float: 0, then -1, until the countdown begins; then its length */
-#define CTL_NO_PAUSE    0x00752D33u     /* byte: the title takes no pause now */
+#define CTL_PHASE       BO3_VA(0x0073B51Cu, 0x0073B82Cu)     /* player 1's event: 1 before the GO, 2 in play, 3 finished */
+#define CTL_COUNTDOWN   BO3_VA(0x0073B520u, 0x0073B830u)     /* float: 0, then -1, until the countdown begins; then its length */
+#define CTL_NO_PAUSE    BO3_VA(0x00752D33u, 0x00753043u)     /* byte: the title takes no pause now */
 
 static bo3_ctl_port s_port[4];
 static int s_scripted_too;              /* BO3_CTL_SCRIPTED */
@@ -99,11 +100,11 @@ static int ctl_driving(void)
 static void ctl_log_frame(void)
 {
     static const struct { uint32_t va; const char *name; } w[] = {
-        { CTL_MODULE, "module" }, { 0x004D536Cu, "time_stopped" }, { CTL_PAUSED_BY, "paused_by" },
-        { 0x004D538Cu, "4D538C" }, { 0x004D5390u, "4D5390" }, { CTL_MODULE_STEP, "module_step" },
+        { CTL_MODULE, "module" }, { BO3_VA(0x004D536Cu, 0x004D568Cu), "time_stopped" }, { CTL_PAUSED_BY, "paused_by" },
+        { BO3_VA(0x004D538Cu, 0x004D56ACu), "4D538C" }, { BO3_VA(0x004D5390u, 0x004D56B0u), "4D5390" }, { CTL_MODULE_STEP, "module_step" },
         { CTL_P1 + CTL_P_RESULTS, "p1_results" }, { CTL_P1 + CTL_P_STATE, "p1_state" },
         { CTL_P1 + 0x2Cu, "p1_intro_word" }, { CTL_PHASE, "p1_phase" },
-        { CTL_COUNTDOWN, "p1_countdown" }, { 0x00752D30u, "752D30" },
+        { CTL_COUNTDOWN, "p1_countdown" }, { BO3_VA(0x00752D30u, 0x00753040u), "752D30" },
         { CTL_PHASE + 0x27E0u, "p2_phase" },
     };
     enum { N = sizeof w / sizeof w[0] };

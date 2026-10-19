@@ -383,10 +383,22 @@ def regen_key(ctx, xbe_sha):
     files = [f for f in files if any(("/" + d + "/") in f for d in
                                      ("xbe_parser", "disasm", "func_id", "abi_analysis", "recomp"))]
     files += [os.path.join(ctx.work, "regen.sh"), os.path.join(HERE, "regen.py")]
-    cfg = os.path.join(ctx.work, "config")
-    files += [os.path.join(cfg, n) for n in ("seed_functions.json", "spin_waits.json") if os.path.exists(os.path.join(cfg, n))]
-    files += [os.path.join(ctx.work, "src", "game", "recomp", "recomp_manual.c")]
+    seeds, spin, manual = regen.inputs(ctx.work, region_of(ctx))
+    files += [f for f in (seeds, spin) if os.path.exists(f)]
+    files += [manual]
     return xbe_sha + ":" + hash_files(files)
+
+
+def region_of(ctx):
+    """The disc's region (supported.json bo3_region), from the installed
+    default.xbe: what regen and the build are made for."""
+    xbe = os.path.join(ctx.game_dir, "default.xbe")
+    if os.path.isfile(xbe):
+        sha = xbe_mod.sha256_file(xbe)
+        for b in disc.load_supported():
+            if b["xbe"]["sha256"] == sha:
+                return b.get("bo3_region", "NTSC-U")
+    return "NTSC-U"
 
 
 REGEN_STAGES = {"xbe_parser": 0.0, "disasm": 0.03, "func_id": 0.45, "abi_analysis": 0.55, "recomp": 0.65}
@@ -409,7 +421,7 @@ def step_regen(ctx):
     # a changed key means inputs changed, so redo it from the XBE.
     regen.regen(ctx, py, xbe_path, out_dir, ctx.gen_dir, ctx.toolkit, ctx.work,
                 force_disasm=os.path.isdir(os.path.join(out_dir, "disasm")), on_stage=stage,
-                site=getattr(ctx, "py_site", None))
+                site=getattr(ctx, "py_site", None), region=region_of(ctx))
     gen = os.path.isdir(ctx.gen_dir) and [x for x in os.listdir(ctx.gen_dir) if x.startswith("recomp_")]
     if not gen:
         raise StepError("regen-failed", "the recompiler finished but produced no code in " + ctx.gen_dir)
@@ -422,6 +434,7 @@ NINJA_PROGRESS = re.compile(r"^\[(\d+)/(\d+)\]")
 
 
 def step_build(ctx):
+    ctx.region = region_of(ctx)         # -DBO3_REGION for the disc's build (docs/pal.md)
     if ctx.win:
         return build_win(ctx)
     if not ctx.mac:
@@ -432,7 +445,8 @@ def step_build(ctx):
         libs = ctx.libs
     os.makedirs(ctx.build_dir, exist_ok=True)
     cfg = ["cmake", "-S", ctx.work, "-B", ctx.build_dir, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
-           "-DXBOXRECOMP_DIR=" + ctx.toolkit, "-DBO3_BIN_DIR=" + ctx.bin_dir]
+           "-DXBOXRECOMP_DIR=" + ctx.toolkit, "-DBO3_BIN_DIR=" + ctx.bin_dir,
+           "-DBO3_REGION=" + ctx.region]
     if libs.get("openssl"):
         cfg.append("-DOPENSSL_ROOT_DIR=" + libs["openssl"])
     if libs.get("sdl2"):

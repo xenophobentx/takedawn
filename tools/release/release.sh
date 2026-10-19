@@ -88,7 +88,7 @@ if wants macos; then
 fi
 if wants windows; then
     if step windows build-windows "$T/build-windows.sh"; then
-        if [ -f "$DIST/Takedawn-$VERSION-windows-x64-setup.exe" ] && ! grep -aq "^==> NOT DONE" "$LOGS/build-windows.log"; then
+        if [ -f "$DIST/Takedawn-$VERSION$PKG_TAG-windows-x64-setup.exe" ] && ! grep -aq "^==> NOT DONE" "$LOGS/build-windows.log"; then
             DONE+=(windows)
             [ -n "${TAKEDAWN_WIN_DISC:-}" ] || NOTRUN+=("windows: --install --check (TAKEDAWN_WIN_DISC not set)")
             NOTRUN+=("windows: the real setup exe was compiled, not run (a registry-free variant was installed and compared); no game start; the game's hand-over to the setup window (CreateProcess) was not run")
@@ -156,7 +156,7 @@ done
 
 # ── the APK carries its licence texts ────────────────────────────────
 case " ${DONE[*]:-} " in *" android "*)
-    apk="$DIST/Takedawn-$VERSION-android-arm64.apk"
+    apk="$DIST/Takedawn-$VERSION$PKG_TAG-android-arm64.apk"
     if ( check_apk_licenses "$apk" ); then :; else FAILED+=("android: $(basename "$apk") has no licence texts in assets/licenses"); fi ;;
 esac
 
@@ -172,7 +172,7 @@ esac
     echo "regen key  $GEN_KEY"
     echo "gen tree   $GEN_TREE ($(stamp_field files) files)"
     echo "patches    $GEN_PATCHES guest patch sites, $(stamp_field spin_waits) spin waits"
-    echo "manifest   $(manifest_id) (NTSC-U retail disc)"
+    echo "manifest   $(manifest_id) ($BUILD_ID disc)"
     echo "signing    none on macOS (ad hoc seal without identity, not notarised), Windows and Linux; the Android APK with the project's key"
     echo
     echo "pins"

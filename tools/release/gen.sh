@@ -36,9 +36,9 @@ fi
 
 XBE="$REPO/Burnout 3 Takedown/default.xbe"
 [ -f "$XBE" ] || die "missing $XBE"
-want_xbe="$(sed -n 's/.*"sha256": *"\([0-9a-f]*\)".*/\1/p' "$REPO/tools/install/supported.json" | head -1)"
+want_xbe="$("${TAKEDAWN_PYTHON:-python3}" -c 'import json,sys; print(next(b["xbe"]["sha256"] for b in json.load(open(sys.argv[1]))["builds"] if b["id"] == sys.argv[2]))' "$REPO/tools/install/supported.json" "$BUILD_ID")"
 [ "$(sha256_of "$XBE")" = "$want_xbe" ] || die "default.xbe is not the supported build ($want_xbe)"
-[ -f "$REPO/config/patches.json" ] || die "config/patches.json is missing"
+[ -f "$CFG/patches.json" ] || die "$CFG/patches.json is missing"
 
 # regen.sh takes its Python from <repo>/.venv; a worktree may borrow one.
 if [ ! -x "$REPO/.venv/bin/python3" ] && [ -n "${TAKEDAWN_REGEN_VENV:-}" ]; then
@@ -52,8 +52,8 @@ say "regen (regen.sh --disasm, patches and spin waits on)"
 start=$(date +%s)
 # The defaults, said out loud: an inherited PATCHES= or SPIN_WAITS= would
 # generate without them.
-( cd "$REPO" && env -u TRACE_FUNCS PATCHES="$REPO/config/patches.json" \
-      SPIN_WAITS="$REPO/config/spin_waits.json" nice -n "$NICE" bash ./regen.sh --disasm )
+( cd "$REPO" && env -u TRACE_FUNCS PATCHES="$CFG/patches.json" \
+      SPIN_WAITS="$CFG/spin_waits.json" nice -n "$NICE" bash ./regen.sh --disasm )
 say "regen took $(( $(date +%s) - start )) s"
 
 report() {  # <report file> <field>: "<field>/<sites listed>"

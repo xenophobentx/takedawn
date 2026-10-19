@@ -11,7 +11,7 @@ First start
 Game data
   Takedawn needs the game's data from your own disc: a disc image
   (.iso / .xiso) or an extracted disc folder of Burnout 3: Takedown,
-  NTSC-U (North America). It checks every file and copies them to
+  @DISC@. It checks every file and copies them to
   %LOCALAPPDATA%\Takedawn\Game. Without the setup window, from a terminal:
 
       Takedawn.exe --install <image-or-folder>

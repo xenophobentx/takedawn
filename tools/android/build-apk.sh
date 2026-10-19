@@ -48,6 +48,19 @@
 # from the player's own disc image (SetupActivity).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
+# The disc: BO3_REGION in the environment or -DBO3_REGION=... among the cmake
+# options (docs/pal.md). The PAL APK is its own app beside the NTSC-U one:
+# package io.github.xenophobentx.takedawn.pal ("Takedawn PAL"), the PAL
+# manifest, out/takedawn-pal-android-arm64*.apk. The Java classes keep their
+# package; only the application's id is renamed.
+REGION="${BO3_REGION:-NTSC-U}"
+for a in "$@"; do case "$a" in -DBO3_REGION=*) REGION="${a#-DBO3_REGION=}" ;; esac; done
+case "$REGION" in
+  NTSC-U) DISC_MANIFEST=ntsc-u-retail; APP_ID=io.github.xenophobentx.takedawn; APP_LABEL=Takedawn; APK_TAG="" ;;
+  PAL)    DISC_MANIFEST=pal-retail; APP_ID=io.github.xenophobentx.takedawn.pal; APP_LABEL="Takedawn PAL"; APK_TAG="-pal" ;;
+  *) echo "BO3_REGION must be NTSC-U or PAL" >&2; exit 1 ;;
+esac
+REGION_CMAKE=(-DBO3_REGION="$REGION")
 SDK="${ANDROID_HOME:-$HOME/android-sdk}"
 NDK="${ANDROID_NDK_HOME:-$(ls -d "$SDK"/ndk/* 2>/dev/null | sort -V | tail -1)}"
 API="${ANDROID_API:-33}"
@@ -90,7 +103,7 @@ cmake -S "$HERE" -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DVulkan_LIBRARY="$SYSROOT/usr/lib/aarch64-linux-android/$API/libvulkan.so" \
   -DBO3_BIN_DIR="$B/lib" \
   ${ADRENO[@]+"${ADRENO[@]}"} \
-  "$@"
+  "${REGION_CMAKE[@]}" "$@"
 cmake --build "$B" --target burnout3 -j"$JOBS"
 
 OUT="$B/apk"
@@ -99,6 +112,11 @@ mkdir -p "$OUT/gen" "$OUT/classes" "$OUT/dex" "$OUT/pack/lib/$ABI" "$HERE/out"
 
 echo "== resources and manifest ($(basename "$BT"), $(basename "$PLATFORM"))"
 "$BT/aapt2" compile --dir "$HERE/android/res" -o "$OUT/res.zip"
+# The app's name for this region, over the one in android/res.
+mkdir -p "$OUT/overlay/values"
+printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="app_name">%s</string>\n    <string name="driver_name">%s: graphics driver</string>\n</resources>\n' \
+  "$APP_LABEL" "$APP_LABEL" > "$OUT/overlay/values/strings.xml"
+"$BT/aapt2" compile --dir "$OUT/overlay" -o "$OUT/overlay.zip"
 VNAME="$(head -1 "$HERE/VERSION" | tr -d '[:space:]')"
 [[ "$VNAME" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.]+)?$ ]] || { echo "VERSION: $VNAME is not major.minor.patch[-pre-release]" >&2; exit 1; }
 VBUILD="${TAKEDAWN_ANDROID_BUILD:-0}"
@@ -112,9 +130,9 @@ VCODE=$(( BASH_REMATCH[1] * 10000000 + BASH_REMATCH[2] * 100000 + BASH_REMATCH[3
 if [ -n "${BASH_REMATCH[4]}" ]; then
     VCODE=$(( VCODE - 900 ))
 fi
-MANIFEST_ID="$(sed -n 's/^# id //p' "$HERE/config/disc/ntsc-u-retail.manifest" | head -1)"
-[ -n "$MANIFEST_ID" ] || { echo "no id line in config/disc/ntsc-u-retail.manifest" >&2; exit 1; }
-echo "   Takedawn $VNAME, versionCode $VCODE, disc manifest $MANIFEST_ID"
+MANIFEST_ID="$(sed -n 's/^# id //p' "$HERE/config/disc/$DISC_MANIFEST.manifest" | head -1)"
+[ -n "$MANIFEST_ID" ] || { echo "no id line in config/disc/$DISC_MANIFEST.manifest" >&2; exit 1; }
+echo "   $APP_LABEL $VNAME ($APP_ID), versionCode $VCODE, disc manifest $MANIFEST_ID"
 mkdir -p "$OUT/gen/io/github/xenophobentx/takedawn"
 cat > "$OUT/gen/io/github/xenophobentx/takedawn/BuildInfo.java" <<JAVA
 package io.github.xenophobentx.takedawn;
@@ -162,6 +180,7 @@ fi
 echo "   $(ls "$AL" | wc -l | tr -d ' ') licence files in assets/licenses"
 
 "$BT/aapt2" link -o "$OUT/base.apk" -I "$JAR" --manifest "$HERE/android/AndroidManifest.xml" \
+  --rename-manifest-package "$APP_ID" --custom-package io.github.xenophobentx.takedawn -R "$OUT/overlay.zip" --auto-add-overlay \
   --java "$OUT/gen" ${DEBUGGABLE:+--debug-mode} --version-code "$VCODE" --version-name "$VNAME" \
   --min-sdk-version "$API" --target-sdk-version "$TARGET_API" -A "$OUT/assets" "$OUT/res.zip"
 
@@ -204,7 +223,7 @@ cp "$OUT/dex/classes.dex" "$OUT/pack/"
 "$BT/zipalign" -f 4 "$OUT/unaligned.apk" "$OUT/aligned.apk"
 
 if [ "${SIGN:-1}" = 0 ]; then
-  APK="$HERE/out/takedawn-android-arm64-unsigned.apk"
+  APK="$HERE/out/takedawn$APK_TAG-android-arm64-unsigned.apk"
   cp "$OUT/aligned.apk" "$APK"
   ls -l "$APK"
   exit 0
@@ -215,6 +234,6 @@ if [ ! -f "$KS" ]; then
   keytool -genkeypair -keystore "$KS" -storepass android -keypass android \
     -alias bo3 -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=burnout3 debug" >/dev/null
 fi
-APK="$HERE/out/takedawn-android-arm64.apk"
+APK="$HERE/out/takedawn$APK_TAG-android-arm64.apk"
 "$BT/apksigner" sign --ks "$KS" --ks-pass pass:android --key-pass pass:android --out "$APK" "$OUT/aligned.apk"
 ls -l "$APK"

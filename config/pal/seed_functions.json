@@ -1,0 +1,50 @@
+[
+ {
+  "start": "0x001D2AB3",
+  "note": "(NTSC-U 0x001D2793) PsCreateSystemThreadEx StartContext1 observed at runtime; decodes as a function body."
+ },
+ {
+  "start": "0x003551A0",
+  "note": "(NTSC-U 0x00354EA0) Indirect-call target observed at runtime; decodes as a function body."
+ },
+ {
+  "start": "0x001B3FA0",
+  "note": "(NTSC-U 0x001B3CA0) Indirect-call target observed at runtime; decodes as a function body."
+ },
+ {
+  "start": "0x00363064",
+  "note": "(NTSC-U 0x00362D64) Indirect-call target observed at runtime; decodes as a function body."
+ },
+ {
+  "start": "0x0036395F",
+  "note": "(NTSC-U 0x0036365F) Indirect-call target observed at runtime; decodes as a function body."
+ },
+ {
+  "start": "0x0021CB40",
+  "note": "(NTSC-U 0x0021C830) PsCreateSystemThreadEx StartContext1 observed at runtime; decodes as a function body."
+ },
+ {
+  "start": "0x00347D99",
+  "note": "(NTSC-U 0x00347A99) Indirect-call target observed at runtime; decodes as a function body."
+ },
+ {
+  "start": "0x00364F40",
+  "note": "(NTSC-U 0x00364C40) XPP XID class driver AddDevice; reached only through the class-driver table at 0x00362AF4, so no static pass finds it. Unresolved, the pad is enumerated and then never attached."
+ },
+ {
+  "start": "0x00364921",
+  "note": "(NTSC-U 0x00364621) XPP XID class driver RemoveDevice; reached only through the class-driver table at 0x00362AF4, so no static pass finds it. Unresolved, the pad is enumerated and then never attached."
+ },
+ {
+  "start": "0x0036A500",
+  "note": "(NTSC-U 0x0036A200) XPP class driver RemoveDevice (table 0x362CF8); reached only through the class-driver table at 0x00362AF4, so no static pass finds it. Unresolved, the pad is enumerated and then never attached."
+ },
+ {
+  "start": "0x0036776F",
+  "note": "(NTSC-U 0x0036746F) XPP class driver AddDevice (table 0x362C10); reached only through the class-driver table at 0x00362AF4, so no static pass finds it. Unresolved, the pad is enumerated and then never attached."
+ },
+ {
+  "start": "0x003644DB",
+  "note": "(NTSC-U 0x003641DB) XPP XID input-report completion callback, set as a transfer completion routine; reached only indirectly. Follows a ret 8, not inside any function."
+ }
+]

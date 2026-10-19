@@ -26,7 +26,7 @@ Steam Deck
 Game data
   Takedawn needs the game's data from your own disc: a disc image
   (.iso / .xiso) or an extracted disc folder of Burnout 3: Takedown,
-  NTSC-U (North America). At the first start a setup window asks for it,
+  @DISC@. At the first start a setup window asks for it,
   checks every file and copies them to ~/.local/share/takedawn/Game.
   From a terminal instead:
 
