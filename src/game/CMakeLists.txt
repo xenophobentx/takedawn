@@ -69,8 +69,17 @@ add_executable(burnout3
 endif()
 
 # Optional mod folders (TAKEDAWN_MODS, docs/mod-folders.md): the Win32 file
-# API on Windows, POSIX (openat, fdopendir) everywhere else.
-target_sources(burnout3 PRIVATE modfs.c)
+# API on Windows, POSIX (openat, fdopendir) everywhere else. A mod's mod.toml
+# is read with the toolkit's TOML reader, which is part of its enhancements
+# library; a build without that library gets the reader's one file.
+target_sources(burnout3 PRIVATE modfs.c modmanifest.c)
+target_include_directories(burnout3 PRIVATE ${XBOXRECOMP_DIR}/src/enhance)
+if(NOT TARGET xbox_enhance)
+    if(NOT EXISTS ${XBOXRECOMP_DIR}/src/enhance/recomp_cfg.c)
+        message(FATAL_ERROR "mod.toml needs the toolkit's TOML reader: ${XBOXRECOMP_DIR}/src/enhance/recomp_cfg.c is missing")
+    endif()
+    target_sources(burnout3 PRIVATE ${XBOXRECOMP_DIR}/src/enhance/recomp_cfg.c)
+endif()
 
 # The shipped shader coverage manifest (BO-208, docs/shader-prebuild.md):
 # graphics/pipelines-<backend>.manifest, compiled in as bytes so that it is

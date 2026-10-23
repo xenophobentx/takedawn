@@ -6,6 +6,7 @@
  * that differ only in case on a volume that folds case, symbolic links on
  * Windows) say SKIP. */
 #include "kernel.h"   /* xbox_PathRedirectHook */
+#include "modfs.h"    /* the installed-mod list */
 
 #include <errno.h>
 #include <stdarg.h>
@@ -27,6 +28,7 @@
 #  define close _close
 #  define fileno _fileno
 #else
+#  include <fcntl.h>
 #  include <limits.h>
 #  include <pthread.h>
 #  include <sys/stat.h>
@@ -38,7 +40,6 @@
 #endif
 
 const char *(*xbox_PathRedirectHook)(const char *xbox_path);
-void bo3_modfs_init(void);
 /* The toolkit's print gate (platform/xr_log.h, compiled into modfs.c): 0 is a
  * release build with diagnostic logging off. This file does not include it,
  * so its own lines are never dropped. */
@@ -68,8 +69,8 @@ static void fit(char *buf, size_t n, const char *fmt, ...)
 /* ---- the folders ---- */
 
 static char s_root[512];
-static char s_made[128][700];   /* made, removed in reverse at the end */
-static int  s_kind[128];        /* 0 file, 1 folder, 2 link (or junction), 3 folder chmod 000 */
+static char s_made[4096][700];  /* made, removed in reverse at the end */
+static int  s_kind[4096];       /* 0 file, 1 folder, 2 link (or junction), 3 folder chmod 000 */
 static int  s_nmade;
 
 static const char *at(const char *rel)
@@ -88,12 +89,16 @@ static const char *at(const char *rel)
     return o;
 }
 
+static void remove_all(void);
+
 static void remember(const char *path, int kind)
 {
-    if (s_nmade < (int)(sizeof s_made / sizeof s_made[0])) {
-        fit(s_made[s_nmade], sizeof s_made[0], "%s", path);
-        s_kind[s_nmade++] = kind;
+    if (s_nmade == (int)(sizeof s_made / sizeof s_made[0])) {
+        fprintf(stderr, "more fixtures than the test can remove: raise s_made\n");
+        exit(2);   /* remove_all (atexit) clears what was recorded */
     }
+    fit(s_made[s_nmade], sizeof s_made[0], "%s", path);
+    s_kind[s_nmade++] = kind;
 }
 
 /* 1 when the folder is there afterwards (made now, or already). */
@@ -332,28 +337,472 @@ static void thread_body(int k)
     }
 }
 
+/* The same mix through installed mods (manifests() sets the folder up). */
+static int s_mod_bad[THREADS];
+
+static void mod_body(int k)
+{
+    for (int i = 0; i < ROUNDS; i++) {
+        const char *want = (i + k) % 3 == 0 ? "car cars" : (i + k) % 3 == 1 ? "loose static" : "id a.mod";
+        const char *guest = (i + k) % 3 == 0 ? "D:\\Data\\cars.bin"
+                          : (i + k) % 3 == 1 ? "D:\\Tracks\\US\\C3_V1\\static.dat" : "D:\\Data\\order.bin";
+        if (strcmp(read_back(guest), want) != 0)
+            s_mod_bad[k]++;
+    }
+}
+
 #if defined(_WIN32)
 static unsigned __stdcall thread_main(void *a) { thread_body((int)(intptr_t)a); return 0; }
+static unsigned __stdcall mod_main(void *a) { mod_body((int)(intptr_t)a); return 0; }
+typedef unsigned (__stdcall *thread_fn)(void *);
 #else
 static void *thread_main(void *a) { thread_body((int)(intptr_t)a); return NULL; }
+static void *mod_main(void *a) { mod_body((int)(intptr_t)a); return NULL; }
+typedef void *(*thread_fn)(void *);
 #endif
 
-static void run_threads(void)
+static void run_threads(thread_fn fn)
 {
 #if defined(_WIN32)
     HANDLE t[THREADS];
     for (int k = 0; k < THREADS; k++)
-        t[k] = (HANDLE)_beginthreadex(NULL, 0, thread_main, (void *)(intptr_t)k, 0, NULL);
+        t[k] = (HANDLE)_beginthreadex(NULL, 0, fn, (void *)(intptr_t)k, 0, NULL);
     WaitForMultipleObjects(THREADS, t, TRUE, INFINITE);
     for (int k = 0; k < THREADS; k++)
         CloseHandle(t[k]);
 #else
     pthread_t t[THREADS];
     for (int k = 0; k < THREADS; k++)
-        pthread_create(&t[k], NULL, thread_main, (void *)(intptr_t)k);
+        pthread_create(&t[k], NULL, fn, (void *)(intptr_t)k);
     for (int k = 0; k < THREADS; k++)
         pthread_join(t[k], NULL);
 #endif
+}
+
+/* ---- installed mods: subfolders with a mod.toml (modfs.h) ---- */
+
+static const bo3_mod *mod_by_folder(const char *sub)
+{
+    for (int i = 0; i < bo3_modfs_mod_count(); i++) {
+        const bo3_mod *m = bo3_modfs_mod(i);
+        size_t fl = strlen(m->folder), sl = strlen(sub);
+        if (fl > sl && !strcmp(m->folder + fl - sl, sub) && (m->folder[fl - sl - 1] == '/' || m->folder[fl - sl - 1] == '\\'))
+            return m;
+    }
+    return NULL;
+}
+
+/* The mod in folder sub was found; usable as expected; problem holds want. */
+static void mod_is(int line, const char *sub, int usable, const char *want)
+{
+    const bo3_mod *m = mod_by_folder(sub);
+    if (m && m->usable == usable && (!want || strstr(m->problem, want)))
+        s_pass++;
+    else {
+        s_fail++;
+        fprintf(stderr, "FAIL line %d: mod %s: %s\n", line, sub, !m ? "not listed" : m->problem[0] ? m->problem : "usable");
+    }
+}
+#define MOD_IS(sub, usable, want) mod_is(__LINE__, sub, usable, want)
+
+#if !defined(_WIN32)
+static int open_fds(void)
+{
+    int n = 0;
+    for (int fd = 0; fd < 1024; fd++)
+        if (fcntl(fd, F_GETFD) != -1)
+            n++;
+    return n;
+}
+#endif
+
+static void manifests(int sensitive)
+{
+    static const char ok_toml[] = "id = \"%s\"\nname = \"%s\"\n";
+    char t[700], list[4096];
+
+    /* A folder with loose files and installed mods (mods/), the way the
+     * Android default folder and a library folder look. */
+    CHECK(make_file("lib/Tracks/US/C3_V1/static.dat", "loose static"), "setup lib loose");
+    CHECK(make_file("lib/Data/loose_only.bin", "loose only"), "setup lib loose 2");
+    fit(t, sizeof t, ok_toml, "car.pack", "Car Pack");
+    CHECK(make_file("lib/carpack/mod.toml", t) && make_file("lib/carpack/files/Tracks/US/C3_V1/static.dat", "car static")
+          && make_file("lib/carpack/files/Data/cars.bin", "car cars"), "setup carpack");
+    CHECK(make_file("lib/full/mod.toml", "id = \"full.meta\"\nname = \"Full\"\nversion = \"2.1.0\"\nauthor = \"A. Author\"\n"
+                                         "description = \"Everything \\u00e9.\"\nhomepage = \"https://example.org\"\n")
+          && make_file("lib/full/files/Data/full.bin", "full"), "setup full");
+    CHECK(make_file("lib/empty/mod.toml", "") && make_file("lib/empty/files/Data/empty.bin", "x"), "setup empty");
+    CHECK(make_file("lib/noid/mod.toml", "name = \"No id\"\n") && make_file("lib/noid/files/Data/noid.bin", "x"), "setup noid");
+    CHECK(make_file("lib/badid/mod.toml", "id = \"Bad/Id\"\nname = \"x\"\n"), "setup badid");
+    CHECK(make_file("lib/dupkey/mod.toml", "id = \"dk\"\nid = \"dk\"\nname = \"x\"\n"), "setup dupkey");
+    CHECK(make_file("lib/multiline/mod.toml", "id = \"\"\"ml\"\"\"\nname = \"x\"\n"), "setup multiline");
+    CHECK(make_file("lib/badutf8/mod.toml", "id = \"u8\"\nname = \"\xC0\xAF\"\n"), "setup badutf8");
+    CHECK(make_file("lib/longname/mod.toml", "id = \"ln\"\nname = \"0123456789012345678901234567890123456789012345678901234567890"
+                                             "12345678901234567890123456789012345678901234567890123456789012345678\"\n"),
+          "setup longname");
+    {
+        static char big[BO3_MANIFEST_MAX_BYTES + 64];
+        int k = sprintf(big, ok_toml, "big", "Big");
+        memset(big + k, '#', sizeof big - (size_t)k - 2);
+        big[sizeof big - 2] = '\n';
+        big[sizeof big - 1] = 0;
+        CHECK(make_file("lib/oversize/mod.toml", big), "setup oversize");
+    }
+    fit(t, sizeof t, ok_toml, "twin", "Twin one");
+    CHECK(make_file("lib/twin1/mod.toml", t) && make_file("lib/twin1/files/Data/twin.bin", "twin1"), "setup twin1");
+    fit(t, sizeof t, ok_toml, "twin", "Twin two");
+    CHECK(make_file("lib/twin2/mod.toml", t) && make_file("lib/twin2/files/Data/twin.bin", "twin2"), "setup twin2");
+    /* Order: by id, not by folder name or listing order. */
+    fit(t, sizeof t, ok_toml, "b.mod", "B");
+    CHECK(make_file("lib/a_first/mod.toml", t) && make_file("lib/a_first/files/Data/order.bin", "id b.mod"), "setup a_first");
+    fit(t, sizeof t, ok_toml, "a.mod", "A");
+    CHECK(make_file("lib/z_last/mod.toml", t) && make_file("lib/z_last/files/Data/order.bin", "id a.mod"), "setup z_last");
+    /* A mod folder named like a disc folder: not part of the loose files. */
+    fit(t, sizeof t, ok_toml, "sound.pack", "Sound");
+    CHECK(make_file("lib/Sound/mod.toml", t) && make_file("lib/Sound/files/Sound/x.wav", "sound mod")
+          && make_file("lib/Sound/y.wav", "inside the mod folder, not files/"), "setup Sound");
+    /* Case: the mod spells the disc's path in its own case. */
+    fit(t, sizeof t, ok_toml, "lower.case", "Lower");
+    CHECK(make_file("lib/lowercase/mod.toml", t) && make_file("lib/lowercase/files/tracks/us/c3_v1/lc.dat", "lower case"),
+          "setup lowercase");
+    /* A subfolder without mod.toml stays loose files; a top-level mod.toml changes nothing. */
+    CHECK(make_file("lib/plain/x.bin", "plain sub"), "setup plain");
+    CHECK(make_file("lib/mod.toml", "id = \"top\"\nname = \"Top\"\n"), "setup top-level mod.toml");
+
+    set_mods(at("lib"));
+    MOD_IS("carpack", 1, NULL);
+    {
+        const bo3_mod *m = mod_by_folder("full");
+        CHECK(m && m->usable && !strcmp(m->manifest.id, "full.meta") && !strcmp(m->manifest.version, "2.1.0")
+              && !strcmp(m->manifest.author, "A. Author") && !strcmp(m->manifest.description, "Everything \xc3\xa9."),
+              "optional metadata kept (unknown key skipped)");
+    }
+    MOD_IS("empty", 0, "empty");
+    MOD_IS("noid", 0, "id is missing");
+    MOD_IS("badid", 0, "id must be");
+    MOD_IS("dupkey", 0, "duplicate key");
+    MOD_IS("multiline", 0, "mod.toml:");
+    MOD_IS("badutf8", 0, "invalid UTF-8");
+    MOD_IS("longname", 0, "name is longer");
+    MOD_IS("oversize", 0, "larger than");
+    MOD_IS("twin1", 0, "is also used by");
+    MOD_IS("twin2", 0, "is also used by");
+    CHECK(!mod_by_folder("plain"), "a subfolder without mod.toml is not a mod");
+    CHECK(!strcmp(read_back("D:\\Data\\twin.bin"), ""), "a shared id: neither copy supplies files");
+    CHECK(!strcmp(read_back("D:\\Data\\empty.bin"), "") && !strcmp(read_back("D:\\Data\\noid.bin"), ""),
+          "an invalid mod supplies no files");
+
+    /* Lookups: loose first, then mods by id; files/ only; the mod folder is
+     * not a loose folder; legacy files and folders unchanged. */
+    CHECK(!strcmp(read_back("D:\\Tracks\\US\\C3_V1\\static.dat"), "loose static"), "loose file wins over a mod's");
+    CHECK(!strcmp(read_back("D:\\Data\\cars.bin"), "car cars"), "a mod's file");
+    CHECK(!strcmp(read_back("D:\\Data\\loose_only.bin"), "loose only"), "loose files still read");
+    CHECK(!strcmp(read_back("D:\\Data\\order.bin"), "id a.mod"), "two mods, same file: the lower id wins");
+    CHECK(!strcmp(read_back("D:\\Sound\\x.wav"), "sound mod"), "a mod named like a disc folder: its files/ is used");
+    CHECK(!strcmp(read_back("D:\\Sound\\y.wav"), ""), "the mod folder itself is not loose files");
+    CHECK(!strcmp(read_back("D:\\carpack\\files\\Data\\cars.bin"), ""), "a mod's folder is not reachable as a disc path");
+    CHECK(!strcmp(read_back("D:\\carpack\\mod.toml"), ""), "mod.toml is never a disc file");
+    CHECK(!strcmp(read_back("D:\\plain\\x.bin"), "plain sub"), "a subfolder without mod.toml stays loose files");
+    CHECK(!strcmp(read_back("D:\\mod.toml"), "id = \"top\"\nname = \"Top\"\n"), "a top-level mod.toml is just a loose file");
+    CHECK(refused("D:\\Data\\..\\Data\\cars.bin") && refused("D:\\carpack\\..\\Data\\cars.bin"), "'..' still refused");
+    CHECK(!strcmp(read_back("D:\\TRACKS\\US\\C3_V1\\LC.DAT"), "lower case"), "a mod's own spelling found without case");
+    {
+        int ids_sorted = 1, prev_usable = 1;
+        for (int i = 1; i < bo3_modfs_mod_count(); i++) {
+            const bo3_mod *a = bo3_modfs_mod(i - 1), *b = bo3_modfs_mod(i);
+            if (a->usable && b->usable && strcmp(a->manifest.id, b->manifest.id) >= 0)
+                ids_sorted = 0;
+            if (!prev_usable && b->usable)
+                ids_sorted = 0;
+            prev_usable = b->usable;
+        }
+        CHECK(ids_sorted && bo3_modfs_mod(0) && bo3_modfs_mod(0)->usable, "list: usable mods by id, then the rest");
+        CHECK(bo3_modfs_mod(-1) == NULL && bo3_modfs_mod(bo3_modfs_mod_count()) == NULL, "out-of-range index: NULL");
+    }
+
+    /* Repeated discovery: the same list every time, nothing left open. */
+    {
+        int same = 1, n0 = bo3_modfs_mod_count();
+        char first[BO3_MODFS_MAX_MODS][BO3_MOD_ID_MAX + 1];
+#if !defined(_WIN32)
+        int fds = open_fds();
+#endif
+        for (int i = 0; i < n0; i++)
+            fit(first[i], sizeof first[0], "%s", bo3_modfs_mod(i)->manifest.id);
+        for (int k = 0; k < 50; k++) {
+            set_mods(at("lib"));
+            if (bo3_modfs_mod_count() != n0)
+                same = 0;
+            for (int i = 0; same && i < n0; i++)
+                if (strcmp(first[i], bo3_modfs_mod(i)->manifest.id))
+                    same = 0;
+        }
+        CHECK(same, "50 discoveries: the same list");
+#if !defined(_WIN32)
+        CHECK(open_fds() == fds, "no descriptor left open (%d before, %d after)", fds, open_fds());
+#endif
+    }
+
+    /* The same folder named twice: once. */
+    set_mods(at("lib"));
+    int mods_once = bo3_modfs_mod_count();
+    fit(list, sizeof list, "%s;%s", at("lib"), at("lib"));
+    set_mods(list);
+    MOD_IS("carpack", 1, NULL);
+    CHECK(refused("D:\\carpack\\mod.toml") && bo3_modfs_mod_count() == mods_once,
+          "the same folder named twice: its mods are not loose files of the second");
+
+    /* Two folders: folder order first, then loose / id inside each. */
+    fit(t, sizeof t, ok_toml, "zz.second", "Second folder");
+    CHECK(make_file("lib2/m/mod.toml", t) && make_file("lib2/m/files/Data/cars.bin", "second folder cars"), "setup lib2");
+    fit(list, sizeof list, "%s;%s", at("lib2"), at("lib"));
+    set_mods(list);
+    CHECK(!strcmp(read_back("D:\\Data\\cars.bin"), "second folder cars"), "the first folder named wins, mods included");
+    CHECK(bo3_modfs_mod(0) && bo3_modfs_mod(0)->root == 0, "list: the first folder's mods first");
+
+    /* Links: a mod folder, its files/ or its mod.toml reached through a link
+     * is not used. */
+#if defined(_WIN32)
+    {
+        char cmd[2048];
+        fit(t, sizeof t, ok_toml, "out.side", "Outside");
+        CHECK(make_file("outmod/mod.toml", t) && make_file("outmod/files/Data/out.bin", "outside mod"), "setup outmod");
+        CHECK(make_dir(at("libj")), "setup libj");
+        fit(cmd, sizeof cmd, "mklink /J \"%s\" \"%s\" >NUL 2>&1", at("libj/jmod"), at("outmod"));
+        if (system(cmd) == 0) {
+            remember(at("libj/jmod"), 2);
+            set_mods(at("libj"));
+            CHECK(!mod_by_folder("jmod") && !strcmp(read_back("D:\\Data\\out.bin"), ""), "a junction as a mod folder: not a mod");
+        } else {
+            SKIP("junction: mklink /J failed");
+        }
+        fit(t, sizeof t, ok_toml, "jf", "Junction files");
+        CHECK(make_file("libj2/jf/mod.toml", t), "setup libj2");
+        fit(cmd, sizeof cmd, "mklink /J \"%s\" \"%s\" >NUL 2>&1", at("libj2/jf/files"), at("outmod/files"));
+        if (system(cmd) == 0) {
+            remember(at("libj2/jf/files"), 2);
+            set_mods(at("libj2"));
+            MOD_IS("jf", 0, "files is a link");
+            CHECK(!strcmp(read_back("D:\\Data\\out.bin"), ""), "files/ through a junction: refused");
+        } else {
+            SKIP("junction: mklink /J failed");
+        }
+        /* The same folder twice by two names (a junction to it): taken once, its
+         * mods not refused as shared ids. */
+        fit(cmd, sizeof cmd, "mklink /J \"%s\" \"%s\" >NUL 2>&1", at("libalias"), at("lib"));
+        if (system(cmd) == 0) {
+            remember(at("libalias"), 2);
+            fit(list, sizeof list, "%s;%s", at("lib"), at("libalias"));
+            set_mods(list);
+            MOD_IS("carpack", 1, NULL);
+            CHECK(!strcmp(read_back("D:\\Data\\cars.bin"), "car cars"), "a folder and a junction to it: mods used once");
+        } else {
+            SKIP("junction: mklink /J failed");
+        }
+        CHECK(make_dir(at("libd")) && make_dir(at("libd/dirtoml")) && make_dir(at("libd/dirtoml/mod.toml")), "setup dirtoml");
+        set_mods(at("libd"));
+        MOD_IS("dirtoml", 0, "not a regular file");
+    }
+#else
+    {
+        fit(t, sizeof t, ok_toml, "out.side", "Outside");
+        CHECK(make_file("outmod/mod.toml", t) && make_file("outmod/files/Data/out.bin", "outside mod"), "setup outmod");
+        CHECK(make_dir(at("libl")) && symlink(at("outmod"), at("libl/lmod")) == 0, "setup a linked mod folder");
+        remember(at("libl/lmod"), 2);
+        set_mods(at("libl"));
+        CHECK(!mod_by_folder("lmod") && !strcmp(read_back("D:\\Data\\out.bin"), ""), "a link as a mod folder: not a mod");
+        fit(t, sizeof t, ok_toml, "lf", "Linked files");
+        CHECK(make_file("libl2/lf/mod.toml", t) && symlink(at("outmod/files"), at("libl2/lf/files")) == 0, "setup linked files/");
+        remember(at("libl2/lf/files"), 2);
+        set_mods(at("libl2"));
+        MOD_IS("lf", 0, "files is a link");
+        CHECK(!strcmp(read_back("D:\\Data\\out.bin"), ""), "files/ through a link: refused");
+        CHECK(symlink(at("lib"), at("libalias")) == 0, "setup alias link");
+        remember(at("libalias"), 2);
+        fit(list, sizeof list, "%s;%s", at("lib"), at("libalias"));
+        set_mods(list);
+        MOD_IS("carpack", 1, NULL);
+        CHECK(!strcmp(read_back("D:\\Data\\cars.bin"), "car cars"), "a folder and a link to it: mods used once");
+        CHECK(make_dir(at("libl3")) && make_dir(at("libl3/lt")) && symlink(at("outmod/mod.toml"), at("libl3/lt/mod.toml")) == 0,
+              "setup linked mod.toml");
+        remember(at("libl3/lt/mod.toml"), 2);
+        CHECK(make_dir(at("libl3/gone")) && symlink(at("nowhere/mod.toml"), at("libl3/gone/mod.toml")) == 0,
+              "setup dangling mod.toml");
+        remember(at("libl3/gone/mod.toml"), 2);
+        CHECK(make_file("libl3/noread/mod.toml", "id = \"nr\"\nname = \"x\"\n") && chmod(at("libl3/noread/mod.toml"), 0) == 0,
+              "setup unreadable mod.toml");
+        set_mods(at("libl3"));
+        MOD_IS("lt", 0, "not a regular file");
+        MOD_IS("gone", 0, "not a regular file");
+        if (geteuid() != 0)
+            MOD_IS("noread", 0, "cannot be read");
+        else
+            SKIP("unreadable mod.toml: running as root");
+        chmod(at("libl3/noread/mod.toml"), 0644);
+    }
+#endif
+
+    /* files/ in other cases: one other spelling is taken; two (Files and
+     * FILES, no files) refuse the mod, without blocking later mods. */
+    fit(t, sizeof t, ok_toml, "case.files", "Case files");
+    CHECK(make_file("libc/a/mod.toml", t) && make_file("libc/a/Files/Data/cf.bin", "Files spelling"), "setup Files");
+    if (sensitive) {
+        fit(t, sizeof t, ok_toml, "two.files", "Two files");
+        CHECK(make_file("libc/b/mod.toml", t) && make_file("libc/b/Files/Data/x.bin", "1")
+              && make_file("libc/b/FILES/Data/x.bin", "2"), "setup Files + FILES");
+        fit(t, sizeof t, ok_toml, "z.later", "Later");
+        CHECK(make_file("libc/z/mod.toml", t) && make_file("libc/z/files/Data/later.bin", "later mod"), "setup later");
+    }
+    set_mods(at("libc"));
+    CHECK(!strcmp(read_back("D:\\Data\\cf.bin"), "Files spelling"), "files/ spelled Files: used");
+    if (sensitive) {
+        MOD_IS("b", 0, "files is spelled twice");
+        CHECK(!strcmp(read_back("D:\\Data\\later.bin"), "later mod"), "a mod with two files/ does not block later mods");
+    } else {
+        SKIP("files/ in two spellings: this volume folds case");
+    }
+
+    /* A mod folder whose path leaves no room below files/: refused, said. */
+    {
+        char sub[400], rel[480];
+        size_t want = MAX_PATH - strlen(at("libp")) - 18;   /* <root>\<sub>\files\ + 12 > the host limit */
+        if (want > 240)
+            want = 240;
+        memset(sub, 'p', want);
+        sub[want] = 0;
+        fit(rel, sizeof rel, "libp/%s/mod.toml", sub);
+        fit(t, sizeof t, ok_toml, "long.path", "Long path");
+        if (make_file(rel, t)) {
+            set_mods(at("libp"));
+            MOD_IS(sub, 0, "too long");
+        } else {
+            SKIP("long mod folder name: cannot be made here");
+        }
+    }
+
+    /* The file list made at the start skips mods without the file; a mod too
+     * deep for the list (a folder 9 levels down) is walked instead, and still
+     * supplies its files. */
+    fit(t, sizeof t, ok_toml, "deep", "Deep");
+    CHECK(make_file("libdeep/deep/mod.toml", t) && make_file("libdeep/deep/files/a/b/c/d/e/f/g/h/i/deep.bin", "deep file")
+          && make_file("libdeep/deep/files/Data/shallow.bin", "shallow"), "setup deep");
+    /* Only mod.toml spelled so makes a mod, on every system; a mod with an
+     * empty files/ supplies nothing. (Its own id, so that a wrongly taken
+     * MOD.TOML fails only its own check.) */
+    fit(t, sizeof t, ok_toml, "upper", "Upper");
+    CHECK(make_file("libdeep/upper/MOD.TOML", t) && make_file("libdeep/upper/x.bin", "upper loose"), "setup MOD.TOML");
+    fit(t, sizeof t, ok_toml, "empty.files", "Empty");
+    CHECK(make_file("libdeep/empty/mod.toml", t) && make_dir(at("libdeep/empty/files")), "setup empty files");
+    fit(t, sizeof t, ok_toml, "deep", "Deep");
+    set_mods(at("libdeep"));
+    CHECK(!mod_by_folder("upper") && !strcmp(read_back("D:\\upper\\x.bin"), "upper loose"),
+          "MOD.TOML: not a manifest, the folder stays loose files");
+    MOD_IS("empty", 1, NULL);
+    CHECK(refused("D:\\Data\\nothing.bin"), "a mod with an empty files/: nothing supplied");
+    CHECK(!strcmp(read_back("D:\\a\\b\\c\\d\\e\\f\\g\\h\\i\\deep.bin"), "deep file")
+          && !strcmp(read_back("D:\\Data\\shallow.bin"), "shallow"), "a mod too deep for the list: walked, files found");
+
+    /* A reason quotes the file: printable ASCII only, one "mod.toml:". */
+    CHECK(make_file("libe/esc/mod.toml", "id = \"x\"\x1b[2J\nname = \"x\"\n"), "setup ESC manifest");
+    set_mods(at("libe"));
+    {
+        const bo3_mod *m = mod_by_folder("esc");
+        CHECK(m && !m->usable && !strchr(m->problem, 0x1b) && strchr(m->problem, '?') && !strstr(m->problem, "mod.toml: mod.toml"),
+              "an ESC byte in the reason is shown as '?': %s", m ? m->problem : "(none)");
+    }
+
+    /* Limits: 64 mods (the smallest folder names), and a folder with more
+     * than 1024 entries is not searched for mods. The mods are made in
+     * reverse name order, so whatever order the system lists them in, the
+     * kept set is decided by name. */
+    {
+        int made = 1;
+        for (int i = BO3_MODFS_MAX_MODS; i >= 0 && made; i--) {
+            char sub[64], id[32];
+            fit(sub, sizeof sub, "many/m%03d/mod.toml", i);
+            fit(id, sizeof id, "m%03d", i);
+            fit(t, sizeof t, ok_toml, id, id);
+            made = make_file(sub, t);
+            fit(sub, sizeof sub, "many/m%03d/files/Tracks/US/own%03d.bin", i, i);
+            made = made && make_file(sub, "own");
+        }
+        CHECK(made, "setup 65 mods");
+        set_mods(at("many"));
+        CHECK(bo3_modfs_mod_count() == BO3_MODFS_MAX_MODS && mod_by_folder("m063") && !mod_by_folder("m064"),
+              "65 mods: the 64 smallest names taken (%d)", bo3_modfs_mod_count());
+        CHECK(!strcmp(read_back("D:\\Tracks\\US\\own063.bin"), "own"), "the 64th mod supplies files");
+        {
+            double t0 = now_us();
+            for (int i = 0; i < 200; i++)
+                ask("D:\\Data\\nothere.bin");
+            double t1 = now_us();
+            for (int i = 0; i < 200; i++)
+                ask("D:\\Tracks\\US\\C3_V1\\nothere.dat");
+            double t2 = now_us();
+            printf("cost: miss, 64 mods, not under any mod's first folder %8.2f us a lookup\n", (t1 - t0) / 200);
+            printf("cost: miss, 64 mods, under every mod's first folder    %8.2f us a lookup\n", (t2 - t1) / 200);
+        }
+        /* The cap counts across folders: the first folder's mods first. */
+        fit(list, sizeof list, "%s;%s", at("lib"), at("many"));
+        set_mods(list);
+        {
+            int in_lib = 0, in_many = 0;
+            for (int i = 0; i < bo3_modfs_mod_count(); i++)
+                *(bo3_modfs_mod(i)->root == 0 ? &in_lib : &in_many) += 1;
+            CHECK(bo3_modfs_mod_count() == BO3_MODFS_MAX_MODS && in_lib > 0 && in_many == BO3_MODFS_MAX_MODS - in_lib
+                  && mod_by_folder("m000") && !mod_by_folder("m063"),
+                  "64 mods across two folders: %d + %d", in_lib, in_many);
+        }
+        made = 1;
+        for (int i = 0; i < 1025 && made; i++) {
+            char f[64];
+            fit(f, sizeof f, "crowd/f%04d", i);
+            made = make_file(f, "x");
+        }
+        fit(t, sizeof t, ok_toml, "crowded", "Crowded");
+        CHECK(made && make_file("crowd/zmod/mod.toml", t) && make_file("crowd/f0000.extra", "x"), "setup crowded folder");
+        set_mods(at("crowd"));
+        CHECK(bo3_modfs_mod_count() == 0 && !strcmp(read_back("D:\\f0001"), "x"),
+              "more than 1024 entries: no mods, loose files still read");
+        made = 1;
+        for (int i = 0; i < 1023 && made; i++) {
+            char f[64];
+            fit(f, sizeof f, "crowd2/f%04d", i);
+            made = make_file(f, "x");
+        }
+        CHECK(made && make_file("crowd2/zmod/mod.toml", t), "setup 1024 entries");
+        set_mods(at("crowd2"));
+        CHECK(bo3_modfs_mod_count() == 1, "exactly 1024 entries: searched (%d mods)", bo3_modfs_mod_count());
+    }
+
+    /* Release logging: the mods taken and the ones refused are said. */
+    {
+        char path[700], log[16384];
+        fit(path, sizeof path, "%s", at("log_mods.txt"));
+        if (capture_start(path)) {
+            g_xr_log_diag = 0;
+            set_mods(at("lib"));
+            capture_end(path, log, sizeof log);
+            g_xr_log_diag = 1;
+            CHECK(strstr(log, "[MOD] mod car.pack: ") && strstr(log, "[MOD] mod full.meta 2.1.0: "),
+                  "release: the mods taken are said:\n%s", log);
+            CHECK(strstr(log, "[MOD] mod ignored (mod.toml: id is missing): "), "release: a refused mod is said:\n%s", log);
+        } else {
+            SKIP("mod log: stderr could not be captured");
+        }
+    }
+
+    /* Concurrent lookups through mods and loose files. */
+    set_mods(at("lib"));
+    {
+        int bad = 0;
+        run_threads(mod_main);
+        for (int k = 0; k < THREADS; k++)
+            bad += s_mod_bad[k];
+        CHECK(bad == 0, "%d threads x %d lookups through mods: %d wrong", THREADS, ROUNDS, bad);
+    }
+    set_mods(NULL);
+    CHECK(bo3_modfs_mod_count() == 0, "unset: no mods listed");
 }
 
 int main(void)
@@ -737,11 +1186,33 @@ int main(void)
     fit(list + strlen(list), sizeof list - strlen(list), "%s", at("modA"));
     set_mods(list);
     CHECK(!strcmp(read_back("D:\\Tracks\\US\\C3_V1\\static.dat"), "B static"), "a ninth folder is ignored");
+    /* The limit itself: eight folders, then a ninth that alone has the file.
+     * A folder named again keeps its place among the eight. */
+    CHECK(make_file("nine/f9/Data/ninth.bin", "ninth"), "setup nine");
+    list[0] = 0;
+    for (int i = 1; i <= 8; i++) {
+        char d[32];
+        snprintf(d, sizeof d, "nine/f%d", i);
+        CHECK(make_dir(at(d)), "setup %s", d);
+        fit(list + strlen(list), sizeof list - strlen(list), "%s;", at(d));
+    }
+    fit(list + strlen(list), sizeof list - strlen(list), "%s", at("nine/f9"));
+    set_mods(list);
+    CHECK(refused("D:\\Data\\ninth.bin"), "eight folders, then a ninth: ignored");
+    list[0] = 0;
+    for (int i = 0; i < 8; i++)
+        fit(list + strlen(list), sizeof list - strlen(list), "%s;", at("nine/f1"));
+    fit(list + strlen(list), sizeof list - strlen(list), "%s", at("nine/f9"));
+    set_mods(list);
+    CHECK(refused("D:\\Data\\ninth.bin"), "one folder named eight times, then a ninth: ignored");
+    fit(list, sizeof list, "%s;%s", at("nine/f1"), at("nine/f9"));
+    set_mods(list);
+    CHECK(!strcmp(read_back("D:\\Data\\ninth.bin"), "ninth"), "the ninth folder's file, when it is the second");
 
     /* 9. Threads: each gets its own answer. */
     fit(list, sizeof list, "%s;%s", at("modA"), at("modB"));
     set_mods(list);
-    run_threads();
+    run_threads(thread_main);
     {
         int bad = 0;
         for (int k = 0; k < THREADS; k++)
@@ -804,6 +1275,8 @@ int main(void)
             SKIP("diagnostic log: stderr could not be captured");
         }
     }
+
+    manifests(sensitive);
 
     remove_all();
     printf("modfs: %d passed, %d failed, %d skipped\n", s_pass, s_fail, s_skip);

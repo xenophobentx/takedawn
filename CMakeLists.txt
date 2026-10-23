@@ -109,6 +109,8 @@ if(NOT ANDROID)
     add_subdirectory(tests/fatal)
     # The mod folders' lookup (src/game/modfs.c, docs/mod-folders.md).
     add_subdirectory(tests/modfs)
+    # A mod's mod.toml (src/game/modmanifest.c).
+    add_subdirectory(tests/modmanifest)
 endif()
 
 # Line-level symbols for the runtime libraries, so a hang sample inside one
