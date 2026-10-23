@@ -183,6 +183,9 @@ void bo3_controls_start(uint32_t (*flips)(void));
 /* RECOMP_DEBUG=autopilot=1: the title's AI drives player 1 (autopilot.c, BO-130). */
 void bo3_autopilot_start(uint32_t (*flips)(void));
 
+/* graphics.softbody: soft-body vehicle damage, drawn only (softbody.c). */
+void bo3_softbody_start(uint32_t (*flips)(void));
+
 /* interface.menu_entry: TAKEDAWN SETTINGS in the title's Settings menu (menuentry.c, BO-133). */
 void bo3_menu_entry_start(void);
 

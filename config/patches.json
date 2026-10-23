@@ -928,6 +928,42 @@
       "note": "sub_001ADD60: the same switch distance (+0x64) for the simple model's pass (mode 2: beyond). Scaled with the load at 0x1ADE86, so each prop is drawn with exactly one of its two models; a switch distance past the draw distance (+0x68, not changed) leaves the detailed model to the end. Not changed: the track units' full / low-detail streams (sub_0019D100, 4 units), the mode-0 props (sub_001ACE00, the reflections in sub_001ADA40)."
     },
     {
+      "va": "0x0018DE00",
+      "kind": "mark",
+      "name": "sb_draw",
+      "note": "sub_0018DE00, a race car's draw (PS2 CB3RaceCar::Draw), after its first instruction: esi the car. graphics.softbody writes the car's deformed vertices into its model (car + 0x50, the .bgv in contiguous memory) before the title draws it (src/game/softbody.c)."
+    },
+    {
+      "va": "0x0018DF6F",
+      "kind": "mark",
+      "name": "sb_drawn",
+      "note": "sub_0018DE00, a race car's draw: after its call to sub_000303D0 (the model, its wheels from the matrices at car + 0x90 + 0x40 w); esi still the car. graphics.softbody puts back the wheel matrices sb_draw bent for this draw (src/game/softbody.c)."
+    },
+    {
+      "va": "0x000303D0",
+      "kind": "mark",
+      "name": "sb_model",
+      "note": "sub_000303D0, a model drawn now (the race cars' draw sub_0018DE00 and the traffic's sub_001A4710 both call it), after its first instruction (`push ebp`): [esp+0xC] the instance, its world matrix first and its model at + 0x40 (a race car's instance is car + 0x10, so car + 0x50). BO3_SOFTBODY_TRAFFIC=1 points a hit traffic vehicle's instance at its own model copy (src/game/softbody.c)."
+    },
+    {
+      "va": "0x00030531",
+      "kind": "mark",
+      "name": "sb_stream",
+      "note": "In sub_000303D0's draw, after `mov eax, ebx` and `mov ecx, edi`, before the call to sub_000315C0, which sets the vertex streams from the level header in eax (stream 0 its + 0x48, stride 0x18; stream 1 its + 0x54, stride 8). BO3_SOFTBODY_TRAFFIC=1 puts a hit traffic vehicle's own copy of that header in eax (src/game/softbody.c)."
+    },
+    {
+      "va": "0x0012FA62",
+      "kind": "mark",
+      "name": "sb_impact",
+      "note": "sub_0012FA40, a car's impact entry (the damage writer chain: sub_0012E4D0 to sub_00128FE0, which writes the panel matrices at car + 0x590), after the frame is set and `mov [esi+0x10], ebx`: [ebp+8] the car's damage state (car + 0x2440 points at it), [ebp+0x10] the physics body with its world matrix, [ebp+0x28] the hit's direction, [ebp+0x2C] its strength. Found by a write watch on the panel matrices during a Crash (RECOMP_WATCH). graphics.softbody starts a dent there (src/game/softbody.c)."
+    },
+    {
+      "va": "0x00130007",
+      "kind": "mark",
+      "name": "sb_parts",
+      "note": "sub_0012FEE0, a car's damage state set up (each start), after its loop that draws each panel's thresholds at random: [ebp+0xC] the state, a panel's damage at + 0xF90, swinging past + 0xFA8 (0.05..0.1), gone past + 0xFC0 (0.085..0.17) (sub_0012C860); [ebp+8] the physics body, the panel count at its model's + 0xC. BO3_SOFTBODY_PARTS scales the thresholds (src/game/softbody.c)."
+    },
+    {
       "va": "0x0018C511",
       "kind": "mark",
       "name": "ap_update",

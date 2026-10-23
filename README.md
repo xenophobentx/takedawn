@@ -608,6 +608,7 @@ still in the menu. Everything else that changes the console's look
 | 60 fps split screen | On, Off | Off. Two-player races at 60 instead of 30. Needs a fast machine; leave it off on a handheld |
 | High refresh rate | On, Off | Off. Draws at the display's refresh rate (120, 144 Hz and faster); the game itself keeps its 60 steps a second, and cars and the camera move smoothly between them. Menus and split screen stay at the game's own rate, and so do crash cameras unless 60 fps crash cameras is on. Adds up to one 60 Hz step of delay. Needs a fast machine. [Details](docs/high-refresh.md) |
 | Potato mode | On, Off | Off. A machine under 60 fps runs the start of a race in slow motion until the first crash. On skips frames to keep real time. Applies from the next race. [Details](docs/race-clock.md) |
+| Soft-body damage | On, Off | Off. Cars crumple, tear and bend where they are hit, lose wheels in a wreck, and throw the game's own sparks and debris where metal rips, instead of only losing panels. Drawn only: handling and the race are unchanged. Costs CPU in big pile-ups. Applies after a restart. [Details](docs/softbody.md) |
 | Build shaders now | action | See [the shader pre-build](#the-shader-pre-build). Not on Android |
 
 **How HDR works.** Takedawn doesn't invent highlights. The game already lights its scenes past white: its frame pass doubles the 3D picture, so lamps, sparks, the boost and the sun go above white, and the Xbox's 8-bit output clipped them. With HDR on, Takedawn keeps those values and maps them to your display's peak (HDR10) with a soft roll-off. The HUD and menus are drawn separately at paper white.
@@ -1046,6 +1047,7 @@ Further documents:
 | Mod folders: replace disc files with your own | [docs/mod-folders.md](docs/mod-folders.md) |
 | Potato mode: real-time race start on machines below 60 fps | [docs/race-clock.md](docs/race-clock.md) |
 | High refresh rate: drawing above 60 fps | [docs/high-refresh.md](docs/high-refresh.md) |
+| Soft-body damage: how vehicles crumple, tear and bend | [docs/softbody.md](docs/softbody.md) |
 | Button prompt artwork | [assets/glyphs/README.md](assets/glyphs/README.md) |
 | How the parts fit together | [docs/architecture.md](docs/architecture.md) |
 

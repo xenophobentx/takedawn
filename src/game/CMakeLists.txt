@@ -19,6 +19,7 @@ if(ANDROID)
         fatal.c
         controls.c
         autopilot.c
+        softbody.c
         menuentry.c
         tutorial.c
         scoreboard.c
@@ -49,6 +50,7 @@ add_executable(burnout3
     fatal.c
     controls.c
     autopilot.c
+    softbody.c
     menuentry.c
     tutorial.c
     scoreboard.c

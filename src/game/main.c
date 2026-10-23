@@ -3527,6 +3527,12 @@ int main(int argc, char **argv)
      * game.race_clock = true (RECOMP_GAME_RACE_CLOCK=1) the start stores the
      * wall-clock mode itself; off as shipped. docs/race-clock.md. */
     recomp_patch_enable("game.race_clock", RENV_GAME_RACE_CLOCK);
+    /* Soft-body vehicle damage, drawn only: vehicles crumple, tear and bend
+     * where they are hit. At graphics.softbody = true
+     * (RECOMP_GFX_SOFTBODY=1), read at start (softbody.c); off as shipped.
+     * Not a guest patch: marks the damage model hooks; registered here so
+     * the overlay shows its row. docs/softbody.md. */
+    recomp_patch_enable("graphics.softbody", RENV_GFX_SOFTBODY);
     /* BO-112: the distances at which the title swaps a race car's or a
      * traffic vehicle's model for a simpler one (15/30/60 m and 20/80 m),
      * times 2 or 4 at graphics.vehicle_detail = far / farthest
@@ -3564,6 +3570,8 @@ int main(int argc, char **argv)
     bo3_controls_start(bo3_flips);
     /* BO-130: RECOMP_DEBUG=autopilot=1 (autopilot.c). */
     bo3_autopilot_start(bo3_flips);
+    /* graphics.softbody (softbody.c). */
+    bo3_softbody_start(bo3_flips);
     /* BO-133: interface.menu_entry (menuentry.c). */
     bo3_menu_entry_start();
     /* A or START leaves a training film (tutorial.c). */
