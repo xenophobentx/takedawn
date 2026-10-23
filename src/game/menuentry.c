@@ -65,6 +65,13 @@ extern void sub_001D2879(void);          /* the title's heap: (size, tag), stdca
 
 static const char k_label[] = "TAKEDAWN SETTINGS";
 static uint32_t s_block;              /* 5 items, then the label */
+static int s_listed;                  /* the Settings page last built lists our line (line 4) */
+
+/* The MODS page (modsmenu.c) shares the two Settings marks: a mark name has
+ * one callback, so ours call it after their own work. */
+extern int bo3_modsmenu_mode(void);   /* 1: the page shows the MODS list */
+extern void bo3_modsmenu_items(void);
+extern void bo3_modsmenu_select(void);
 
 static int me_on(void)
 {
@@ -97,10 +104,12 @@ static uint32_t me_block(void)
     return s_block;
 }
 
-static void me_items(void)
+static void me_items_body(void)
 {
     uint32_t b, i;
 
+    if (g_esi == ME_PAGE)
+        s_listed = 0;
     if (g_esi != ME_PAGE || g_eax != ME_ITEMS || !g_xbox_mem_offset || !me_on())
         return;
     if (ME_M16(ME_COUNT) != ME_N || !(b = me_block()))
@@ -112,8 +121,15 @@ static void me_items(void)
     ME_M32(b + ME_N * ME_ITEM_SIZE) = b + (ME_N + 1) * ME_ITEM_SIZE;
     ME_M32(b + ME_N * ME_ITEM_SIZE + 4) = 0;
     ME_M16(ME_COUNT) = ME_N + 1;
+    s_listed = 1;
     g_eax = b;                          /* pushed next as the widget's items */
     fprintf(stderr, "[MENU] Settings: TAKEDAWN SETTINGS listed\n");
+}
+
+static void me_items(void)
+{
+    me_items_body();
+    bo3_modsmenu_items();               /* MODS after our line, or the MODS page's lines */
 }
 
 /* ── the pause menu ─────────────────────────────────────────────────
@@ -181,10 +197,10 @@ static void pe_select(void)
 #endif
 }
 
-static void me_select(void)
+static void me_select_body(void)
 {
     if (!g_xbox_mem_offset || !(g_eax & 0xFFu) || ME_M16(ME_CURSOR) != ME_N
-        || ME_M16(ME_COUNT) != ME_N + 1)
+        || !s_listed || bo3_modsmenu_mode())
         return;
     /* Whatever happens, the title must not take this A: its exit would
      * look the fifth line up in a four-entry table. */
@@ -193,6 +209,12 @@ static void me_select(void)
     if (xbox_OverlayRequestOpen())
         fprintf(stderr, "[MENU] TAKEDAWN SETTINGS: opening the overlay\n");
 #endif
+}
+
+static void me_select(void)
+{
+    me_select_body();
+    bo3_modsmenu_select();              /* MODS, and the MODS page's lines */
 }
 
 void bo3_menu_entry_start(void)

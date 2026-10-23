@@ -946,6 +946,18 @@
       "note": "sub_000852B0 (the Settings page's input): after the call of sub_00017790 (A taken), al the answer. With the cursor (0x55ABC8) on the fifth line the answer becomes 0 and the overlay is asked to open, so the title never starts its exit for a line its next-page table (0x3EAF34) does not have. src/game/menuentry.c, BO-133."
     },
     {
+      "va": "0x00069733",
+      "kind": "mark",
+      "name": "mm_flow_sel",
+      "note": "sub_000696D0 (the Settings state's handler; event 5: the page's exit ended, a line chosen), after `push 0x65857D40` (the low word of the next state's hash; 0x94413FC1 pushed before it; the entry of the four-entry table 0x3EAF34 for the cursor in eax has been read into edi). The MODS page: the two words become the current state's own hash (the machine 0x567170, its table at +0xC: 16-byte entries {hash lo, hash hi, offset}), so sub_000146E0 returns before using edi (target = current state), and the page is built again through sub_00085170 as the MODS page or its next page. Line 3 does not reach this site. Found by following the A press from sub_000852B0 to the state change. Only with a mod folder in use. src/game/modsmenu.c."
+    },
+    {
+      "va": "0x000696F8",
+      "kind": "mark",
+      "name": "mm_flow_back",
+      "note": "sub_000696D0, event 5 with result 3 (B: back to Driver Details), after `push 0xEF6E02D9` (0x94413FD6 pushed before it). On the MODS page: the same no-op change of state, and the Settings list built again with the cursor on MODS. src/game/modsmenu.c."
+    },
+    {
       "va": "0x0001BFC4",
       "kind": "mark",
       "name": "ua_eval",
