@@ -89,7 +89,7 @@ echo "==> abi_analysis"
     --output-dir "$OUT/abi" | tail -1) || exit 1
 
 echo "==> recomp"
-(cd "$RECOMP" && py -3 -m tools.recomp "$XBE" --all --split 1000 \
+(cd "$RECOMP" && py -3 -m tools.recomp "$XBE" --all --split "${SPLIT:-1000}" \
     --disasm-dir  "$OUT/disasm" \
     --func-id-dir "$OUT/func_id" \
     --abi-dir     "$OUT/abi" \
