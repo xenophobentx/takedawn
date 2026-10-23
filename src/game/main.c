@@ -2000,7 +2000,26 @@ static int host_main(void)
      * Android: or the app's mods folder exists). After the soundtrack, whose
      * path hook it chains to. */
     {
+        /* Which mods are off: TAKEDAWN_MOD_LIST names the file ("": none),
+         * else mod-list.toml beside settings.toml (else in the save folder),
+         * as mixer.toml; read at the start only when there is a mod. */
+        extern void bo3_modfs_state_file(const char *path);
         extern void bo3_modfs_init(void);
+        const char *set = xbox_SettingsPath();
+        const char *env = getenv("TAKEDAWN_MOD_LIST");
+        const char *sl = set ? strrchr(set, '/') : NULL;
+        char path[1100];
+#if defined(_WIN32)
+        const char *bs = set ? strrchr(set, '\\') : NULL;
+        if (bs && (!sl || bs > sl)) sl = bs;
+#endif
+        if (env)
+            snprintf(path, sizeof(path), "%s", env);
+        else if (sl)
+            snprintf(path, sizeof(path), "%.*s/mod-list.toml", (int)(sl - set), set);
+        else
+            snprintf(path, sizeof(path), "%s/mod-list.toml", s_save_dir);
+        bo3_modfs_state_file(path);
         bo3_modfs_init();
     }
     /* BO-114: the host mixer's buses, wave table and preset file. Names

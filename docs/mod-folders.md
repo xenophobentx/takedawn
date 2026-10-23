@@ -104,6 +104,143 @@ in case (`Data` and `DATA`) and none is spelled as the game asks, that file is
 refused and the disc's is read (the log says so, once): which one the system
 lists first is not a rule. Give each name one spelling.
 
+## Installed mods (mod.toml)
+
+A mod folder can also hold mods, each in a subfolder of its own with a
+`mod.toml` that names it. The mod's replacement files mirror the disc in its
+`files` subfolder:
+
+```
+MyMods/                          <- the folder TAKEDAWN_MODS names (Android: mods/)
+    Tracks/US/C3_V1/static.dat   <- loose files work as before
+    car-pack/
+        mod.toml
+        files/Tracks/US/C3_V1/static.dat
+    sound-pack/
+        mod.toml
+        files/Sound/...
+```
+
+Only these top-level keys are read:
+
+```toml
+id = "example.car-pack"        # required: 1-64 of a-z 0-9 . _ -, starting with a letter or digit
+name = "Example Car Pack"      # required, up to 128 bytes
+version = "1.0.0"              # optional, up to 32 of A-Z a-z 0-9 . + -, starting with a letter or digit
+author = "Someone"             # optional, up to 128 bytes
+description = "What it does."  # optional, up to 1024 bytes
+```
+
+The file is UTF-8 and at most 8 KiB. `name`, `author` and `description` may not
+contain control characters (no line breaks), nor the Unicode line and paragraph
+separators or the marks and controls that change the direction of text.
+
+`mod.toml` is read by the toolkit's configuration reader, which takes a part of
+TOML: tables, `key = value` lines with strings (basic and literal, on one line),
+integers, floats, booleans and arrays of those, comments, quoted and dotted
+keys. It does not take inline tables (`a = { b = 1 }`), arrays of tables
+(`[[a]]`), nested arrays, dates and times, or multi-line strings (`"""`), and
+a file that has one anywhere, under any key, is refused. That part is the
+format: keys a later version adds will keep to it, and other keys and tables
+written in it are left alone, so a manifest written for a later version still
+works here. A key given twice, a known key that is not a string (a number, an
+array, a table such as `[version]`), a `\u0000`
+escape anywhere in the file, or text outside that part of TOML makes the mod
+invalid. An invalid mod is listed in the log and replaces nothing.
+
+Which file is read when several have it:
+
+1. the folders `TAKEDAWN_MODS` names, in that order;
+2. in each folder, its loose files first, then its mods in order of `id`
+   (byte order, so `a.mod` before `b.mod`). The subfolder's name plays no part:
+   renaming it does not change the order.
+
+Two mods with the same `id` (in one folder or in two) are both refused: the
+log says which. A folder named twice in `TAKEDAWN_MODS`, under the same or
+another path (a link, a junction, a short name), is taken once, in its first
+place; it still counts toward the eight.
+
+A subfolder is a mod when it has an entry named `mod.toml` (in lower case, on
+every system: `MOD.TOML` is not a manifest), whatever that entry is:
+a `mod.toml` that is a folder, a link or not readable makes an invalid mod.
+Only subfolders one level down are looked at. A folder with more than 1024
+entries is not searched for mods (the log says so), and at most 64 mods are
+taken, valid or not: the folders in order, in each the subfolders by name
+(byte order); the log names the first one left out. A `mod.toml` directly in
+the folder `TAKEDAWN_MODS` names is not a manifest: that folder's own files stay
+loose files, as before. A mod's subfolder is not read as part of its folder's
+loose files, even when it has the name of a folder on the disc. A subfolder
+that is not taken as a mod (past the 64, or in a folder that is not searched)
+is part of the loose files, like any other folder; so, on Windows, is a mod's
+subfolder reached by its short (8.3) name.
+
+A mod's files follow every rule below. Its subfolder, its `files` folder and
+its `mod.toml` must not be links (or junctions), and `mod.toml` must be a
+regular file. The `files` folder may be spelled in any case, but only once:
+`files` and `Files` side by side make the mod invalid. A mod whose folder's
+path is so long that no file below it would fit (see What is refused) is
+invalid too.
+
+The list of a mod's files is made at the start, so a file added to a mod while
+the game runs is used from the next start, as is a mod added or changed. For a
+mod with more than 4096 files, or folders more than eight levels below `files`,
+no list is made: each file is looked up in it on disk instead, as for loose
+files, which is slower (the log says so).
+
+## Turning mods on and off
+
+Every mod is on unless the mod list names it as off. The mod list is
+`mod-list.toml`, beside the game's `settings.toml` (in the save folder when
+there is none); `TAKEDAWN_MOD_LIST` names another file instead (an empty
+value: no mod list, every mod on). It is read at the start when a mod folder
+has installed mods:
+
+```toml
+# Takedawn: mods that are off, by id (docs/mod-folders.md). Read at start.
+disabled = ["example.car-pack", "example.sound-pack"]
+```
+
+- The file is the game's own; it can be edited by hand while the game is not
+  running. No file means every mod is on.
+- A change is used from the next start, like a new mod. An off mod's files are
+  not used; it is still listed in the log, with `(off)`, and its subfolder is
+  still not part of the loose files.
+- Ids of mods that are not installed stay in the list, so a mod that is taken
+  out and put back stays off.
+- An entry that is not a mod id is skipped, and the log says so. The list keeps
+  at most 256 ids. Skipped entries and ids past 256 are dropped when the game
+  next writes the list.
+- A file that is not a list of ids (not TOML, `disabled` not a list, larger
+  than 64 KiB) leaves every mod on, and the log says why. When the game next
+  writes the list, that file is first kept as `mod-list.toml.bad` (replacing
+  an older one).
+- A file that cannot be read at that moment (another program has it open)
+  also leaves every mod on; the game does not write the list then, so nothing
+  in it is lost.
+- The game writes a new `mod-list.toml.tmp`, flushes it to the disk and
+  renames it over the list. If it stops part way, or the write fails, the list
+  stays as it was (the log says so).
+
+Turning a mod off is also how to choose between two mods that have the same
+file. The order itself is fixed (see Which file is read).
+
+### Conflicts
+
+At the start the log names every file of a mod that is on that another place
+also supplies, and which one is used:
+
+```
+[MOD] conflict: tracks/us/c3_v1/static.dat: mod example.car-pack over mod example.other-pack, folder 2
+```
+
+Places are a mod (`mod <id>`) or a folder's loose files (`folder <n>`); the
+one used is the one a lookup takes. The first 32 conflicts are listed, then a
+count. The files compared are those in the lists of mods that are on (see
+below): a file that two folders' loose files share, or that loose files and a
+mod without a list share, is not reported. With more than 1024 different files
+in those lists, mods with a list are compared by their lists alone and the
+others not, and the log says so.
+
 ## What is refused
 
 The disc's own file is read instead when:
@@ -152,6 +289,8 @@ in every build:
 ```
 [MOD] folder 1: D:\Burnout3Mods\MyTrackMod
 [MOD] ignored (not a folder): D:\Burnout3Mods\Typo
+[MOD] mod example.car-pack 1.0.0: D:\Burnout3Mods\MyTrackMod\car-pack
+[MOD] mod ignored (mod.toml: id is missing): D:\Burnout3Mods\MyTrackMod\broken
 ```
 
 With diagnostic logging on (the settings' Advanced > Diagnostic logging, then
@@ -186,8 +325,24 @@ walks from the mod folder down with directory descriptors (`openat` with
 `O_NOFOLLOW`, `fstatat` with `AT_SYMLINK_NOFOLLOW`) and reads a directory
 (`fdopendir`) only when a part is not there as written.
 
+At the start `bo3_modfs_init` also looks for installed mods (one level down,
+names sorted) and reads each `mod.toml` with the toolkit's TOML reader
+(`recomp_cfg`), then fixes the order of the places a lookup tries: each
+folder's loose files, then its mods by id. For each mod it lists the files
+below `files` (sorted, lower case), so a lookup skips a mod that does not have
+the file without touching the disk. A lookup through a mod that has it checks
+the path from the mod folder down, the mod's subfolder and `files` included,
+in the same way as a loose file. The mods and their lists do not change while
+the game runs (`modfs.h`), so reading them takes no lock; the only lock is the
+one that keeps each "[MOD] ... -> ..." line to once, as before. The saved mod
+list has a lock of its own, so saving it never holds a lookup up. Mods that
+are off have no place in the lookup. The
+mod list's file is named by `main.c` (`bo3_modfs_state_file`) and changed
+through `bo3_modfs_set_enabled`, the call a front end uses.
+
 `tests/modfs` checks the rules on folders it makes in the temporary directory
-(no game data): `ctest -R bo3_modfs`.
+(no game data): `ctest -R bo3_modfs`. `tests/modmanifest` checks `mod.toml`
+itself: `ctest -R bo3_modmanifest`.
 
 ## Verified
 
