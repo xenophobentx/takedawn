@@ -131,6 +131,10 @@ author = "Someone"             # optional, up to 128 bytes
 description = "What it does."  # optional, up to 1024 bytes
 ```
 
+A mod may also declare a native plugin in a `[plugin]` table; see
+[native-plugins.md](native-plugins.md). A plugin runs only when you approved
+it (on the MODS page, or in the approval file), never because its mod is on.
+
 The file is UTF-8 and at most 8 KiB. `name`, `author` and `description` may not
 contain control characters (no line breaks), nor the Unicode line and paragraph
 separators or the marks and controls that change the direction of text.
@@ -255,6 +259,15 @@ FIRST MOD, WITH A DESCRIPTION.
   why (for a shared id, the other mod's folder name).
 - The last line shows the description of the mod under the cursor, else how
   many mods are installed and how many are on.
+- **A mod that brings native code** (a `[plugin]` with a module for this system) shows `CODE` (its code approved from the
+  next start) or `CODE?` (not approved). A on it goes
+  `OFF -> ON (its files only) -> APPROVE CODE -> ON + CODE -> OFF`.
+  - Turning a mod on uses its files only. Its code is approved only by A on the APPROVE CODE step, which shows the module,
+    its hash and a warning, and then APPLY.
+  - A mod turned off, or on without its code, loses its approval.
+  - With the cursor on such a mod, the two lines below show its code now (`CODE RUNNING`, `CODE NOT LOADED - SEE LOG`,
+    ...) and its module and hash.
+  - See [native-plugins.md](native-plugins.md), On the MODS page. Mods without `[plugin]` are shown and saved as before.
 
 `TAKEDAWN_MODS_MENU=0` hides the page. Without a mod folder there is no MODS
 line, and the Settings menu is as before.
@@ -313,7 +326,10 @@ and a path written with `\\?\` or `\\.\` are ignored.
 The checks are made when the game opens a file; the toolkit then opens the
 path. Someone who can change the mod folder while the game runs could swap a
 part for a link in between: a mod folder is trusted as much as the files in it.
-Nothing in a mod folder is run; the game only reads it.
+The game only reads a mod folder's files. The one exception is a native plugin
+that an installed mod declares and that you approved
+([native-plugins.md](native-plugins.md)): that module is run, with your
+permissions; nothing else in a mod folder ever is.
 
 ## What is not checked
 

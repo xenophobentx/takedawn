@@ -27,7 +27,8 @@ static int parse(const char *t)
 static void bad(int line, const char *t, const char *want)
 {
     int ok = parse(t);
-    int cleared = !s_m.id[0] && !s_m.name[0] && !s_m.version[0] && !s_m.author[0] && !s_m.description[0];
+    int cleared = !s_m.id[0] && !s_m.name[0] && !s_m.version[0] && !s_m.author[0] && !s_m.description[0]
+                  && !s_m.plugin && !s_m.plugin_api && !s_m.plugin_path[0];
     if (!ok && cleared && strstr(s_err, want))
         s_pass++;
     else {
@@ -200,6 +201,107 @@ static void rejected(void)
     }
 }
 
+/* A kept module path: relative, no part empty, "." or "..", plain ASCII, no ':'. */
+static int path_form_ok(const char *p)
+{
+    size_t n = strlen(p), start = 0;
+    for (size_t i = 0; i <= n; i++) {
+        if (p[i] && p[i] != '/' && p[i] != '\\') {
+            if ((unsigned char)p[i] < 0x20 || (unsigned char)p[i] > 0x7E || p[i] == ':')
+                return 0;
+            continue;
+        }
+        if (i == start || (i - start == 1 && p[start] == '.') || (i - start == 2 && p[start] == '.' && p[start + 1] == '.'))
+            return 0;
+        start = i + 1;
+    }
+    return 1;
+}
+
+/* [plugin] (docs/native-plugins.md): the declaration of native code. */
+#define HEAD "id = \"example.hello-plugin\"\nname = \"Hello\"\n"
+static void plugin(void)
+{
+    const char *me = bo3_manifest_platform();
+    char t[600];
+
+    CHECK(parse(HEAD) && !s_m.plugin && !s_m.plugin_api && !s_m.plugin_path[0], "a data mod has no plugin: %s", s_err);
+    CHECK(parse(HEAD "[plugin]\napi = 1\nwindows = \"bin/hello.asi\"\nlinux = \"bin/libhello.so\"\n"
+                "macos = \"bin/libhello.dylib\"\nandroid = \"lib/libhello.so\"\n")
+          && s_m.plugin && s_m.plugin_api == 1, "all systems: %s", s_err);
+    CHECK(!strcmp(s_m.plugin_path, !strcmp(me, "windows") ? "bin/hello.asi" : !strcmp(me, "linux") ? "bin/libhello.so"
+                  : !strcmp(me, "macos") ? "bin/libhello.dylib" : "lib/libhello.so"), "this system's path: %s", s_m.plugin_path);
+    {
+        char want[64];
+        snprintf(want, sizeof want, "native\\Hello.%s", !strcmp(me, "windows") ? "DLL" : !strcmp(me, "macos") ? "DYLIB" : "SO");
+        snprintf(t, sizeof t, HEAD "plugin.api = 1\nplugin.%s = '%s'\n", me, want);
+        CHECK(parse(t) && s_m.plugin && s_m.plugin_api == 1 && !strcmp(s_m.plugin_path, want),
+              "dotted keys, '\\', any case of the ending: %s [%s]", s_err, s_m.plugin_path);
+    }
+    snprintf(t, sizeof t, HEAD "[plugin]\napi = 7\n%s = \"x.%s\"\n", strcmp(me, "windows") ? "windows" : "linux",
+             strcmp(me, "windows") ? "asi" : "so");
+    CHECK(parse(t) && s_m.plugin && s_m.plugin_api == 7 && !s_m.plugin_path[0],
+          "no module for this system: still a valid mod, no path: %s", s_err);
+    CHECK(parse(HEAD "[plugin]\napi = 1\nmin_host = \"0.3\"\n[plugin.notes]\nx = 1\n") && s_m.plugin,
+          "unknown [plugin] keys and tables left alone: %s", s_err);
+
+    BAD(HEAD "plugin = \"hello.asi\"\n", "plugin must be a table");
+    BAD(HEAD "[plugin]\nwindows = \"x.asi\"\n", "plugin.api is missing");
+    BAD(HEAD "[plugin]\n", "plugin.api is missing");
+    BAD(HEAD "[plugin]\napi = \"1\"\n", "plugin.api must be a whole number");
+    BAD(HEAD "[plugin]\napi = 1.0\n", "plugin.api must be a whole number");
+    BAD(HEAD "[plugin.api]\nx = 1\n", "plugin.api must be a whole number");
+    BAD(HEAD "[plugin]\napi = 0\n", "from 1 to 65535");
+    BAD(HEAD "[plugin]\napi = 65536\n", "from 1 to 65535");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = 5\n", "plugin.windows must be a string");
+    BAD(HEAD "[plugin]\napi = 1\n[plugin.linux]\npath = \"x.so\"\n", "plugin.linux must be a string");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"\"\n", "1 to 200 bytes");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"/abs/x.asi\"\n", "empty");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = '\\\\server\\x.asi'\n", "empty");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"C:/x.asi\"\n", "relative path of plain names");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"../x.asi\"\n", ". or ..");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = 'bin\\..\\..\\x.asi'\n", ". or ..");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"./x.asi\"\n", ". or ..");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"bin//x.asi\"\n", "empty");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"bin/x.asi \"\n", "ends in a dot or a space");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"bin./x.asi\"\n", "ends in a dot or a space");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"b\\u0001/x.asi\"\n", "relative path of plain names");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"b\\u00e9/x.asi\"\n", "relative path of plain names");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"x?.asi\"\n", "relative path of plain names");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"files/x.asi\"\n", "not be in the files folder");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = 'FILES\\x.asi'\n", "not be in the files folder");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"x.exe\"\n", "must name a .asi or .dll file");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"x.asi.txt\"\n", "must name a .asi or .dll file");
+    BAD(HEAD "[plugin]\napi = 1\nlinux = \"x.dll\"\n", "must name a .so file");
+    BAD(HEAD "[plugin]\napi = 1\nmacos = \"x.so\"\n", "must name a .dylib file");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"NUL.dll\"\n", "Windows device name");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"con.asi\"\n", "Windows device name");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"bin/Com1.asi\"\n", "Windows device name");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"LPT9.x.dll\"\n", "Windows device name");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"aux .asi\"\n", "Windows device name");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"prn/x.asi\"\n", "Windows device name");
+    BAD(HEAD "[plugin]\napi = 1\nwindows = \"CONOUT$.dll\"\n", "Windows device name");
+    BAD(HEAD "[plugin]\napi = 1\nlinux = \"nul.so\"\n", "Windows device name");
+    CHECK(parse(HEAD "[plugin]\napi = 1\nwindows = \"console.asi\"\nlinux = \"bin/nullify.so\"\n") && s_m.plugin,
+          "names that only start like a device are fine: %s", s_err);
+    CHECK(parse(HEAD "[plugin]\napi = 1\nwindows = \"com10.asi\"\nmacos = \"lpt0/auxiliary.dylib\"\n") && s_m.plugin,
+          "COM10, LPT0 and AUXILIARY are not devices: %s", s_err);
+    CHECK(parse(HEAD "[plugin]\napi = 1\nwindows = \"bin/com.asi\"\n") && s_m.plugin, "COM alone is not a device: %s", s_err);
+    CHECK(parse(HEAD "[plugin]\napi = 1\nwindows = \"files2/x.asi\"\n") && s_m.plugin, "files2 is not files: %s", s_err);
+    CHECK(parse(HEAD "[plugin]\napi = 1\nwindows = \"bin/files/x.asi\"\n") && s_m.plugin,
+          "a folder named files deeper down is not the mod's files folder: %s", s_err);
+    {
+        char p[BO3_PLUGIN_PATH_MAX + 2];
+        memset(p, 'a', sizeof p - 1);
+        p[sizeof p - 1] = 0;
+        memcpy(p + sizeof p - 1 - 4, ".asi", 4);                                /* 201 bytes */
+        snprintf(t, sizeof t, HEAD "[plugin]\napi = 1\nwindows = \"%s\"\n", p);
+        BAD(t, "1 to 200 bytes");
+        snprintf(t, sizeof t, HEAD "[plugin]\napi = 1\nwindows = \"%s\"\n", p + 1);   /* 200 bytes */
+        CHECK(parse(t) && s_m.plugin, "a 200-byte path: %s", s_err);
+    }
+}
+
 /* Deterministic mutations of valid manifests: every result must keep the
  * promises in modmanifest.h. Each case is parsed from its own heap block of
  * exactly its length, so a read past the end is a sanitizer report. */
@@ -218,11 +320,12 @@ static void mutations(void)
         "id = \"example.car-pack\"\nname = \"Example Car Pack\"\nversion = \"1.0.0\"\n",
         "# c\r\nid = \"a-b_c.d\" # x\r\nname = \"\\u00e9t\\u00e9\"\r\nauthor = \"\\\\\\\"\"\r\ndescription = \"text\"\r\n",
         "\xEF\xBB\xBFid=\"z\"\nname=\"\xe6\x97\xa5\"\nfoo = \"bar\"",
+        "id = \"p\"\nname = \"P\"\n[plugin]\napi = 1\nwindows = \"bin/p.asi\"\nlinux = \"bin/libp.so\"\n",
     };
     static const unsigned char alphabet[] = "\"\\=#[]'.\n\r\t uU0aZ\x80\xC3\xA9\xEF\xBB\xBF\xF0\x9F\x8F\x81";
     int runs = 0, accepted_n = 0, bad_guarantee = 0;
 
-    for (int s = 0; s < 3; s++) {
+    for (int s = 0; s < (int)(sizeof seeds / sizeof seeds[0]); s++) {
         size_t sl = strlen(seeds[s]);
         for (int it = 0; it < 20000; it++) {
             size_t n = sl + 4;
@@ -258,10 +361,15 @@ static void mutations(void)
                             || !utf8_clean(s_m.description) || strlen(s_m.id) > BO3_MOD_ID_MAX
                             || strspn(s_m.id, "abcdefghijklmnopqrstuvwxyz0123456789._-") != strlen(s_m.id)
                             || strspn(s_m.version, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.+-")
-                               != strlen(s_m.version))
+                               != strlen(s_m.version)
+                            || (s_m.plugin ? s_m.plugin_api < 1 || s_m.plugin_api > 65535
+                                           : s_m.plugin_api || s_m.plugin_path[0])
+                            || (s_m.plugin_path[0] && !path_form_ok(s_m.plugin_path))) {
                         bad_guarantee++;
+                        fprintf(stderr, "guarantee broken: [%.*s] -> path [%s]\n", (int)n, (const char *)exact, s_m.plugin_path);
+                    }
                 } else if (s_m.id[0] || s_m.name[0] || s_m.version[0] || s_m.author[0] || s_m.description[0]
-                           || !s_err[0]) {
+                           || s_m.plugin || s_m.plugin_path[0] || !s_err[0]) {
                     bad_guarantee++;
                 }
                 free(exact);
@@ -277,6 +385,7 @@ int main(void)
     accepted();
     rejected();
     id_rule();
+    plugin();
     mutations();
     printf("modmanifest: %d passed, %d failed\n", s_pass, s_fail);
     return s_fail ? 1 : 0;

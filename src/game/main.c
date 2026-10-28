@@ -2021,6 +2021,26 @@ static int host_main(void)
             snprintf(path, sizeof(path), "%s/mod-list.toml", s_save_dir);
         bo3_modfs_state_file(path);
         bo3_modfs_init();
+        /* Native plugins in installed mods (plugins.c, docs/native-plugins.md):
+         * only an approved module of a mod that is on, once, here: before the
+         * guest starts, on this thread. The approvals: TAKEDAWN_PLUGIN_APPROVALS
+         * ("": none), else plugin-approvals.toml beside the mod list. */
+        {
+            extern void bo3_plugins_approval_file(const char *path);
+            extern void bo3_plugins_init(const char *host_version);
+            extern const char *bo3_version_number(void);
+            const char *ap = getenv("TAKEDAWN_PLUGIN_APPROVALS");
+            if (ap) {
+                bo3_plugins_approval_file(ap);  /* as given: too long means none (plugins.c), never cut short */
+            } else {
+                if (sl)
+                    snprintf(path, sizeof(path), "%.*s/plugin-approvals.toml", (int)(sl - set), set);
+                else
+                    snprintf(path, sizeof(path), "%s/plugin-approvals.toml", s_save_dir);
+                bo3_plugins_approval_file(path);
+            }
+            bo3_plugins_init(bo3_version_number());
+        }
     }
     /* BO-114: the host mixer's buses, wave table and preset file. Names
      * only unless audio.mixer (RECOMP_AUDIO_MIXER) is on. */

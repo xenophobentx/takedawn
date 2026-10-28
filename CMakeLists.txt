@@ -113,6 +113,8 @@ if(NOT ANDROID)
     add_subdirectory(tests/modmanifest)
     # The MODS page in the title's Settings menu (src/game/modsmenu.c).
     add_subdirectory(tests/modsmenu)
+    # Native plugins in installed mods (src/game/plugins.c, docs/native-plugins.md).
+    add_subdirectory(tests/plugins)
 endif()
 
 # Line-level symbols for the runtime libraries, so a hang sample inside one

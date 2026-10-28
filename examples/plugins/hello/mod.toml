@@ -1,0 +1,13 @@
+# The example plugin's mod (docs/native-plugins.md). Put this folder in a mod
+# folder (TAKEDAWN_MODS), with the built module beside this file, and approve
+# it in plugin-approvals.toml: the game's log names the exact line to add.
+id = "example.hello-plugin"
+name = "Hello Plugin"
+version = "1.0.0"
+description = "An example native plugin: one line in the game's log."
+
+[plugin]
+api = 1
+windows = "hello.asi"
+linux = "libhello.so"
+macos = "libhello.dylib"

@@ -83,6 +83,18 @@ if(NOT TARGET xbox_enhance)
     endif()
     target_sources(burnout3 PRIVATE ${XBOXRECOMP_DIR}/src/enhance/recomp_cfg.c)
 endif()
+# Native plugins in installed mods (plugins.c, docs/native-plugins.md): the
+# public API in include/takedawn_plugin.h; loading with LoadLibraryExW on
+# Windows, dlopen elsewhere (an Android build loads none). A module's SHA-256
+# is the installer's (xbox_install: src/install/xr_sha256.c).
+target_sources(burnout3 PRIVATE plugins.c)
+if(WIN32)
+    target_sources(burnout3 PRIVATE plugins_win32.c)
+else()
+    target_sources(burnout3 PRIVATE plugins_posix.c)
+    target_link_libraries(burnout3 PRIVATE ${CMAKE_DL_LIBS})
+endif()
+target_include_directories(burnout3 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
 # The MODS page is listed only when the generated code calls its two marks
 # (cmake/modsmenu_marks.cmake): checked again whenever a generated file or
 # config/patches.json changes. A release build without them stops.

@@ -14,17 +14,25 @@
 #include "recomp_types.h"
 #include "platform/recomp_env.h"
 #include "modfs.h"
+#include "plugins.h"
+#include "xr_sha256.h"
 
 #if defined(_WIN32)
 #  include <direct.h>
 #  include <windows.h>
 #  define SETENV(k, v) _putenv_s(k, v)
 #  define SEP "\\"
+#  define EXT ".asi"
 #else
 #  include <sys/stat.h>
 #  include <unistd.h>
 #  define SETENV(k, v) setenv(k, v, 1)
 #  define SEP "/"
+#  if defined(__APPLE__)
+#    define EXT ".dylib"
+#  else
+#    define EXT ".so"
+#  endif
 #endif
 
 /* ---- the runtime's registers and memory ---- */
@@ -431,6 +439,7 @@ static void start(const char *mods)
 {
     SETENV("TAKEDAWN_MODS", mods ? mods : "");
     bo3_modfs_init();
+    bo3_plugins_init("9.9.9-test");       /* as main.c: after the mods, before the title */
     s_nmarks = 0;
     bo3_menu_entry_start();
     bo3_modsmenu_start();
@@ -468,6 +477,89 @@ static const char *slurp(const char *p)
     }
     b[n] = 0;
     return f ? b : NULL;
+}
+
+/* ---- native code (plugins.h) ---- */
+static char s_appr[700];                  /* the approval file */
+
+/* A mod.toml body declaring module rel for this system. */
+static const char *plugin_decl(const char *rel)
+{
+    static char b[2][160];
+    static int k;
+    char *o = b[k++ & 1];
+    snprintf(o, 160, "[plugin]\napi = 1\n%s = \"%s\"\n", bo3_manifest_platform(), rel);
+    return o;
+}
+
+/* A file copied byte for byte into the tree (the example plugin). */
+static int copy_bin(const char *from, const char *rel)
+{
+    char buf[8192];
+    size_t n;
+    FILE *a = fopen(from, "rb"), *b;
+    int ok = 1;
+    if (!a || !mk(rel, ""))
+        return a ? (fclose(a), 0) : 0;
+    if (!(b = fopen(at(rel), "wb"))) {
+        fclose(a);
+        return 0;
+    }
+    while ((n = fread(buf, 1, sizeof buf, a)) > 0)
+        ok &= fwrite(buf, 1, n, b) == n;
+    fclose(a);
+    fclose(b);
+    return ok;
+}
+
+/* A file's SHA-256: hex, and its first 8 digits as the page shows them. */
+static void sha_of(const char *rel, char hex[65], char up8[9])
+{
+    unsigned char buf[8192], d[32];
+    xr_sha256 s;
+    size_t n;
+    FILE *f = fopen(at(rel), "rb");
+    xr_sha256_init(&s);
+    while (f && (n = fread(buf, 1, sizeof buf, f)) > 0)
+        xr_sha256_update(&s, buf, n);
+    if (f)
+        fclose(f);
+    xr_sha256_final(&s, d);
+    xr_sha256_hex(d, hex);
+    for (int i = 0; i < 8; i++)
+        up8[i] = (char)(hex[i] >= 'a' ? hex[i] - 'a' + 'A' : hex[i]);
+    up8[8] = 0;
+}
+
+static bo3_plugin_state pstate(const char *id)
+{
+    for (int i = 0; i < bo3_modfs_mod_count(); i++)
+        if (!strcmp(bo3_modfs_mod(i)->manifest.id, id))
+            return bo3_plugins_state(i, NULL, 0, NULL, 0);
+    return BO3_PLUGIN_NONE;
+}
+
+/* A start on folder, the MODS page opened. */
+static void open_page(const char *folder)
+{
+    start(at(folder));
+    title_init();
+    enter_settings();
+    cursor_to(4);
+    press_a();
+}
+
+static int same_text(const char *a, const char *b)
+{
+    return a && b && !strcmp(a, b);
+}
+
+static int count_of(const char *t, const char *s)
+{
+    int n = 0;
+    for (const char *p = t ? strstr(t, s) : NULL; p; p = strstr(p + 1, s))
+        n++;
+    return n;
 }
 
 /* ---- the pagination gate ----
@@ -667,9 +759,10 @@ static void pagination_toggles(int n)
     }
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     char tmp[512], state[700];
+    const char *hello = argc > 1 ? argv[1] : NULL;   /* the example plugin (tests/plugins builds it) */
 
     s_mem = calloc(1, GMEM);
     if (!s_mem)
@@ -1067,6 +1160,311 @@ int main(void)
     CHECK(!strcmp(line(find_line("N.SAME")), "N.SAME  SAME ID") && !strcmp(line(s_widget_count - 2), "ID ALSO USED BY DUP-TWO"),
           "a shared id: the other folder's name only: %s", line(s_widget_count - 2));
     press_b();
+
+    /* ---- native code on the page (plugins.h, docs/native-plugins.md) ----
+     * c.asset: files only; c.mixed: files and a module that is not a library
+     * (hashed, never loadable); c.hello: the example plugin; c.missing: a
+     * module that is not there. The approval file beside the mod list. */
+    CHECK(bo3_plugins_running() == 0 && pstate("n.a") == BO3_PLUGIN_NONE, "18: the starts so far ran no native code");
+    snprintf(s_appr, sizeof s_appr, "%s", at("state/plugin-approvals.toml"));
+    snprintf(s_made[s_nmade++], 700, "%s", s_appr);
+    snprintf(s_made[s_nmade++], 700, "%.690s.tmp", s_appr);
+    bo3_plugins_approval_file(s_appr);
+    SETENV("TAKEDAWN_PLUGINS", "1");      /* macOS loads plugins only so; elsewhere the same as unset */
+    mod("code/asset", "c.asset", NULL, "Data/y.bin", "Y");
+    mod("code/mixed", "c.mixed", plugin_decl("mixed" EXT), "Data/z.bin", "Z");
+    mk("code/mixed/mixed" EXT, "MIXED-1");
+    mod("code/hello", "c.hello", plugin_decl("hello" EXT), NULL, NULL);
+    CHECK(hello && copy_bin(hello, "code/hello/hello" EXT), "the example plugin copied in (argument 1: %s)", hello ? hello : "none");
+    mod("code/missing", "c.missing", plugin_decl("gone" EXT), NULL, NULL);
+    {
+        char hx[65], h8[9], hh[65], hh8[9], want[200], uext[16], before[512], p[720];
+        int la, lh, lm, lx, ap;
+        snprintf(uext, sizeof uext, "%s", EXT);   /* as the page shows it */
+        for (char *c = uext; *c; c++)
+            if (*c >= 'a' && *c <= 'z')
+                *c = (char)(*c - 'a' + 'A');
+        sha_of("code/mixed/mixed" EXT, hx, h8);
+        sha_of("code/hello/hello" EXT, hh, hh8);
+        open_page("code");
+        la = find_line("C.ASSET");
+        lh = find_line("C.HELLO");
+        lm = find_line("C.MISSING");
+        lx = find_line("C.MIXED");
+        ap = find_line("NO CHANGES");
+        CHECK(la == 0 && lh == 1 && lm == 2 && lx == 3 && ap == 4 && s_widget_count == 7, "four mods, APPLY, details, info");
+        CHECK(same_text(line(la), "C.ASSET  ON") && same_text(line(lx), "C.MIXED  ON  CODE?")
+              && same_text(line(lh), "C.HELLO  ON  CODE?") && same_text(line(lm), "C.MISSING  ON  CODE?"),
+              "1, 15: files only as before; native code CODE?: %s / %s / %s / %s", line(la), line(lx), line(lh), line(lm));
+        CHECK(!slurp(s_appr) && pstate("c.mixed") == BO3_PLUGIN_NOT_APPROVED && pstate("c.hello") == BO3_PLUGIN_NOT_APPROVED
+              && pstate("c.missing") == BO3_PLUGIN_REFUSED && bo3_plugins_running() == 0, "no approval file: nothing runs");
+        cursor_to(la);
+        CHECK(same_text(line(ap + 1), "V-  BY UNKNOWN") && same_text(line(ap + 2), "4 INSTALLED  4 ACTIVE"),
+              "1: a mod without code: its details as before: %s / %s", line(ap + 1), line(ap + 2));
+        cursor_to(lx);
+        snprintf(want, sizeof want, "MIXED%s  SHA256 %s", uext, h8);
+        CHECK(same_text(line(ap + 1), "CODE NOT APPROVED") && same_text(line(ap + 2), want),
+              "15: its code now, its module and hash: %s / %s", line(ap + 1), line(ap + 2));
+        CHECK(same_text(served("D:\\Data\\z.bin"), "Z"), "14: a mixed mod's files are used without its code");
+        cursor_to(lm);
+        CHECK(same_text(line(ap + 1), "CODE NOT LOADED - SEE LOG"), "a module that is not there: %s", line(ap + 1));
+
+        /* 2, 3: ON -> APPROVE: hashed, the module, the warning */
+        cursor_to(lx);
+        press_a();
+        snprintf(want, sizeof want, "TRUSTED SOURCES ONLY: MIXED%s %s", uext, h8);
+        CHECK(same_text(line(lx), "C.MIXED  APPROVE CODE") && same_text(line(ap + 1), "NATIVE CODE RUNS WITH YOUR PERMISSIONS")
+              && same_text(line(ap + 2), want) && same_text(line(ap), "NO CHANGES")
+              && !slurp(s_appr), "3: APPROVE CODE; the warning, the module and its hash; nothing chosen yet: %s / %s / %s",
+              line(lx), line(ap + 1), line(ap + 2));
+        /* 4: moving away, or B, cancels */
+        cursor_to(la);
+        CHECK(same_text(line(lx), "C.MIXED  ON  CODE?") && same_text(line(ap), "NO CHANGES"), "4: moved away: cancelled (%s)",
+              line(lx));
+        cursor_to(ap);
+        press_a();
+        CHECK(!slurp(s_appr), "4: APPLY after a cancel: nothing approved");
+        cursor_to(lx);
+        press_a();
+        press_b();
+        cursor_to(4);
+        press_a();
+        CHECK(same_text(line(lx), "C.MIXED  ON  CODE?"), "4: B and back: cancelled (%s)", line(lx));
+        /* 2, 5: A again approves: staged until APPLY */
+        cursor_to(lx);
+        press_a();
+        press_a();
+        CHECK(same_text(line(lx), "C.MIXED  ON*  CODE") && same_text(line(ap), "APPLY - APPROVES CODE - RESTART REQUIRED")
+              && same_text(line(ap + 1), "CODE FROM THE NEXT START - RESTART REQUIRED"),
+              "2: approved, staged: %s / %s / %s", line(lx), line(ap), line(ap + 1));
+        CHECK(!slurp(s_appr), "5: nothing written before APPLY");
+        cursor_to(ap);
+        CHECK(same_text(line(ap + 1), "A: SAVE - APPROVES NATIVE CODE"), "APPLY's details: %s", line(ap + 1));
+        press_a();
+        snprintf(want, sizeof want, "\"c.mixed sha256:%s\"", hx);
+        CHECK(slurp(s_appr) && strstr(slurp(s_appr), want) && same_text(line(ap), "SAVED - RESTART REQUIRED")
+              && same_text(line(lx), "C.MIXED  ON*  CODE") && pstate("c.mixed") == BO3_PLUGIN_NOT_APPROVED,
+              "6: APPLY: approved for exactly those bytes, this start as it was: %s", slurp(s_appr));
+        CHECK(!slurp(state) || !strstr(slurp(state), "c.mixed"), "17: the mod list untouched by an approval");
+        press_b();
+
+        /* 7: the next start uses it (not a library: refused at loading) */
+        open_page("code");
+        cursor_to(lx);
+        CHECK(pstate("c.mixed") == BO3_PLUGIN_REFUSED && same_text(line(lx), "C.MIXED  ON  CODE") && same_text(line(ap), "NO CHANGES")
+              && same_text(line(ap + 1), "CODE NOT LOADED - SEE LOG"),
+              "7: the next start: approved, tried, not loaded: %s / %s", line(lx), line(ap + 1));
+
+        /* 15: the example plugin approved; it runs at the next start */
+        cursor_to(lh);
+        press_a();
+        press_a();
+        cursor_to(ap);
+        press_a();
+        press_b();
+        open_page("code");
+        cursor_to(lh);
+        snprintf(want, sizeof want, "HELLO%s  SHA256 %s", uext, hh8);
+        CHECK(pstate("c.hello") == BO3_PLUGIN_RUNNING && same_text(line(lh), "C.HELLO  ON  CODE")
+              && same_text(line(ap + 1), "CODE RUNNING") && same_text(line(ap + 2), want),
+              "15: approved on the page, running at the next start: %s / %s / %s", line(lh), line(ap + 1), line(ap + 2));
+        /* 8: turned off: its approval removed; it runs until Takedawn exits */
+        press_a();
+        CHECK(same_text(line(lh), "C.HELLO  OFF*  CODE?") && same_text(line(ap + 1), "RUNS UNTIL TAKEDAWN EXITS - RESTART REQUIRED"),
+              "8: off: %s / %s", line(lh), line(ap + 1));
+        cursor_to(ap);
+        press_a();
+        CHECK(slurp(s_appr) && !strstr(slurp(s_appr), "c.hello") && strstr(slurp(s_appr), "c.mixed") && slurp(state)
+              && strstr(slurp(state), "\"c.hello\"") && pstate("c.hello") == BO3_PLUGIN_RUNNING,
+              "8: APPLY: approval removed, mod off; this start's plugin still runs: %s", slurp(s_appr));
+        cursor_to(lh);
+        CHECK(same_text(line(ap + 1), "RUNS UNTIL TAKEDAWN EXITS - RESTART REQUIRED"), "8: said after APPLY too: %s",
+              line(ap + 1));
+        press_b();
+        open_page("code");
+        cursor_to(lh);
+        CHECK(pstate("c.hello") == BO3_PLUGIN_OFF && bo3_plugins_running() == 0 && same_text(line(lh), "C.HELLO  OFF  CODE?")
+              && same_text(line(ap + 1), "CODE NOT USED (MOD OFF)"), "8: the next start: off, not run: %s / %s", line(lh),
+              line(ap + 1));
+        /* OFF -> ON is its files only: the next start does not run it */
+        press_a();
+        CHECK(same_text(line(lh), "C.HELLO  ON*  CODE?"), "OFF -> ON: files only (%s)", line(lh));
+        cursor_to(ap);
+        press_a();
+        press_b();
+        open_page("code");
+        CHECK(pstate("c.hello") == BO3_PLUGIN_NOT_APPROVED && bo3_plugins_running() == 0, "on without its code: not run");
+
+        /* 9: new bytes: the approval no longer holds; approved again, one entry */
+        mk("code/mixed/mixed" EXT, "MIXED-2");
+        sha_of("code/mixed/mixed" EXT, hx, h8);
+        open_page("code");
+        cursor_to(lx);
+        CHECK(pstate("c.mixed") == BO3_PLUGIN_NOT_APPROVED && same_text(line(lx), "C.MIXED  ON  CODE?")
+              && same_text(line(ap + 1), "CODE CHANGED - APPROVE AGAIN"), "9: changed bytes: %s / %s", line(lx), line(ap + 1));
+        press_a();
+        snprintf(want, sizeof want, "TRUSTED SOURCES ONLY: MIXED%s %s", uext, h8);
+        CHECK(same_text(line(lx), "C.MIXED  APPROVE CODE") && same_text(line(ap + 2), want), "9: the new bytes' hash shown: %s",
+              line(ap + 2));
+        press_a();
+        cursor_to(ap);
+        press_a();
+        snprintf(want, sizeof want, "\"c.mixed sha256:%s\"", hx);
+        CHECK(strstr(slurp(s_appr), want) && count_of(slurp(s_appr), "c.mixed") == 1, "9: approved again, one entry: %s",
+              slurp(s_appr));
+        press_b();
+
+        /* The APPROVE step fits the title's lines (game run L1, 2026-10-25: the line under the cursor is drawn larger;
+         * "SILVER LAKE MAGENTA ROAD  ON", 28 characters, showed whole there, "HELLO PLUGIN  APPROVE HELLO.ASI
+         * 412D84F0" was cut after "412D8"; the other lines showed 44 characters whole). The longest name and module
+         * name there can be: the line under the cursor at most 28, the two lines below at most 44, and the warning and
+         * the module still said in full. */
+        {
+            char t[300];
+            snprintf(t, sizeof t, "id = \"w.wide\"\nname = \"ABCDEFGHIJKLMNOPQRSTUVWXYZ\"\n%s",
+                     plugin_decl("averylongmodulefilename" EXT));
+            mk("codew/w/mod.toml", t);
+            mk("codew/w/averylongmodulefilename" EXT, "WIDE");
+        }
+        open_page("codew");
+        cursor_to(0);
+        press_a();
+        CHECK(same_text(line(0), "ABCDEFGHIJKL..  APPROVE CODE") && strlen(line(0)) <= 28,
+              "APPROVE CODE fits the line under the cursor (<= 28): %s (%u)", line(0), (unsigned)strlen(line(0)));
+        CHECK(same_text(line(2), "NATIVE CODE RUNS WITH YOUR PERMISSIONS") && strlen(line(3)) <= 44
+              && !strncmp(line(3), "TRUSTED SOURCES ONLY: AVERYLONGM.. ", 35) && strlen(line(3)) == 35 + 8,
+              "the warning and the module with its hash fit the lines below (<= 44): %s / %s", line(2), line(3));
+        cursor_to(1);
+        CHECK(same_text(line(0), "ABCDEFGHIJKLM..  ON  CODE?"), "moved away: cancelled (%s)", line(0));
+        /* every state of a code mod's line fits the line under the cursor: the name cut to 15 */
+        {
+            static const char *const want_states[] = { "ABCDEFGHIJKL..  APPROVE CODE", "ABCDEFGHIJKLM..  ON*  CODE",
+                                                        "ABCDEFGHIJKLM..  OFF*  CODE?", "ABCDEFGHIJKLM..  ON  CODE?" };
+            int fits = 1;
+            cursor_to(0);
+            for (int k = 0; k < 4; k++) {
+                press_a();                    /* ON -> APPROVE -> ON + CODE -> OFF -> ON */
+                fits &= strlen(line(0)) <= 28;
+                CHECK(same_text(line(0), want_states[k]), "code mod state %d: %s", k, line(0));
+            }
+            CHECK(fits, "every state of a code mod's line is at most 28 characters");
+        }
+        press_b();
+
+        /* 11: a module that is not there: no APPROVE, said so */
+        open_page("code");
+        cursor_to(lm);
+        press_a();
+        CHECK(same_text(line(lm), "C.MISSING  ON  CODE?") && same_text(line(ap + 1), "CODE MISSING - SEE LOG")
+              && same_text(line(ap), "NO CHANGES"), "11: not hashed: %s / %s", line(lm), line(ap + 1));
+        press_a();
+        CHECK(same_text(line(lm), "C.MISSING  OFF*  CODE?"), "11: A again: off (%s)", line(lm));
+        press_a();
+        CHECK(same_text(line(lm), "C.MISSING  ON  CODE?") && same_text(line(ap), "NO CHANGES"), "11: and on: %s", line(lm));
+
+        /* 13: the approval file cannot be written: a removal stops the APPLY
+         * (the mod list not saved either); an approval is not added */
+        snprintf(p, sizeof p, "%s.tmp", s_appr);
+        mkdir_one(p);
+        snprintf(before, sizeof before, "%s", slurp(s_appr));
+        cursor_to(lh);
+        press_a();                        /* ON -> APPROVE -> ON + CODE: only an approval to add */
+        press_a();
+        cursor_to(ap);
+        press_a();
+        CHECK(same_text(line(ap), "NOT SAVED - SEE THE LOG") && same_text(slurp(s_appr), before) && !strstr(before, "c.hello"),
+              "13: an approval not written: the file as it was: %s", slurp(s_appr));
+        cursor_to(lx);
+        press_a();                        /* ON + CODE -> OFF: a removal first */
+        cursor_to(ap);
+        press_a();
+        CHECK(same_text(line(ap), "NOT SAVED - SEE THE LOG") && same_text(slurp(s_appr), before)
+              && (!slurp(state) || !strstr(slurp(state), "c.mixed")),
+              "13: a removal not written: the mod list not saved, no approval added: %s", line(ap));
+#if defined(_WIN32)
+        _rmdir(p);
+#else
+        rmdir(p);
+#endif
+        s_nmade--;
+        press_a();
+        snprintf(want, sizeof want, "\"c.hello sha256:%s\"", hh);
+        CHECK(same_text(line(ap), "SAVED - RESTART REQUIRED") && !strstr(slurp(s_appr), "c.mixed") && strstr(slurp(s_appr), want)
+              && strstr(slurp(state), "\"c.mixed\""), "13: tried again: removed, off, approved: %s", slurp(s_appr));
+        CHECK(!strstr(slurp(state), "sha256"), "17: the mod list holds ids only: %s", slurp(state));
+        press_b();
+
+        /* 12: an approval file the page would not write back, and one that is
+         * not an approval file: used as they are, never written from here */
+        {
+            FILE *f = fopen(s_appr, "wb");
+            if (f) {
+                fprintf(f, "approved = [\"c.hello sha256:%s\", \"written by hand\"]\n", hh);
+                fclose(f);
+            }
+        }
+        snprintf(before, sizeof before, "%s", slurp(s_appr));
+        open_page("code");
+        cursor_to(lh);
+        CHECK(pstate("c.hello") == BO3_PLUGIN_RUNNING && same_text(line(ap + 1), "CODE RUNNING"),
+              "12: kept as it is, and used: %s", line(ap + 1));
+        cursor_to(lx);
+        press_a();                        /* OFF -> ON */
+        press_a();                        /* no APPROVE: the file is not changed here */
+        CHECK(same_text(line(lx), "C.MIXED  OFF  CODE?"), "12: no APPROVE with that file (%s)", line(lx));
+        press_a();
+        CHECK(same_text(line(ap + 1), "APPROVAL FILE NOT CHANGED HERE - SEE LOG"), "12: said: %s", line(ap + 1));
+        press_a();
+        cursor_to(lh);
+        press_a();                        /* ON + CODE -> OFF: its removal cannot be written */
+        cursor_to(ap);
+        press_a();
+        CHECK(same_text(line(ap), "NOT SAVED - SEE THE LOG") && same_text(slurp(s_appr), before)
+              && !strstr(slurp(state), "\"c.hello\""), "12: a removal refused, nothing saved, the file as it was");
+        press_b();
+        {
+            FILE *f = fopen(s_appr, "wb");
+            if (f) {
+                fputs("approved = [nope\n", f);
+                fclose(f);
+            }
+        }
+        open_page("code");
+        cursor_to(lh);
+        CHECK(pstate("c.hello") == BO3_PLUGIN_NOT_APPROVED && same_text(line(ap + 1), "APPROVAL FILE UNREADABLE - SEE LOG"),
+              "12: not an approval file: nothing approved: %s", line(ap + 1));
+        press_a();                        /* ON -> OFF (no APPROVE); a removal is needed and cannot be made */
+        CHECK(same_text(line(lh), "C.HELLO  OFF*  CODE?"), "12: %s", line(lh));
+        cursor_to(ap);
+        press_a();
+        CHECK(same_text(line(ap), "NOT SAVED - SEE THE LOG") && same_text(slurp(s_appr), "approved = [nope\n")
+              && !strstr(slurp(state), "\"c.hello\""), "12: never overwritten from here: %s", slurp(s_appr));
+        press_b();
+
+        /* plugins off in this process (TAKEDAWN_PLUGINS=0), and no approval
+         * file (TAKEDAWN_PLUGIN_APPROVALS empty): no APPROVE */
+        remove(s_appr);
+        SETENV("TAKEDAWN_PLUGINS", "0");
+        open_page("code");
+        cursor_to(lx);
+        CHECK(pstate("c.hello") == BO3_PLUGIN_DISABLED && bo3_plugins_running() == 0
+              && same_text(line(ap + 1), "CODE OFF (TAKEDAWN_PLUGINS=0)"), "plugins off: %s", line(ap + 1));
+        press_a();
+        press_a();
+        CHECK(same_text(line(lx), "C.MIXED  OFF  CODE?") && !slurp(s_appr), "plugins off: ON, then OFF, no APPROVE (%s)", line(lx));
+        press_b();
+        SETENV("TAKEDAWN_PLUGINS", "1");
+        bo3_plugins_approval_file("");
+        open_page("code");
+        cursor_to(lx);
+        press_a();
+        CHECK(same_text(line(ap + 1), "CODE: NO APPROVAL FILE"), "no approval file: %s", line(ap + 1));
+        press_a();
+        CHECK(same_text(line(lx), "C.MIXED  OFF  CODE?") && !slurp(s_appr), "no approval file: no APPROVE (%s)", line(lx));
+        press_b();
+    }
+    SETENV("TAKEDAWN_PLUGINS", "");
+    bo3_plugins_approval_file("");
 
     /* ---- the pagination gate ---- */
     /* Negative control: the harness sees the historical failure. An 11-line

@@ -48,6 +48,18 @@
  * here reads or writes a file itself.
  * Every text shown, mod text included, goes through put_label: printable
  * ASCII in upper case (the title font's), anything else '?', cut to fit.
+ *
+ * Native code (plugins.h, docs/native-plugins.md): a mod with a module for
+ * this system shows CODE (approved from the next start) or CODE? (not), and
+ * A goes OFF -> ON (its files only) -> APPROVE CODE -> ON + CODE -> OFF.
+ * The APPROVE step hashes the module (never loads it) and shows the warning,
+ * the module and its hash on the two lines below; only A again approves those
+ * bytes, moving away cancels. Nothing is written before APPLY, which removes
+ * approvals first, then saves the mod list, then adds approvals: a failure
+ * stops what follows, so what is saved never allows more code than was
+ * chosen. A mod turned off, or on without its code, loses its approval. The
+ * plugins of this start stay as they are: a change is for the next start,
+ * and a running plugin runs until Takedawn exits.
  */
 #include <stdio.h>
 #include <stdint.h>
@@ -58,6 +70,7 @@
 #include "platform/recomp_patch.h"
 #include "recomp_types.h"
 #include "modfs.h"
+#include "plugins.h"
 
 extern RECOMP_TLS uint32_t g_eax, g_ebx, g_ecx, g_edx, g_esi, g_edi, g_esp, g_ebp, g_seh_ebp;
 extern ptrdiff_t g_xbox_mem_offset;
@@ -102,6 +115,18 @@ static unsigned char s_touched[BO3_MODFS_MAX_MODS]; /* the player chose for it (
 static unsigned char s_choice[BO3_MODFS_MAX_MODS];  /* on / off as chosen, whatever the mod list says */
 static unsigned char s_saved[BO3_MODFS_MAX_MODS];   /* what the mod list says (read at each build and APPLY) */
 static int s_save_failed;                  /* the last APPLY could not save every choice */
+
+/* Native code, for mods with a module for this system (has_code). */
+static unsigned char s_code[BO3_MODFS_MAX_MODS];        /* with s_choice: its code approved, as chosen */
+static char s_code_sha[BO3_MODFS_MAX_MODS][65];         /* its module's bytes as last hashed here ("" not yet) */
+static char s_start_sha[BO3_MODFS_MAX_MODS][65];        /* as this start hashed them ("" not hashed) */
+static unsigned char s_code_saved[BO3_MODFS_MAX_MODS];  /* the approval file approves it (its bytes, when known) */
+static unsigned char s_code_entry[BO3_MODFS_MAX_MODS];  /* the approval file names it */
+static unsigned char s_code_changed[BO3_MODFS_MAX_MODS];/* named for other bytes than the known ones */
+static unsigned char s_code_missing[BO3_MODFS_MAX_MODS];/* its module could not be hashed (the log says why) */
+static bo3_approvals_state s_appr;                      /* the approval file (read at each build and APPLY) */
+static int s_appr_said;                                 /* "cannot be changed here" logged */
+static int s_confirm = -1;                              /* the mod whose approval waits for A, the warning shown */
 
 /* Made by the build (cmake/modsmenu_marks.cmake): 1 when the generated code
  * calls si_items, si_select, mm_flow_sel and mm_flow_back where
@@ -188,12 +213,37 @@ static int nmods(void)
     return n < BO3_MODFS_MAX_MODS ? n : BO3_MODFS_MAX_MODS;
 }
 
-/* What the mod list says now (it may have become readable since). */
+static int has_code(int i)         /* usable, with a module for this system */
+{
+    const bo3_mod *m = bo3_modfs_mod(i);
+    return m->usable && m->manifest.plugin && m->manifest.plugin_path[0];
+}
+
+/* What the mod list and the approval file say now (either may have become
+ * readable since). */
 static void read_saved(void)
 {
+    int code = 0;
+    s_appr = bo3_plugins_approvals();
     for (int i = 0; i < nmods(); i++) {
         const bo3_mod *m = bo3_modfs_mod(i);
+        const char *sha;
         s_saved[i] = (unsigned char)(m->usable ? bo3_modfs_enabled_next(m->manifest.id) : m->enabled);
+        if (!has_code(i))
+            continue;
+        code = 1;
+        bo3_plugins_state(i, NULL, 0, s_start_sha[i], sizeof s_start_sha[i]);
+        sha = s_code_sha[i][0] ? s_code_sha[i] : s_start_sha[i];       /* the bytes as last seen */
+        s_code_entry[i] = (unsigned char)(bo3_plugins_approvals_of(m->manifest.id, NULL, 0) > 0);
+        s_code_saved[i] = (unsigned char)(sha[0] ? bo3_plugins_approved_for(m->manifest.id, sha) : s_code_entry[i]);
+        s_code_changed[i] = (unsigned char)(sha[0] && s_code_entry[i] && !s_code_saved[i]);
+    }
+    if (code && !s_appr_said && (s_appr == BO3_APPROVALS_KEPT || s_appr == BO3_APPROVALS_BAD)) {
+        s_appr_said = 1;
+        fprintf(stderr, "[MODS] the approval file is left as it is: native code cannot be approved or removed on this page "
+                        "(%s; docs/native-plugins.md)\n", s_appr == BO3_APPROVALS_BAD
+                        ? "it cannot be read now, or is not an approval file"
+                        : "it has entries this page does not write back: edit it by hand");
     }
 }
 
@@ -202,18 +252,59 @@ static int chosen(int i)           /* on at the next start, with the player's ch
     return s_touched[i] ? s_choice[i] : s_saved[i];
 }
 
-static int changes_unsaved(void)   /* 1: APPLY would change the mod list */
+static int code_chosen(int i)      /* its code approved from the next start, with the player's choice */
+{
+    return s_touched[i] ? s_code[i] : s_code_saved[i];
+}
+
+/* Its code at the next start differs from this start's: approved now vs
+ * approved for the next one (and on). Nothing to compare when no plugin can
+ * run in this process. */
+static int code_differs(int i)
+{
+    return has_code(i) && !bo3_plugins_off() && (chosen(i) && code_chosen(i)) != bo3_plugins_was_approved(i);
+}
+
+/* A CODE choice can be made: plugins run here and the page may write the
+ * approval file. */
+static int code_possible(void)
+{
+    return !bo3_plugins_off() && (s_appr == BO3_APPROVALS_ABSENT || s_appr == BO3_APPROVALS_OK);
+}
+
+static int code_add(int i)         /* APPLY would approve its bytes */
+{
+    return s_touched[i] && has_code(i) && s_choice[i] && s_code[i]
+           && !bo3_plugins_approved_for(bo3_modfs_mod(i)->manifest.id, s_code_sha[i]);
+}
+
+static int code_remove(int i)      /* APPLY would remove its approval (an unreadable file may hold one) */
+{
+    return s_touched[i] && has_code(i) && !(s_choice[i] && s_code[i])
+           && (s_code_entry[i] || s_appr == BO3_APPROVALS_BAD);
+}
+
+static int code_adds(void)
 {
     for (int i = 0; i < nmods(); i++)
-        if (bo3_modfs_mod(i)->usable && chosen(i) != s_saved[i])
+        if (code_add(i))
             return 1;
     return 0;
 }
 
-static int restart_needed(void)    /* 1: the mod list differs from what this start used */
+static int changes_unsaved(void)   /* 1: APPLY would change the mod list or the approval file */
 {
     for (int i = 0; i < nmods(); i++)
-        if (bo3_modfs_mod(i)->usable && s_saved[i] != bo3_modfs_mod(i)->enabled)
+        if ((bo3_modfs_mod(i)->usable && chosen(i) != s_saved[i]) || code_add(i) || code_remove(i))
+            return 1;
+    return 0;
+}
+
+static int restart_needed(void)    /* 1: the mod list, or an approval, differs from what this start used */
+{
+    for (int i = 0; i < nmods(); i++)
+        if ((bo3_modfs_mod(i)->usable && s_saved[i] != bo3_modfs_mod(i)->enabled)
+                || (has_code(i) && !bo3_plugins_off() && (s_saved[i] && s_code_saved[i]) != bo3_plugins_was_approved(i)))
             return 1;
     return 0;
 }
@@ -239,14 +330,14 @@ static const char *last_part(const char *path)
     return f ? f + 1 : path;
 }
 
-/* ON / OFF, a star when the next start differs from this one; or why a mod
- * cannot be used. */
+/* ON / OFF, a star when the next start differs from this one (its code
+ * included); or why a mod cannot be used. */
 static const char *state_word(int i)
 {
     const bo3_mod *m = bo3_modfs_mod(i);
     if (!m->usable)
         return shared_id(m) ? "SAME ID" : "INVALID";
-    if (chosen(i) == m->enabled)
+    if (chosen(i) == m->enabled && !code_differs(i))
         return m->enabled ? "ON" : "OFF";
     return chosen(i) ? "ON*" : "OFF*";
 }
@@ -262,10 +353,44 @@ static const char *mod_name(const bo3_mod *m)
     return f ? f + 1 : m->folder;              /* a mod whose mod.toml was not read: its folder */
 }
 
+/* Its module's file name (never a host path), at most max characters. */
+static void module_name(int i, char *out, size_t n, size_t max)
+{
+    shown(out, n, last_part(bo3_modfs_mod(i)->manifest.plugin_path));
+    if (strlen(out) > max && max > 2) {
+        out[max - 2] = out[max - 1] = '.';
+        out[max] = 0;
+    }
+}
+
+/* A mod's line: its name and state, and for native code CODE (approved from
+ * the next start) or CODE?; while its approval waits for A, APPROVE CODE (the
+ * module and its hash are on the information line). The line under the
+ * cursor is drawn larger and 28 characters is what fits there, so a code
+ * mod's name is cut to fit its longest line: 15 + "  OFF*  CODE?", and
+ * 14 + "  APPROVE CODE". */
+static void mod_line(int i, char *buf, size_t bn)
+{
+    char name[LABEL_CH];
+    size_t cut = s_confirm == i ? 14 : has_code(i) ? 15 : NAME_CH;
+    shown(name, sizeof name, mod_name(bo3_modfs_mod(i)));
+    if (strlen(name) > cut) {
+        size_t k = cut - 2;
+        while (k && name[k - 1] == ' ')
+            k--;
+        memcpy(name + k, "..", 3);
+    }
+    if (s_confirm == i) {
+        snprintf(buf, bn, "%s  APPROVE CODE", name);
+    } else {
+        snprintf(buf, bn, "%s  %s%s", name, state_word(i), !has_code(i) ? "" : code_chosen(i) ? "  CODE" : "  CODE?");
+    }
+}
+
 /* The MODS page's lines into the block; the count. */
 static int build_mods(void)
 {
-    char buf[96], name[LABEL_CH];
+    char buf[96];
     int n = 0, nm = nmods(), active = 0, per;
 
     read_saved();
@@ -281,15 +406,7 @@ static int build_mods(void)
         s_line_mod[n++] = -1;
     }
     for (int i = s_first; i < nm && i < s_first + per; i++) {
-        shown(name, sizeof name, mod_name(bo3_modfs_mod(i)));
-        if (strlen(name) > NAME_CH) {
-            size_t k = NAME_CH - 2;
-            while (k && name[k - 1] == ' ')
-                k--;
-            snprintf(buf, sizeof buf, "%.*s..  %s", (int)k, name, state_word(i));
-        } else {
-            snprintf(buf, sizeof buf, "%s  %s", name, state_word(i));
-        }
+        mod_line(i, buf, sizeof buf);
         put_label(label_va(n), buf);
         s_line_mod[n++] = i;
     }
@@ -300,6 +417,7 @@ static int build_mods(void)
     }
     s_apply_line = n;
     put_label(label_va(n), s_save_failed ? "NOT SAVED - SEE THE LOG"
+                         : code_adds() ? "APPLY - APPROVES CODE - RESTART REQUIRED"
                          : changes_unsaved() ? "APPLY - RESTART REQUIRED"
                          : restart_needed() ? "SAVED - RESTART REQUIRED" : "NO CHANGES");
     s_line_mod[n++] = -1;
@@ -322,6 +440,55 @@ static int build_mods(void)
     return n;
 }
 
+/* A native-code mod's two lines: its code now and from the next start; its
+ * module and hash. While its approval waits for A: the warning. */
+static void code_text(int i, char *det, size_t dn, char *info, size_t in)
+{
+    const char *off = bo3_plugins_off(), *sha = s_code_sha[i][0] ? s_code_sha[i] : s_start_sha[i], *t;
+    bo3_plugin_state st = bo3_plugins_state(i, NULL, 0, NULL, 0);
+    char mod[LABEL_CH];
+    int differs = code_differs(i), next = chosen(i) && code_chosen(i);
+
+    if (s_confirm == i) {                    /* the bytes A approves: module and hash */
+        module_name(i, mod, sizeof mod, 12);
+        snprintf(det, dn, "NATIVE CODE RUNS WITH YOUR PERMISSIONS");
+        snprintf(info, in, "TRUSTED SOURCES ONLY: %s %.8s", mod, s_code_sha[i]);
+        return;
+    }
+    module_name(i, mod, sizeof mod, 24);
+    if (sha[0])
+        snprintf(info, in, "%s  SHA256 %.8s", mod, sha);
+    else
+        snprintf(info, in, "%s  (HASHED WHEN APPROVED)", mod);
+    if (off)
+        t = !strcmp(off, "TAKEDAWN_PLUGINS=0") ? "CODE OFF (TAKEDAWN_PLUGINS=0)"
+          : strstr(off, "macOS") ? "CODE OFF ON MACOS (TAKEDAWN_PLUGINS=1)" : "CODE NOT SUPPORTED HERE";
+    else if (st == BO3_PLUGIN_RUNNING)
+        t = next ? "CODE RUNNING" : "RUNS UNTIL TAKEDAWN EXITS - RESTART REQUIRED";
+    else if (s_code_missing[i])
+        t = "CODE MISSING - SEE LOG";
+    else if (differs && next)
+        t = "CODE FROM THE NEXT START - RESTART REQUIRED";
+    else if (st == BO3_PLUGIN_REFUSED || st == BO3_PLUGIN_FAILED)
+        t = "CODE NOT LOADED - SEE LOG";
+    else if (s_code_changed[i] && !next)
+        t = "CODE CHANGED - APPROVE AGAIN";
+    else if (s_appr == BO3_APPROVALS_NONE)
+        t = "CODE: NO APPROVAL FILE";
+    else if (s_appr == BO3_APPROVALS_BAD)
+        t = "APPROVAL FILE UNREADABLE - SEE LOG";
+    else if (s_appr == BO3_APPROVALS_KEPT)
+        t = "APPROVAL FILE NOT CHANGED HERE - SEE LOG";
+    else if (st == BO3_PLUGIN_OFF)
+        t = next ? "CODE APPROVED (MOD OFF NOW)" : "CODE NOT USED (MOD OFF)";
+    else
+        t = next ? "CODE APPROVED" : "CODE NOT APPROVED";
+    if (differs && !strstr(t, "RESTART") && strlen(t) + sizeof " - RESTART REQUIRED" <= LABEL_CH)
+        snprintf(det, dn, "%s - RESTART REQUIRED", t);
+    else
+        snprintf(det, dn, "%s", t);
+}
+
 /* The details line, and the information line, for the line under the cursor. */
 static void detail_text(int cur, char *det, size_t dn, char *info, size_t in)
 {
@@ -339,6 +506,8 @@ static void detail_text(int cur, char *det, size_t dn, char *info, size_t in)
             snprintf(det, dn, "ID ALSO USED BY %.60s", last_part(shared_id(m)->folder));   /* not the whole path */
         } else if (!m->usable) {
             snprintf(det, dn, "%s", m->problem);
+        } else if (has_code(s_line_mod[cur])) {
+            code_text(s_line_mod[cur], det, dn, info, in);
         } else {
             char ver[BO3_MOD_VERSION_MAX + 1], by[BO3_MOD_AUTHOR_MAX + 1];
             shown(ver, sizeof ver, m->manifest.version);
@@ -353,6 +522,7 @@ static void detail_text(int cur, char *det, size_t dn, char *info, size_t in)
         }
     } else if (cur == s_apply_line) {
         snprintf(det, dn, "%s", s_save_failed ? "A: TRY AGAIN"
+                                : code_adds() ? "A: SAVE - APPROVES NATIVE CODE"
                                 : changes_unsaved() ? "A: SAVE - USED AT THE NEXT START"
                                 : restart_needed() ? "QUIT AND START THE GAME AGAIN" : "THE MODS IN USE ARE SAVED");
     } else if (cur == s_prev_line || cur == s_next_line) {
@@ -373,6 +543,17 @@ static void detail_refresh(void)
     if (!s_mode || s_detail_line < 0 || !s_blk)
         return;
     cur = MM16(SP_CURSOR);
+    if (s_confirm >= 0 && (cur < 0 || cur >= s_nlines || s_line_mod[cur] != s_confirm)) {
+        int c = s_confirm;                   /* moved away from an approval waiting for A: cancelled */
+        char buf[96];
+        s_confirm = -1;
+        for (int k = 0; k < s_nlines; k++)
+            if (s_line_mod[k] == c) {
+                mod_line(c, buf, sizeof buf);
+                put_label(label_va(k), buf);
+            }
+        fprintf(stderr, "[MODS] %s: native code not approved (cancelled)\n", bo3_modfs_mod(c)->manifest.id);
+    }
     if (cur == s_detail_line || cur == s_info_line)
         return;                              /* on one of them: keep what they say */
     detail_text(cur, det, sizeof det, info, sizeof info);
@@ -434,6 +615,7 @@ static void mm_items(void)
     if (!s_rebuilding)
         s_mode = 0;                          /* the title built the page itself: the Settings list */
     s_mods_line = -1;
+    s_confirm = -1;                          /* a page built anew: an approval waiting for A is cancelled */
     if (!mm_on() || !mm_block())
         return;
     if (s_mode) {
@@ -521,26 +703,45 @@ static void mm_flow_back(void)
     fprintf(stderr, "[MODS] closed\n");
 }
 
-/* The choices saved: each mod whose choice differs from the mod list. */
+/* The choices saved: approvals removed first, then each mod whose choice
+ * differs from the mod list, then approvals added. A failure stops what
+ * follows (the mod list goes on with its other mods, as before): what is
+ * saved never allows more native code than was chosen. */
 static void apply(void)
 {
-    int ok = 1, n = 0;
-    for (int i = 0; i < nmods(); i++) {
+    int ok = 1, n = 0, removed;
+    for (int i = 0; ok && i < nmods(); i++)
+        if (code_remove(i)) {
+            n++;
+            ok = bo3_plugins_set_approval(bo3_modfs_mod(i)->manifest.id, NULL);
+        }
+    removed = ok;
+    for (int i = 0; removed && i < nmods(); i++) {
         const bo3_mod *m = bo3_modfs_mod(i);
         if (!m->usable || chosen(i) == s_saved[i])
             continue;
         n++;
-        if (bo3_modfs_set_enabled(m->manifest.id, chosen(i)))
-            s_touched[i] = 0;                /* now what the mod list says */
-        else
+        if (bo3_modfs_set_enabled(m->manifest.id, chosen(i))) {
+            if (!has_code(i))
+                s_touched[i] = 0;            /* now what the mod list says (a code mod: once its approval is too) */
+        } else {
             ok = 0;                          /* this choice stays, to try again */
+        }
     }
+    for (int i = 0; ok && i < nmods(); i++)
+        if (code_add(i)) {
+            n++;
+            ok = bo3_plugins_set_approval(bo3_modfs_mod(i)->manifest.id, s_code_sha[i]);
+        }
+    for (int i = 0; ok && i < nmods(); i++)
+        if (has_code(i))
+            s_touched[i] = 0;                /* now what the mod list and the approval file say */
     s_save_failed = !ok;
     if (ok)
         fprintf(stderr, "[MODS] APPLY: %d change(s) saved\n", n);
     else
         fprintf(stderr, "[MODS] APPLY: not every change saved: no mod list file (TAKEDAWN_MOD_LIST empty), or it "
-                        "could not be read or written (lines above)\n");
+                        "or the approval file could not be read or written (lines above); nothing after it was saved\n");
 }
 
 /* menuentry.c's si_select mark (0x853B4), after its own: al = A taken. */
@@ -570,9 +771,35 @@ static void mm_select(void)
         return;
     if (s_line_mod[cur] >= 0) {
         int i = s_line_mod[cur];
+        const char *id = bo3_modfs_mod(i)->manifest.id;
         if (!bo3_modfs_mod(i)->usable)
             return;                          /* a mod that cannot be used: nothing to turn on */
-        s_choice[i] = (unsigned char)!chosen(i);
+        if (!has_code(i)) {
+            s_choice[i] = (unsigned char)!chosen(i);
+        } else if (s_confirm == i) {         /* A on APPROVE: these bytes, from the next start (at APPLY) */
+            s_choice[i] = s_code[i] = 1;
+            s_confirm = -1;
+            fprintf(stderr, "[MODS] %s: native code approved (sha256 %s), saved at APPLY\n", id, s_code_sha[i]);
+        } else if (chosen(i) && !code_chosen(i) && code_possible() && !s_code_missing[i]) {
+            char why[200];                   /* ON -> APPROVE: hashed now, never loaded */
+            if (bo3_plugins_hash_module(i, s_code_sha[i], why, sizeof why)) {
+                s_confirm = i;
+                s_choice[i] = 1;
+                s_code[i] = 0;
+                fprintf(stderr, "[MODS] %s: approve native code %s (sha256 %s)? A again approves it\n", id,
+                        bo3_modfs_mod(i)->manifest.plugin_path, s_code_sha[i]);
+            } else {
+                s_code_missing[i] = 1;       /* stays ON without code; A again turns it off */
+                s_choice[i] = 1;
+                s_code[i] = 0;
+            }
+        } else if (chosen(i)) {              /* ON or ON + CODE -> OFF: its approval goes too */
+            s_choice[i] = s_code[i] = 0;
+            s_code_missing[i] = 0;
+        } else {                             /* OFF -> ON: its files only */
+            s_choice[i] = 1;
+            s_code[i] = 0;
+        }
         s_touched[i] = 1;
         s_save_failed = 0;
     } else if (cur == s_apply_line) {
@@ -609,7 +836,11 @@ void bo3_modsmenu_start(void)
     const char *e = getenv("TAKEDAWN_MODS_MENU");
     s_hidden = e && e[0] == '0' && !e[1];
     memset(s_touched, 0, sizeof s_touched);
+    memset(s_code_sha, 0, sizeof s_code_sha);
+    memset(s_code_missing, 0, sizeof s_code_missing);
     s_save_failed = 0;
+    s_confirm = -1;
+    s_appr_said = 0;
     recomp_patch_on_mark("mm_flow_sel", mm_flow_sel);
     recomp_patch_on_mark("mm_flow_back", mm_flow_back);
     /* MODS is listed only with its marks in the generated code and the two

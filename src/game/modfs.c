@@ -1255,6 +1255,37 @@ static void state_remove(const char *path)
 }
 #endif
 
+/* The same reading and writing for another settings file (plugins.c's
+ * approval file): no lock, the caller's own. */
+int bo3_modfs_read_whole(const char *path, char **text, size_t *n)
+{
+    int r;
+    if (!path || strlen(path) + sizeof ".tmp" > MODFS_STATE_PATH) {
+        *text = NULL;
+        *n = 0;
+        return -2;
+    }
+    r = state_read(path, text, n);
+    if (r == 1)
+        (*text)[*n] = 0;
+    return r;
+}
+
+int bo3_modfs_write_whole(const char *path, const char *text, size_t n)
+{
+    char tmp[MODFS_STATE_PATH + 8];
+    if (!path || strlen(path) + sizeof ".tmp" > MODFS_STATE_PATH || n > MODFS_STATE_MAX)
+        return 0;
+    snprintf(tmp, sizeof tmp, "%s.tmp", path);
+    if (!state_new_file(tmp, text, n))
+        return 0;
+    if (!state_move(tmp, path, 0)) {
+        state_remove(tmp);
+        return 0;
+    }
+    return 1;
+}
+
 /* A table key ([key] with keys in it, or key.x = ...): the reader names its
  * keys, not the table. */
 static int has_table(const recomp_cfg *cfg, const char *key)
@@ -1549,6 +1580,12 @@ static void find_conflicts(void)
     if (more)
         XR_NOTICE("[MOD] ... and %d more conflicts\n", more);
     free(keys);
+}
+
+int bo3_modfs_mod_file(const bo3_mod *m, const char *rel, char *out, size_t n)
+{
+    int ambiguous;
+    return m && rel && *rel && out && n && mod_file(m->folder, rel, out, n, &ambiguous);
 }
 
 int bo3_modfs_folder_count(void)
