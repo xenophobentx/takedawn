@@ -92,6 +92,21 @@ static int ctl_driving(void)
     return phase == 2 || (phase < 2 && cd != 0xBF800000u && cd != 0);
 }
 
+/* The headset (xboxrecomp's nv2a_vk_xr.c, RECOMP_XR=1) asks which way to
+ * show the frame: 0 immersive, 1 on the 3D cinema screen. Everything of an
+ * event is immersive, its own cameras too (the fly-by, crash and takedown
+ * cameras, the finish: the HUD and the title's captions go on the HUD panel,
+ * the letterbox bars are left out); the front end (menus, the garage) goes
+ * on the cinema. Read on the renderer's thread at the flip. */
+int xbox_vr_scene(void)
+{
+    uint32_t mod;
+    if (!g_xbox_mem_offset)
+        return 1;
+    mod = M32(CTL_MODULE);
+    return !(mod >= 0x10000u && mod < 0x04000000u && M32(mod) == CTL_VT_GAME);
+}
+
 /* BO3_CTL_LOG=<file>: what the gate saw and did, for the scene test
  * (tools/headless/controls_scene.sh) and for finding the title's state. "S"
  * a watched word changed, "G" a pad's layout changed, "P" a pad's bytes as

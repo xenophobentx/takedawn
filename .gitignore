@@ -71,3 +71,5 @@ tools/headless/local.env
 # Release pipeline (tools/release/): artefacts, and the per-machine settings
 dist/
 tools/release/local.env
+# Steam Frame build (tools/frame/build.sh)
+build-frame/

@@ -268,6 +268,7 @@ report zip from Advanced > Create bug report helps a lot.
 | Android devices without a Snapdragon chip (Mali, PowerVR, Xclipse graphics) | Not supported yet. If the device's own driver supports Vulkan 1.3, it might work |
 | Samsung Galaxy S23 FE (Exynos 2200, Xclipse graphics) | Starts on the phone's own driver, but slow: about 30 fps even at render scale 1 |
 | An Adreno device's own driver instead of the bundled one | Not supported yet. If it supports Vulkan 1.3, it might work; the bundled driver is the default |
+| Steam Frame (VR) | Experimental, built from source. Holds 120 Hz in the headset. See [Steam Frame](#steam-frame-vr-experimental) |
 
 ### System requirements
 
@@ -517,6 +518,32 @@ stops working later, the next start switches back to Automatic and tells you.
 An update only installs if the new APK is signed with the same key as the old
 one. Every release from this project is. To remove the app,
 uninstall it. Android offers to keep its data, which holds your saves.
+
+### Steam Frame (VR, experimental)
+
+There's also a VR build for Valve's Steam Frame. It's a native Linux ARM64
+build on the Vulkan renderer, talking to SteamVR through OpenXR. Races are in
+stereo 3D around you: every picture the game draws gets drawn again for each
+eye, and you can look around the car. The HUD sits on its own panel in front
+of you. Menus, the garage and films show on a big screen.
+
+It's early, but it plays well and holds 120 Hz with the game at its usual
+60. There's no download for it; you build it yourself:
+
+1. Check out the xboxrecomp toolkit's `takedawn` branch next to this
+   repository as `../xboxrecomp`. You need Docker (Colima on a Mac is fine).
+2. `SPLIT=250 ./regen.sh`, then `tools/frame/build.sh all`.
+3. Put the Frame in Developer Mode with your ssh key on it, then run
+   `FRAME_HOST=steamos@<your Frame>.local tools/frame/deploy.sh --game-dir "<your unpacked disc>"`.
+   That copies the build and your game files over, adds "Devkit Game:
+   TakedawnVR" to the Frame's Steam library and asks SteamVR for 120 Hz.
+4. Start it from the Steam library on the Frame (started over ssh it gets no
+   controllers).
+
+The Frame's controllers work as an Xbox pad: Menu is Start, View is Back, the
+bumpers are Black and White. Hold View for a second to recentre.
+[docs/steam-frame.md](docs/steam-frame.md) has the settings, how it works and
+what's been measured.
 
 ## Controls
 
@@ -1050,6 +1077,7 @@ Further documents:
 | The data installer and the setup window | [docs/installer.md](docs/installer.md) |
 | The Windows build and its measurements | [docs/windows.md](docs/windows.md) |
 | The Android build, the graphics driver, devices | [docs/android.md](docs/android.md) |
+| The Steam Frame VR build: setup, settings, how the stereo works | [docs/steam-frame.md](docs/steam-frame.md) |
 | Shader pre-build | [docs/shader-prebuild.md](docs/shader-prebuild.md) |
 | The widescreen HUD fix | [docs/widescreen-hud.md](docs/widescreen-hud.md) |
 | Ultrawide | [docs/ultrawide.md](docs/ultrawide.md) |
