@@ -181,5 +181,5 @@ if rsync -a "$RDEST/out/version-mounted.txt" "$B/version-mounted.txt" 2>/dev/nul
     check_version "$B/version-mounted.txt" "the AppImage, mounted"
 fi
 cp "$B/version.txt" "$DIST/version-linux.txt"
-say "$NAME: $(( $(stat -f %z "$DIST/$NAME" 2>/dev/null || stat -c %s "$DIST/$NAME") / 1024 / 1024 )) MB, sha256 $(sha256_of "$DIST/$NAME")"
+say "$NAME: $(( $(stat -c %s "$DIST/$NAME" 2>/dev/null || stat -f %z "$DIST/$NAME") / 1024 / 1024 )) MB, sha256 $(sha256_of "$DIST/$NAME")"
 say "Linux done in $(( $(date +%s) - t0 )) s (setup window: $HAVE_SETUP)"
