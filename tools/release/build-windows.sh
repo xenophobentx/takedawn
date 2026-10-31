@@ -34,6 +34,12 @@
 # payload). Without a host, or with --no-setup, the program folder and the
 # .iss are the result and the script says so.
 #
+# On Windows itself (Git Bash) the script runs as it is, with
+# TAKEDAWN_PYTHON set (python3 there is often the Store's stand-in), and
+# TAKEDAWN_WIN_HOST=local does the Windows step on this machine with
+# PowerShell and cp instead of ssh and scp. The setup window is then built
+# with the Windows Qt kit's own moc and rcc.
+#
 # Nothing is code-signed (decided).
 source "$(dirname "$0")/common.sh"
 source "$REPO/tools/release/pins.env"
@@ -58,7 +64,7 @@ say "configuring (x86_64-w64-mingw32, SDL2 + Vulkan)"
 cmake -S "$REPO" -B "$B/build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DBO3_RELEASE=ON -DBO3_REGION="$BO3_REGION" \
     -DCMAKE_TOOLCHAIN_FILE="$REPO/cmake/llvm-mingw-x86_64.cmake" -DLLVM_MINGW_ROOT="$D/llvm-mingw" \
     -DXBOXRECOMP_DIR="$TOOLKIT" -DBO3_BIN_DIR="$B/bin" -DBO3_WIN_ICON="$B/takedawn.ico" \
-    -DCMAKE_PREFIX_PATH="$D/SDL2/x86_64-w64-mingw32;$D/glslang" \
+    -DCMAKE_PREFIX_PATH="$(native_path "$D/SDL2/x86_64-w64-mingw32");$(native_path "$D/glslang")" \
     -DVulkan_INCLUDE_DIR="$D/vulkan/include" -DVulkan_LIBRARY="$D/vulkan/lib/libvulkan-1.dll.a" \
     > "$B/configure.log" 2>&1 || { tail -20 "$B/configure.log" >&2; die "configure failed ($B/configure.log)"; }
 say "building (-j$JOBS, nice $NICE)"
@@ -89,15 +95,24 @@ if [ "$WITH_SETUP" = 1 ]; then
     # DLLs, the platform plugin and the style beside it: what windeployqt
     # would copy, worked out from the import tables.
     QTW="$(qt_kit windows desktop win64_llvm_mingw)"
-    case "$(uname -s)" in Darwin) QTH="$(qt_kit mac desktop clang_64)" ;; *) QTH="$(qt_kit linux desktop linux_gcc_64)" ;; esac
+    qt_path="$PATH"
+    case "$(uname -s)" in
+        Darwin) QTH="$(qt_kit mac desktop clang_64)" ;;
+        MINGW*|MSYS*|CYGWIN*)
+            # The Windows kit's own moc and rcc run here; they need the kit's
+            # DLLs and llvm-mingw's libc++ on PATH.
+            QTH="$QTW"
+            qt_path="$(posix_path "$QTW/bin"):$(posix_path "$D/llvm-mingw/x86_64-w64-mingw32/bin"):$PATH" ;;
+        *) QTH="$(qt_kit linux desktop linux_gcc_64)" ;;
+    esac
     say "building the setup window (Qt $QT_VERSION for Windows)"
     icon_py=(); [ -n "${TAKEDAWN_PYTHON:-}" ] && icon_py=(-DTAKEDAWN_ICON_PYTHON="$TAKEDAWN_PYTHON")
-    LLVM_MINGW="$D/llvm-mingw" cmake -S "$REPO/tools/install/gui" -B "$B/setup" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+    PATH="$qt_path" LLVM_MINGW="$(native_path "$D/llvm-mingw")" cmake -S "$REPO/tools/install/gui" -B "$B/setup" -G Ninja -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_TOOLCHAIN_FILE="$REPO/tools/install/gui/packaging/windows-toolchain.cmake" \
         -DCMAKE_PREFIX_PATH="$QTW" -DQT_HOST_PATH="$QTH" -DTAKEDAWN_ICO="$B/takedawn.ico" -DTAKEDAWN_REGION="$BO3_REGION" \
         ${icon_py[@]+"${icon_py[@]}"} > "$B/setup-configure.log" 2>&1 \
         || { tail -20 "$B/setup-configure.log" >&2; die "setup window: configure failed"; }
-    LLVM_MINGW="$D/llvm-mingw" nice -n "$NICE" cmake --build "$B/setup" --target takedawn-setup -j"$JOBS" \
+    PATH="$qt_path" LLVM_MINGW="$(native_path "$D/llvm-mingw")" nice -n "$NICE" cmake --build "$B/setup" --target takedawn-setup -j"$JOBS" \
         > "$B/setup-build.log" 2>&1 || { tail -30 "$B/setup-build.log" >&2; die "setup window: build failed ($B/setup-build.log)"; }
     mkdir -p "$PKG/platforms" "$PKG/styles"
     cp "$B/setup/takedawn-setup.exe" "$PKG/"
@@ -147,30 +162,41 @@ HOST="${TAKEDAWN_WIN_HOST:-}"
 if [ "$SETUP" = 0 ] || [ -z "$HOST" ]; then
     say "NOT DONE: the setup exe. Compile tools/release/windows/takedawn.iss with Inno Setup $INNOSETUP_VERSION on Windows:"
     say "  ISCC.exe /DPackage=<copy of $PKG> /DVersion=$VERSION /DIcon=<copy of $B/takedawn.ico>$([ "$BO3_REGION" = PAL ] && printf ' /DRegion=PAL') takedawn.iss"
-    say "  (set TAKEDAWN_WIN_HOST and TAKEDAWN_WIN_DIR to have this script do it over ssh)"
+    say "  (set TAKEDAWN_WIN_HOST and TAKEDAWN_WIN_DIR to have this script do it over ssh,"
+    say "   or TAKEDAWN_WIN_HOST=local when this is Windows)"
     exit 0
 fi
 
 # ── on the Windows machine ───────────────────────────────────────────
 WDIR="${TAKEDAWN_WIN_DIR:?TAKEDAWN_WIN_DIR: the folder on the Windows machine}"
 WFWD="$(printf '%s' "$WDIR" | tr '\\' '/')"
+if [ "$HOST" = local ]; then
+    [ "$WIN_HOST" = 1 ] || die "TAKEDAWN_WIN_HOST=local is for a build on Windows (Git Bash)"
+    on_win()   { powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$1"; }
+    to_win()   { cp -R "$@" "$(posix_path "$WFWD")/"; }
+    from_win() { cp "$(posix_path "$WFWD")/$1" "$2"; }
+else
+    on_win()   { ssh "$HOST" "$1"; }
+    to_win()   { scp -q -r "$@" "$HOST:$WFWD/"; }
+    from_win() { scp -q "$HOST:$WFWD/$1" "$2"; }
+fi
 say "copying the program folder to the Windows machine"
-ssh "$HOST" "New-Item -ItemType Directory -Force '$WDIR' | Out-Null; foreach (\$p in 'Takedawn','out','itest') { \$q = Join-Path '$WDIR' \$p; if (Test-Path \$q) { Remove-Item -Recurse -Force \$q } }" \
+on_win "New-Item -ItemType Directory -Force '$WDIR' | Out-Null; foreach (\$p in 'Takedawn','out','itest') { \$q = Join-Path '$WDIR' \$p; if (Test-Path \$q) { Remove-Item -Recurse -Force \$q } }" \
     || die "cannot reach the Windows machine"
-scp -q -r "$PKG" "$B/takedawn.ico" "$REPO/tools/release/windows/takedawn.iss" \
-    "$REPO/tools/release/windows/remote.ps1" "$HOST:$WFWD/" || die "copy to the Windows machine failed"
+to_win "$PKG" "$B/takedawn.ico" "$REPO/tools/release/windows/takedawn.iss" \
+    "$REPO/tools/release/windows/remote.ps1" || die "copy to the Windows machine failed"
 disc_arg=""
 [ -n "${TAKEDAWN_WIN_DISC:-}" ] && disc_arg="-Disc '$TAKEDAWN_WIN_DISC'"
 say "running on Windows: --version, the setup compile, the payload check"
-ssh "$HOST" "powershell -NoProfile -ExecutionPolicy Bypass -File '$WDIR\\remote.ps1' -Dir '$WDIR' -Version $VERSION -Region $BO3_REGION $disc_arg" \
+on_win "powershell -NoProfile -ExecutionPolicy Bypass -File '$WDIR\\remote.ps1' -Dir '$WDIR' -Version $VERSION -Region $BO3_REGION $disc_arg" \
     > "$B/remote.log" 2>&1 || { tail -15 "$B/remote.log" >&2; die "the Windows step failed ($B/remote.log)"; }
 grep -a "^STEP\|^RESULT" "$B/remote.log" | tr -d '\r' | sed 's/^/    /'
 mkdir -p "$DIST"
 EXE="$DIST/Takedawn-$VERSION$PKG_TAG-windows-x64-setup.exe"
-scp -q "$HOST:$WFWD/out/Takedawn-$VERSION$PKG_TAG-windows-x64-setup.exe" "$EXE" || die "could not fetch the setup exe"
-scp -q "$HOST:$WFWD/version.txt" "$B/version.txt"
-scp -q "$HOST:$WFWD/version-installed.txt" "$B/version-installed.txt"
-[ -n "$disc_arg" ] && scp -q "$HOST:$WFWD/check.txt" "$B/check.txt"
+from_win "out/Takedawn-$VERSION$PKG_TAG-windows-x64-setup.exe" "$EXE" || die "could not fetch the setup exe"
+from_win version.txt "$B/version.txt"
+from_win version-installed.txt "$B/version-installed.txt"
+[ -n "$disc_arg" ] && from_win check.txt "$B/check.txt"
 want="$(grep -a '^RESULT OK' "$B/remote.log" | tr -d '\r' | awk '{print $3}')"
 [ "$(sha256_of "$EXE")" = "$want" ] || die "the fetched setup exe is not the one compiled"
 check_version "$B/version.txt" "Takedawn.exe on Windows"
@@ -180,5 +206,5 @@ if [ -n "$disc_arg" ]; then
     say "Windows --install --check: $(grep -a '^STEP disc OK' "$B/check.txt" | tr -d '\r' | cut -c1-100)"
 fi
 cp "$B/version.txt" "$DIST/version-windows.txt"
-say "$(basename "$EXE"): $(( $(stat -f %z "$EXE" 2>/dev/null || stat -c %s "$EXE") / 1024 / 1024 )) MB, sha256 $(sha256_of "$EXE")"
+say "$(basename "$EXE"): $(( $(stat -c %s "$EXE" 2>/dev/null || stat -f %z "$EXE") / 1024 / 1024 )) MB, sha256 $(sha256_of "$EXE")"
 say "Windows done in $(( $(date +%s) - t0 )) s (setup window: $HAVE_SETUP)"

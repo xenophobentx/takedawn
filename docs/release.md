@@ -188,6 +188,12 @@ The real setup exe is not run by the script.
 Without `TAKEDAWN_WIN_HOST` the program folder and the `.iss` are the result,
 and the script prints the one command that is missing.
 
+On Windows itself the script runs in Git Bash. Set `TAKEDAWN_PYTHON`, since
+`python3` there is often the Store's stand-in. `TAKEDAWN_WIN_HOST=local` does
+the Windows step on this machine, with PowerShell and `cp` instead of ssh
+and scp. The setup window is then built with the Windows Qt kit's own `moc`
+and `rcc`.
+
 ### Testing the setup exe on a machine that has someone's saves
 
 The program takes its per-user folders from the environment: `%APPDATA%`

@@ -71,6 +71,14 @@ DIST="${TAKEDAWN_DIST:-$REPO/dist/$VERSION$PKG_TAG}"
 say()  { printf '==> %s\n' "$*"; }
 die()  { printf '!! %s\n' "$*" >&2; exit 1; }
 
+# Git Bash (MSYS) on Windows: Windows programs get C:/... paths. MSYS turns
+# a single /c/... argument into one by itself, but not each part of a
+# ;-separated list (CMAKE_PREFIX_PATH), nor what goes into a variable PATH
+# must hold as /c/... (a C:/ there splits at its colon).
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) WIN_HOST=1 ;; *) WIN_HOST=0 ;; esac
+native_path() { if [ "$WIN_HOST" = 1 ]; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
+posix_path()  { if [ "$WIN_HOST" = 1 ]; then cygpath -u "$1"; else printf '%s' "$1"; fi; }
+
 sha256_of() {
     if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
     else shasum -a 256 "$1" | cut -d' ' -f1; fi
@@ -192,11 +200,15 @@ qt_kit() {
         *) sub="$arch" ;;
     esac
     if [ ! -d "$DEPS/qt/$QT_VERSION/$sub/lib" ]; then
-        [ -x "$DEPS/aqt-venv/bin/aqt" ] || {
-            python3 -m venv "$DEPS/aqt-venv" >&2
-            "$DEPS/aqt-venv/bin/pip" install -q "aqtinstall==$AQT_VERSION" >&2; }
-        "$DEPS/aqt-venv/bin/aqt" install-qt "$host" "$target" "$QT_VERSION" "$arch" \
-            --archives $archives -O "$DEPS/qt" >&2 || die "could not fetch Qt $QT_VERSION ($arch)"
+        # A venv keeps its programs in Scripts\ on Windows. python3 there is
+        # often the Store's stand-in, so TAKEDAWN_PYTHON is asked first.
+        local vbin=bin
+        [ "$WIN_HOST" = 1 ] && vbin=Scripts
+        [ -x "$DEPS/aqt-venv/$vbin/aqt" ] || {
+            "${TAKEDAWN_PYTHON:-python3}" -m venv "$DEPS/aqt-venv" >&2
+            "$DEPS/aqt-venv/$vbin/pip" install -q "aqtinstall==$AQT_VERSION" >&2; }
+        "$DEPS/aqt-venv/$vbin/aqt" install-qt "$host" "$target" "$QT_VERSION" "$arch" \
+            --archives $archives -O "$(native_path "$DEPS/qt")" >&2 || die "could not fetch Qt $QT_VERSION ($arch)"
     fi
     printf '%s' "$DEPS/qt/$QT_VERSION/$sub"
 }
