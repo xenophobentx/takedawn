@@ -57,7 +57,8 @@ patch sites and guest addresses the MODS page and soft-body damage added), no
 Speed units row on the metric PAL disc, and the disassembler fix for the
 downward jump table in memcpy (xboxrecomp#9) that the PAL build needs. Tested
 the PAL Windows package on a real disc (#108) and found that the shipped
-shader lists had been skipped since 0.2.1.
+shader lists had been skipped since 0.2.1. Made tools/release/build-windows.sh
+run on Windows in Git Bash (#109).
 
 ### [itsDNNS](https://github.com/itsDNNS)
 The Language setting (`game.language`, with xboxrecomp#5): the game's text,

@@ -16,6 +16,9 @@ a codename, a song title from the game's soundtrack.
   language the game reads. The European disc offers German, French and
   Italian; without a choice it showed French. The US disc has English only
   and shows no row. By itsDNNS.
+- The release script for Windows, tools/release/build-windows.sh, runs on
+  Windows itself in Git Bash, including the Windows step
+  (`TAKEDAWN_WIN_HOST=local`). By ulrikadam (#109).
 
 ### Fixed
 
@@ -28,6 +31,9 @@ a codename, a song title from the game's soundtrack.
   logo film; the setup window names the European disc and the PAL program
   correctly; the release checks and installer tests pass for the PAL
   program and on Windows. By ulrikadam (#108).
+- The size line at the end of a release build tried BSD `stat` first, which
+  GNU `stat` (Linux) answers with filesystem information, so the build ended
+  with an arithmetic error. Found by ulrikadam (#109).
 
 ## 0.2.1 "Hot Night Crash"
 
