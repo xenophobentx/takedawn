@@ -209,6 +209,24 @@ picture (before: drawn in 1 of 3); after side hits the car's sideways place
 in the camera's view changed direction 1-4 times in the 2 s after (mean 2.0)
 against 1-9 (mean 4.2) before.
 
+Two things the title reads once a frame had to be kept for the n runs of a
+frame with more than one step (a frame rate under 60). The record's clock
+(+ 0xC2C), which the cameras' blends time themselves by (the race intro's
+transitions, camera 10), gains the frame's step count (`0x4D53AC`) times one
+step's time a run, so n runs made it n x n steps: the race intro was over in
+under a third of its time. The step count now reads 1 during the runs and
+the frame's again after. And the record's message handler (+ 0x158,
+`sub_00168380`) keeps at + 0x30 "look back asked for", which the look-back
+event sets once a frame and each run's update clears after putting the chase
+camera back when it is not set: the second run found it cleared, so in every
+frame with more than one step the frame ended on the chase camera. It is
+now set again before each run. Headless at host:170 with every frame held
+22 ms longer (most Updates with two or three steps), Single Event, the
+first race: the intro (camera 10 to the chase camera) lasted 241 steps,
+against 72 before and 245 without the slowdown; look back held, the frame
+ended in the look-back view in 119 of 119 frames, against 1 of 71 before.
+Linux (CachyOS), AMD Radeon RX 9060 XT, Vulkan, 2026-11-04.
+
 The body's rock after a slam. When a rival slams the car, the title
 rocks its body for 1.25 s (`sub_0018DA00`, from the car's step: a decaying
 turn of the car's matrix, about 2.5 swings, into a copy at car + 0x1930,
