@@ -168,6 +168,17 @@ it), `LOG data default <dir>` (case 6), `LOG data files|bytes|free-needed <n>`, 
 then `STEP data OK ...` / `RESULT OK <root>` (status 0) or `STEP data FAIL
 not-installed|unverified <text>` / `RESULT FAIL data <code>` (status 3).
 
+`burnout3 --install-languages <image-or-folder> [--dest <dir>] [--check]`
+adds the languages of the player's own European (PAL) disc, either one
+([languages.md](languages.md)): the same installer, protocol and journal with
+the step `languages`. The disc is told by its `default.xbe`: the Fr,De,It one
+with `config/disc/pal-languages.manifest` (106 files, 733 MB) into
+`<root>/Languages/FrDeIt`, the En,Es,Nl,Sv one with `pal-languages-2.manifest`
+(46 files, 370 MB) into `<root>/Languages/EsNlSv`, beside the game's data. The
+root is found as for `--install` (`--dest`, `TAKEDAWN_DATA`, case 5, case 6).
+Any other disc is refused (`wrong-version`, `wrong-game` ...), the North
+American one too.
+
 `enhance.toml` is read from the per-user settings folder (the middle column
 above, or `RECOMP_SAVE_DIR`) when there is one, else from beside the executable
 (a checkout's `bin/`, a portable copy). A release's program folder is read-only
@@ -190,6 +201,19 @@ executable, whose STEP / PROGRESS / RESULT lines it follows:
 | an older install without `.complete` (`unverified`) | `<game> --install "<root>/Burnout 3 Takedown" --dest <root>` | started by itself, with a note: checked in place, nothing copied, no disc needed |
 | "Prepare graphics for smooth first races" is ticked (it is by default) | `<game> [--data <dir>] --no-setup --build-shaders` | a second row; a failure is a warning, the install stays whole |
 | Play | `<game> [--data <dir>]`: on Linux the window's process becomes the game (`execve`), elsewhere the game is started and the window closes | |
+| More languages, *Choose European disc...* (once the data is installed) | `<game> --install-languages <disc> --check` | its card: accepted, or why not |
+| *Add languages* | `<game> --install-languages <disc> --dest <root>` | the card's own progress bar, then "installed"; Play waits for the copy |
+
+Opened by the game itself (Settings, Game, *Add languages from a European
+disc*: `takedawn-setup --from-game --game-pid <pid> --program <game> [--dest
+<root>]`), the window has no Play while that game runs; once the languages
+are in it says so in a message box and its main button is *Restart the game*,
+which ends the window with status 10: the game, which waits for the window
+(`bo3_add_languages_run`), restarts itself as its Restart row does. If the
+game is closed first, the window notices within a second and offers Play
+again. The game starts it with the environment it was itself started with
+(`recomp_restart_snapshot`), not the one with the settings file's values in
+it, so a game the window starts reads its settings from the file.
 
 Stop writes `<dest>/install.cancel` (`<cache>/prebuild/cancel` for the shader
 build) and, if the program has not ended after 2.5 s, ends it. Resume runs the

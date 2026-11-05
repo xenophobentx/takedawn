@@ -6,6 +6,8 @@ Burnout 3 Takedown (PAL-ENSV)/
 Burnout 3 Takedown (PAL)/
 # ... or the symlink the installer (or a worktree) makes to it
 /Burnout 3 Takedown
+# The European disc's languages (--install-languages), beside it
+/Languages/
 *.iso
 *.xiso
 

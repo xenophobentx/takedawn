@@ -133,6 +133,9 @@ endif()
 # line (mainquit.c) and the keyboard prompts' key caps drawn for the player's own
 # keys (keycap.c, used by glyphs.c) on every platform.
 target_sources(burnout3 PRIVATE modfs.c modmanifest.c modsmenu.c modtex.c modstab.c mainquit.c keycap.c xboxlive.c codeentry.c onlinedesc.c quickplay.c racewait.c vote.c onlinebrand.c onlinebrand_text.c headfont.c stay.c nodash.c)
+# The European disc's languages in place of the English files (langpack.c,
+# install.c --install-languages).
+target_sources(burnout3 PRIVATE langpack.c)
 target_include_directories(burnout3 PRIVATE ${XBOXRECOMP_DIR}/src/enhance)
 if(NOT TARGET xbox_enhance)
     if(NOT EXISTS ${XBOXRECOMP_DIR}/src/enhance/recomp_cfg.c)

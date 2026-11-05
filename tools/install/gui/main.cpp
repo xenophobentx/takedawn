@@ -214,10 +214,14 @@ int main(int argc, char** argv) {
   QCommandLineOption show_grab("show-grab", "Test: show the window, write a PNG of it to this file after two seconds and quit.", "file");
   QCommandLineOption couch_opt("couch", "Fill the screen, finger-sized controls, controller hints (as under gamescope).");
   QCommandLineOption no_pad("no-pad", "Do not read the controllers.");
+  QCommandLineOption from_game("from-game", "Opened from the running game (its Add languages row): no Play, and a "
+                                            "reminder to restart the game once the languages are added.");
+  QCommandLineOption game_pid("game-pid", "With --from-game: the game's process; when it ends, Play comes back. "
+                                          "Exit status 10 asks the game to restart itself.", "pid");
   QCommandLineOption pad_shots("pad-shots", "Test: the install driven by controller presses alone, against the fake "
                                             "installer named by --program and a made-up tree of folders; PNGs here.", "directory");
   parser.addOptions({program, dest, iso, shaders_opt, no_shaders_opt, upscale_opt, no_upscale_opt, size, platform, shots, check_shot, e2e_shots, show_grab, couch_opt,
-                     no_pad, pad_shots});
+                     no_pad, pad_shots, from_game, game_pid});
   parser.process(app);
 
   LaunchConfig config;
@@ -229,6 +233,8 @@ int main(int argc, char** argv) {
   config.upscale = parser.isSet(no_upscale_opt) ? 0 : parser.isSet(upscale_opt) ? 1 : -1;
   config.couch = couch;
   config.pad = !parser.isSet(no_pad);
+  config.from_game = parser.isSet(from_game);
+  config.game_pid = parser.value(game_pid).toLongLong();
 
   theme::Apply(app);
   QSize wanted;

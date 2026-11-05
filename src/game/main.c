@@ -73,6 +73,7 @@ extern void xbox_InputPanicStop(int wait_ms);
 #include "controls.h"                 /* input.control_scheme (BO-106) */
 #include "install.h"                  /* the data root, --install, --version (BO-103) */
 #include "languages.h"                /* the Language row's languages */
+#include "langpack.h"                 /* the European discs' languages */
 #include "fatal.h"                    /* a start-up failure the player sees */
 #include "glyphs.h"                   /* the button prompts for the pad in use (BO-107) */
 #include "soundtrack.h"               /* custom music (BO-108) */
@@ -2056,6 +2057,11 @@ static int host_main(void)
     /* BO-108: the user's music folder as the title's custom soundtracks.
      * Nothing unless audio.custom_music_dir (--music-dir) names one. */
     bo3_soundtrack_init();
+    /* The European discs' languages (langpack.c, install.c
+     * --install-languages): read in place of the English files when
+     * game.language chose one (bo3_languages_init). Before the mod folders,
+     * so that a mod's file still comes first. */
+    bo3_langpack_init();
     /* Mod folders: disc files replaced by files in the folders TAKEDAWN_MODS
      * names and in the default mods folder when it exists (BO-327; modfs.c,
      * docs/mod-folders.md). After the soundtrack, whose path hook it chains
@@ -3533,6 +3539,9 @@ static void bo3_languages_init(void)
     unsigned mask = bo3_language_mask(bo3_lang_installed, NULL, BO3_LANG_TITLE_SET);
     int want = bo3_language_index(recomp_env(RENV_GAME_LANGUAGE));
 
+    /* The European discs' languages added to the North American program
+     * (langpack.c): read from <data>/Languages, the program kept in English. */
+    want = bo3_langpack_languages(&mask, want);
     if (want >= 0 && !(mask & (1u << want))) {
         XR_NOTICE("[BOOT] game.language=%s: not on this disc; the kernel reports English\n",
                   bo3_language_name(want));
@@ -3621,13 +3630,17 @@ int main(int argc, char **argv)
          * word, so that --data (or --dest) may stand before or after them:
          * "--data <dir> --data-status" and "--data-status --data <dir>" are
          * the same question. */
-        if (!strcmp(argv[i], "--install") || !strcmp(argv[i], "--data-status")) {
+        if (!strcmp(argv[i], "--install") || !strcmp(argv[i], "--install-languages")
+            || !strcmp(argv[i], "--data-status")) {
             static char *rest[64];
-            int n = 0, k, install = argv[i][2] == 'i';
+            int n = 0, k, install = !strcmp(argv[i], "--install"),
+                langs = !strcmp(argv[i], "--install-languages");
             for (k = 1; k < argc && n < 63; k++)
                 if (k != i)
                     rest[n++] = argv[k];
             rest[n] = NULL;
+            if (langs)
+                return bo3_install_languages_main(n, rest);
             return install ? bo3_install_main(n, rest) : bo3_data_status_main(n, rest);
         }
 #endif
@@ -3739,6 +3752,8 @@ int main(int argc, char **argv)
 #endif
                             "[--seconds N] [--music-dir <folder>] [default.xbe]\n"
                             "       %s --install <image-or-folder> [--dest <dir>] [--check]\n"
+                            "       %s --install-languages <PAL image-or-folder> [--dest <dir>]"
+                            " [--check]\n"
                             "       %s --data-status [--data <dir>]\n"
                             "       %s --build-shaders [--cache-dir <dir>] [--scenes a,b]"
                             " [--force] [--status]\n"
@@ -3746,7 +3761,7 @@ int main(int argc, char **argv)
                             "       %s --bug-report [--out <dir>]\n"
                             "       %s --import-save <Xbox save folder or .zip, or a PS2 save or memory card> [--ps2-slot N]\n"
                             "       %s --version\n",
-                    self, self, self, self, self, self, self, self);
+                    self, self, self, self, self, self, self, self, self);
             return 2;
         } else {
             s_xbe_path = argv[i];
@@ -3976,6 +3991,14 @@ int main(int argc, char **argv)
      * the setup window's Add to Steam step. Only where the setup program is. */
     if (bo3_steam_art_available())
         xbox_OverlaySetSteamArt(bo3_steam_art_run);
+#endif
+#if !defined(__ANDROID__)
+    /* "Add languages from a European disc" (langpack.c): the setup window's
+     * More languages section, for a player whose game is already installed.
+     * Only where the setup program is; the row goes once they are installed. */
+    if (bo3_add_languages_available() && !strcmp(BO3_REGION_NAME, "NTSC-U")
+        && bo3_langpack_installed() != (1u << BO3_LANGPACK_DISCS) - 1)
+        xbox_OverlaySetAddLanguages(bo3_add_languages_run);
 #endif
 #if defined(__ANDROID__)
     xbox_OverlaySetHostRows(3, android_driver_row);
