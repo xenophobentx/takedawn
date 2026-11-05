@@ -47,6 +47,15 @@ TL;DR
 - New in 0.3.0: online play. Pick TAKEDAWN ONLINE in the main menu for
   QUICK PLAY, a game with a code for your friends, or the list of games. See
   [docs/online.md](docs/online.md).
+
+> [!IMPORTANT]
+> Online play needs open ports on the host. The player who creates a game
+> needs UDP 31000 and 36000 open. Takedawn asks the router to open them
+> (UPnP). If UPnP is off on your router, forward both ports to your computer
+> by hand. If they stay closed, players who join are removed from the game
+> after about 20 seconds. I'm working on a fix for 0.3.1 so that this isn't
+> needed.
+
 - The European discs work too: all three discs (North America, Europe, and
   Europe and Australia) in one download, with the game in your disc's
   languages.
