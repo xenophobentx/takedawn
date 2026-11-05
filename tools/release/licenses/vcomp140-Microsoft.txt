@@ -1,0 +1,9 @@
+vcomp140.dll (Windows package only)
+
+The Microsoft Visual C++ OpenMP runtime, which the Windows build of
+realesrgan-ncnn-vulkan needs. It is taken unchanged from that program's
+release archive (Real-ESRGAN v0.2.5.0, realesrgan-ncnn-vulkan-20220424-windows.zip)
+and redistributed under the terms of the Microsoft Visual Studio licence for
+its "Distributable Code" (the Visual C++ redistributable files).
+
+Copyright (c) Microsoft Corporation. All rights reserved.

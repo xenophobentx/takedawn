@@ -57,15 +57,8 @@ add_library(takedawn_setup_ui STATIC
 )
 target_include_directories(takedawn_setup_ui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(takedawn_setup_ui PUBLIC TAKEDAWN_SETUP_VERSION="${TAKEDAWN_VERSION}")
-# The disc the package is for, as the program's BO3_REGION (docs/pal.md).
-set(TAKEDAWN_REGION "NTSC-U" CACHE STRING "Disc region named in the window: NTSC-U or PAL")
-if(TAKEDAWN_REGION STREQUAL "PAL")
-    # Each definition quoted whole: unquoted, the space in "Europe (PAL)" split
-    # it in two, TAKEDAWN_DISC_LONG came out as "" and CMake dropped the rest.
-    target_compile_definitions(takedawn_setup_ui PUBLIC "TAKEDAWN_DISC_SHORT=\"PAL\""
-                               "TAKEDAWN_DISC_LONG=\"Europe (PAL)\""
-                               "TAKEDAWN_APP_TITLE=\"Takedawn PAL\"")
-endif()
+# One package for every supported disc (src/game/package.h): the window
+# names no region; the game's program says which disc it was given.
 target_link_libraries(takedawn_setup_ui PUBLIC Qt6::Widgets)
 
 # The controller (pad_input.h): SDL's game controller API, the SDL the game

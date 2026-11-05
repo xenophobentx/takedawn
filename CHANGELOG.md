@@ -4,36 +4,116 @@ What changed in each release of Takedawn, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Major releases carry
 a codename, a song title from the game's soundtrack.
 
-## Unreleased
+## 0.3.0 "Sing Along Forever"
+
+Saves and settings from 0.2.1 carry over.
 
 ### Added
 
-- The European (PAL) retail disc, as a second build: `BO3_REGION=PAL` (see
-  docs/pal.md). It installs beside Takedawn as "Takedawn PAL", with its own
-  data, saves and settings. By magicseb (#28), brought up to date with 0.2.1
-  by ulrikadam.
-- Language (Display, restart): the languages the disc has, as the dashboard
-  language the game reads. The European disc offers German, French and
-  Italian; without a choice it showed French. The US disc has English only
-  and shows no row. By itsDNNS.
-- The release script for Windows, tools/release/build-windows.sh, runs on
-  Windows itself in Git Bash, including the Windows step
-  (`TAKEDAWN_WIN_HOST=local`). By ulrikadam (#109).
+- Online play, on by default. The main menu has a TAKEDAWN ONLINE line that
+  shows how many players are online and how many games are waiting. Its page
+  has four lines:
+  - QUICK PLAY puts you in the fullest open game, or makes one. The race
+    starts by itself: a 30-second countdown once two players are in.
+  - CREATE GAME makes a game with a five-letter code, shown in the lobby's
+    top line. Send the code to your friends. The game is open to anyone else
+    too.
+  - JOIN WITH CODE joins the game with that code.
+  - BROWSE GAMES lists the games: the open ones first, then the ones racing
+    (with the race's time), then the full ones. A on an open game joins it,
+    A on a racing one waits for its race to end and then joins.
+- Before a QUICK PLAY race everyone votes for the track: three tracks and
+  Random, 15 seconds.
+- After an online race you stay together. The game comes back with the same
+  players, cars and settings, ready for the next race. A guest who is back
+  first waits for a slow host, and B leaves. If the host quits, the others see
+  THE HOST LEFT and go back to the online page.
+- If every game is already racing, QUICK PLAY waits for that race to end and
+  puts you in the next one. The line at the bottom shows the race's players
+  and time.
+- The lobby's top line says what the game is waiting for (players, cars, the
+  host's Start, the countdown), and a player who is removed is told why.
+- System > Online play: Internet (default), Local network (no internet
+  needed, for a LAN party) or Off. Internet uses the community lobby server,
+  or one you run yourself (`tools/lobby`). The server only introduces the
+  players; the race goes directly between their copies. When you host, the
+  game asks your router to open its ports (UPnP). Without UPnP, forward UDP
+  31000 and 36000 to the host. Players who join need nothing. See
+  docs/online.md.
+- While you are online, opening the settings no longer pauses the game. It
+  keeps running with your input held, so the others in your game keep
+  hearing from you.
+- Bug reports (System > Create bug report) carry the online session and game
+  ids, so I can find the same moment in the server's log.
+- The European discs. All three discs work, in one download: North America,
+  Europe (France, Germany, Italy) and Europe and Australia (English, Spanish,
+  Dutch, Swedish). The setup window takes whichever you have. Each disc keeps
+  its own saves and settings. PAL support by magicseb (#28) and ulrikadam.
+  See docs/pal.md.
+- Game > Language: the text, the speech and the films in any language on
+  your disc. By itsDNNS.
+- Display > Aspect ratio > 16:10: the 16:9 view with more above and below,
+  with the HUD and menus fitted to it. The default on the Steam Deck and on
+  16:10 screens.
+- Game > 4:3 pictures: the loading screens, the films behind the menus and
+  the Crash Nav map keep their 4:3 shape instead of being stretched. Blurred
+  sides (default), Black bars or Stretched. With Widescreen HUD on, in 16:9.
+- Graphics > Film upscale: sharpens the intro and the menu background films
+  while they play. Off, Cheap or Best. Best by default, Cheap on Android.
+- Graphics > Soft-body damage: cars, and the traffic you hit in Crash events,
+  crumple, keep their dents, tear and lose wheels. It changes only what you
+  see. Off by default, from the next start. By itsDNNS (#88). See
+  docs/softbody.md.
+- Mods. The game reads its mods folder at every start, so a mod you put there
+  works without any setup (on Linux and the Steam Deck it is
+  `~/.local/share/takedawn/mods`). A mod can have a `mod.toml` with its name,
+  version and author. Driver Details > Settings > MODS turns each mod on or
+  off, and so does the Mods page in the Takedawn settings. Mods can bring
+  texture packs: PNG files that replace the game's textures at any size. By
+  HeartWorthBreaking (#67, #80, #81, #82). See docs/mod-folders.md.
+- Sharper menu pictures: the setup window can upscale the loading screens,
+  menu backgrounds and car pictures 4x with AI (Real-ESRGAN), on your
+  computer, from your disc. Ticked on Apple silicon Macs and on PCs with
+  their own graphics card. You can also do it later from Settings > Mods.
+  Android offers it once after the install. See docs/upscale-art.md.
+- Controls > Keyboard keys: change the keys, two for each pad button (#57).
+- Controls > First controller: Player 2 makes the keyboard player 1 and the
+  first pad player 2, for split screen with one keyboard and one pad. By
+  Xoviec (#99).
+- System > Save data: import a PS2 save. A PCSX2 memory card, `.psu`, `.max`,
+  `.cbs`, `.xps`, `.sps`, `.psv` or a save folder.
+- A QUIT line at the bottom of the main menu closes the game (#85).
+- Portable mode on Windows and Linux: put an empty `portable.txt` beside
+  `Takedawn.exe` or the `.AppImage`, and the saves and settings stay in a
+  `data` folder next to it (#56).
+
+### Changed
+
+- The settings are rearranged into Display, Graphics, Game, Audio, Controls,
+  Mods and System, and every page has "Reset this page". Your settings stay as
+  they were.
+- Mac: fullscreen on an external 60 Hz display no longer runs at 30 fps, and
+  a ProMotion MacBook with High refresh rate no longer drops frames (#42).
+- The keyboard key rows are hidden on a Steam Deck and in Game Mode. Present
+  fit shows only on a 16:10 screen with the 16:9 picture, where it does
+  something.
 
 ### Fixed
 
-- The shipped shader lists are used again. Since 0.2.1 their key format no
-  longer matched the program's, so they were skipped and a first race built
-  its shaders while drawing (on a Mac, 125 builds and stalls of up to 150 ms;
-  now 22). The build now stops if the two drift apart. Found by ulrikadam
+- Island Paradise: the sea was too dark and the wrong colour (#110).
+- Bloom at render scale 2x and above showed glow dots (#78).
+- High refresh rate: the Impact Time sound and the crash music were silent,
+  and the drift, air and trading-paint sounds were too quiet (#41).
+- The PlayStation 2 driving layout didn't work in two-player games. By
+  guenthermario (#102).
+- The PlayStation 2 driving layout went back to the Xbox layout in Crash
+  events until a restart (#52, #113).
+- The first races could stutter while the game built its graphics, because
+  the prepared shader lists were skipped since 0.2.1. Found by ulrikadam
   (#108).
-- "Prepare graphics" works with the European disc, which has no English
-  logo film; the setup window names the European disc and the PAL program
-  correctly; the release checks and installer tests pass for the PAL
-  program and on Windows. By ulrikadam (#108).
-- The size line at the end of a release build tried BSD `stat` first, which
-  GNU `stat` (Linux) answers with filesystem information, so the build ended
-  with an arithmetic error. Found by ulrikadam (#109).
+- Windows: the game slowly leaked system handles while it ran.
+- Crash Nav with the 4:3 map: the zoom from the globe to the city was
+  stretched.
 
 ## 0.2.1 "Hot Night Crash"
 
@@ -41,7 +121,7 @@ Saves and settings from 0.2.0 carry over.
 
 ### Added
 
-- High refresh rate (Graphics): draws at the display's refresh rate (120, 144 Hz and faster) while the game keeps its 60 steps a second. Cars and the camera are drawn between the steps. Off by default. Menus and split screen stay at the game's own rate, and so do crash cameras unless 60 fps crash cameras is on. It adds up to one 60 Hz step of delay. High refresh needs a fast machine. On the Steam Deck at 90 Hz, don't expect a steady 90 fps: there are small dips in heavy scenes, which we're working on smoothing out. High refresh is experimental. If something looks wrong with it on (a car, the camera, the HUD or an effect), turn it off to check, and open an issue with a bug report (Advanced > Create bug report). Details in docs/high-refresh.md. Started by Naitrate (GitHub #33).
+- High refresh rate (Graphics): draws at the display's refresh rate (120, 144 Hz and faster) while the game keeps its 60 steps a second. Cars and the camera are drawn between the steps. Off by default. Menus and split screen stay at the game's own rate, and so do crash cameras unless 60 fps crash cameras is on. It adds up to one 60 Hz step of delay. High refresh needs a fast machine. On the Steam Deck at 90 Hz, don't expect a steady 90 fps: there are small dips in heavy scenes, and I'm working on smoothing them out. High refresh is experimental. If something looks wrong with it on (a car, the camera, the HUD or an effect), turn it off to check, and open an issue with a bug report (Advanced > Create bug report). Details in docs/high-refresh.md. Started by Naitrate (GitHub #33).
   - Sparks keep the same length at any refresh rate.
   - The HUD animations, the flash at the end of a race, the race audio, the game's random numbers and the time played in your profile keep the game's speed at any refresh rate.
 - Texture upscale (Graphics): Off, FSRCNNX or NNEDI3. It sharpens the world's textures on the graphics card while you play and keeps the results on disk, so the next race has them at once. Off by default. Scale 2x or 4x (a Steam Deck gets 2x only). Cut-outs such as fences and trees keep the game's own edges, and road surfaces stay as they are unless "Upscale road surfaces" is on. On Mac, Windows, Linux and Steam Deck, not Android. On Windows it held 120 Hz in tests on an RX 9060 XT. The shader files are LGPL-3.0 and listed in THIRD_PARTY_NOTICES.md.
@@ -73,8 +153,6 @@ Saves and settings from 0.2.0 carry over.
 - Android: the setup could not create the game's folder on some phones, where the system hides the Android/data folder (GitHub #36).
 - The folder picker in the settings could freeze the whole game when it reached a slow network share or one with many files. It no longer waits on the folder scan, and network shares are listed but not scanned.
 - Linux: the AppImage's setup window did not open on systems without libxkbcommon-x11. The AppImage now brings its own copy for those systems.
-- The PS2 driving layout (Driving controls setting) now applies in two-player games: in Race, Road Rage, Team Crush and Double Impact each player's pad drives with it. It stayed on the Xbox layout there before (guenthermario, GitHub #102).
-
 ## 0.2.0 "Hot Night Crash"
 
 Saves and settings from 0.1.1 carry over.
@@ -108,6 +186,48 @@ Saves and settings from 0.1.1 carry over.
 - Reset this page and Reset all settings acted on one keypress; they ask once more.
 - Diagnostic logging switched on in the settings was off at the next start.
 - LED sign words and chevron markers flickered on some US and European tracks.
+
+## 0.1.2-beta "Lazy Generation"
+
+A pre-release for Android only, to try the touch controls. Saves and
+settings carry over.
+
+### Added
+
+- Touch controls on Android. In a race: a stick for the left thumb that
+  starts where you touch the left half of the screen, and GAS, BRAKE, BOOST,
+  BREAKER, LOOK and VIEW on the right. BOOST keeps accelerating, and a finger
+  can slide between GAS and BOOST without lifting. In menus: a d-pad, A, B,
+  X, Y, LT and RT. Pause and the settings menu sit at the top. The controls
+  hide while a controller is in use and come back when you touch the
+  screen. They keep clear of the HUD in every picture setting.
+- Settings for them on the Input page: Touch controls (Auto, Always, Off),
+  opacity, size and Accelerate automatically.
+
+### Changed
+
+- The settings menu works by touch: drag a list to scroll it, tap a row to
+  change it, drag or tap a slider.
+- Android has no Fullscreen setting any more. The game always fills the
+  screen. Switching fullscreen off showed the system bars over the game.
+
+### Fixed
+
+- Windows: a PC with an old graphics driver no longer fails before the game
+  starts ("entry point vkCmdBeginRendering could not be located"). The game
+  now loads Vulkan itself when it starts, and if there is no Vulkan 1.3
+  driver it says so and tells you to update it from Intel, AMD or NVIDIA. The
+  setup window gives the same advice for that stop. Linux loads Vulkan the
+  same way.
+- The Crash Nav globe and the garage at car select are framed as on the Xbox.
+  The globe is large and sits on the left over the selected region, and the
+  car fills the garage view. Both were drawn too small because the recompiler
+  dropped the tangent from the game's field-of-view calculation (GitHub #15).
+  The same fix narrows the flyby over a crash junction before the start to
+  the game's own view.
+- Diagnostic logging switched on in the settings now stays on at the next
+  start. Before, it was off until you switched it off and on again in the
+  running game.
 
 ## 0.1.1 "Lazy Generation"
 
@@ -248,7 +368,7 @@ Android.
 
 ### Install and updates
 
-- A ready-to-run program for each platform: a disk image for Macs with Apple
+- A program for each platform, ready to run: a disk image for Macs with Apple
   silicon and macOS 13 or newer, a setup program for 64-bit Windows, an
   AppImage for Linux and the Steam Deck, and an APK for Android devices with
   a Snapdragon chip. No compiler or other tool is needed.

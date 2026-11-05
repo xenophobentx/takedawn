@@ -131,6 +131,26 @@ class ProtocolTest : public QObject {
     QVERIFY(!messages::IsDiscProblem("disk-full"));
   }
 
+  // BO-321, BO-341: one package for all three retail discs; the disc errors name them all and no
+  // region alone.
+  void discNamesOnePackage() {
+    QCOMPARE(messages::ExplainInstall("wrong-version").advice,
+             QString("Three retail discs work: the North America (NTSC-U) one, and the two European (PAL) ones, "
+                     "French, German and Italian, and English, Spanish, Dutch and Swedish. The Japanese disc and "
+                     "patched or modified copies hold different code and cannot be used."));
+    QCOMPARE(messages::ExplainInstall("wrong-game").advice,
+             QString("Takedawn needs the Burnout 3: Takedown disc for the original Xbox."));
+    QCOMPARE(messages::ExplainInstall("xbox360-disc").advice,
+             QString("Takedawn runs the original Xbox game. Use the Burnout 3: Takedown disc for the original Xbox."));
+    for (const QString& code : messages::InstallCodes()) {
+      const auto e = messages::ExplainInstall(code);
+      if (code != "wrong-version") {
+        QVERIFY2(!(e.headline + e.advice).contains("NTSC"), qPrintable(code));
+        QVERIFY2(!(e.headline + e.advice).contains("PAL"), qPrintable(code));
+      }
+    }
+  }
+
   // BO-130: nothing in the window says "dump", offers another folder where there is no folder
   // picker, or sends the person to Resume on the same bad image.
   void plainWords() {

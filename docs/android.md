@@ -67,8 +67,9 @@ Release APKs are signed again with the project's own key by
 | `libc++_shared.so` | 1.4 MB | the NDK | Apache-2.0 with LLVM exception |
 | `libvulkan_freedreno.so` | 18.9 MB | Mesa 26.2.0-devel Turnip `git-7fdde2f8f8`, whitebelyash's experimental build (his gen8 work, https://github.com/whitebelyash/mesa-tu8; render-pass dependency `CCU_CLEAN_COLOR \| WAIT_FOR_ME`), prebuilt: `assets/bundled_driver/vulkan.wb26_2_rp_pair_ccu_color_a725.so` of https://github.com/SansNope/UnleashedRecomp-Android/releases/download/v0.6.1/UnleashedRecomp_0.6.1.apk (APK sha256 `05717f16...74c34`, driver sha256 `87f371a2...b22b0`, as UnleashedRecomp-Android's `driver/README.md` gives it), where it is the "A725 Performance" driver; taken out and checked by `fetch-deps.sh`, packed unstripped. Runs with `TU_DEBUG=sysmem,nobin`. See "The A725 Turnip build (BO-152)". `BO3_ANDROID_TURNIP=mesa` packs the Mesa 26.2.4 build of `fetch-deps.sh` instead (https://archive.mesa3d.org/mesa-26.2.4.tar.xz, sha256 `bce5f7fb...832e9`, with `tools/android/patches/mesa-26.2.4-kgsl-zero-timeout.patch`) | MIT (Mesa's `docs/license.rst`) |
 | `libhook_impl.so`, `libmain_hook.so`, `libfile_redirect_hook.so`, `libgsl_alloc_hook.so` | 51 KB | libadrenotools, https://github.com/bylaws/libadrenotools at commit `8fae8ce` (2024-09-10) | BSD-2-Clause |
+| `assets/upscaler/` | 2.4 MB | the fast model of the menu pictures' upscale (realesr-general-x4v3 at denoise 0.3, the desktop packages' bytes; `fetch-deps.sh` from `tools/release/pins.env`); run by ncnn 20260526 (Tencent), which is linked into `libmain.so` (0.7 MB of it compressed). See [upscale-art.md](upscale-art.md#android) | Real-ESRGAN's weights BSD-3-Clause (2021 Xintao Wang); ncnn BSD-3-Clause |
 | `classes.dex` | 94 KB | SDL's activity (`org.libsdl.app`), `StartActivity`, `GameActivity`, `GpuDriver` | zlib; this repository's |
-| `assets/licenses/` | about 60 KB | the release's licence set (`tools/release/common.sh`, `copy_licenses`) and `tools/android/licenses/` (libadrenotools, linkernsbypass, Mesa); shown by the app's **Licences** page (`LicensesActivity`) | |
+| `assets/licenses/` | about 60 KB | the release's licence set (`tools/release/common.sh`, `copy_licenses`) and `tools/android/licenses/` (libadrenotools, linkernsbypass, Mesa); shown by the app's Licences page (`LicensesActivity`) | |
 | manifest, resources | | `android/` | |
 
 Not in the APK: the game data, saves, settings. `libmain.so` holds the game's
@@ -79,9 +80,11 @@ and no APK.
 
 ## The Takedawn package (0.1.0, BO-103)
 
-The app is `io.github.xenophobentx.takedawn`, label "Takedawn" (the PAL build,
-[pal.md](pal.md), is `io.github.xenophobentx.takedawn.pal`, "Takedawn PAL"), with a second
-launcher entry "Takedawn: graphics driver". versionName is `VERSION`'s first
+The app is `io.github.xenophobentx.takedawn`, label "Takedawn", one app for
+every supported disc ([pal.md](pal.md), "Packages": `libmain.so` for North
+America, `libmain_pal.so` and `libmain_ensv.so` for the two European discs;
+the app loads the installed disc's), with a second launcher entry "Takedawn:
+graphics driver" (which also has "Game data: install another disc"). versionName is `VERSION`'s first
 line; versionCode is major x 10 000 000 + minor x 100 000 + patch x 1 000 +
 build (0.1.0 is 100000), so every release is above the one before. The icon
 is adaptive: `assets/icon`'s two layers as vector drawables and a one-colour
@@ -93,17 +96,19 @@ results are committed). Its folders, all the app's own:
         .complete              the installer's marker (manifest id, version, 716 files)
         install.journal        only while an install is under way
         takedawn/              saves (UDATA, TDATA), settings.toml, crash/, reports/
+        takedawn pal/          the same for a European disc
         driver/                optional: a driver package put there by hand
         env.txt                optional
         takedawn.log           the log of the last start
 
-**The first start** (`SetupActivity`, in a process of its own). The APK holds
+The first start (`SetupActivity`, in a process of its own). The APK holds
 no game data. The page asks for an image of the player's own disc, Burnout 3:
-Takedown, North America (NTSC-U) retail, with the system's file picker; no
-storage permission is asked for. The open file goes to the toolkit's
-installer (`disc_install.c` through `install.c`'s JNI functions) as a file
-descriptor: every one of the manifest's 716 files is hashed while it is
-copied, the journal makes a stopped install go on where it was when the same
+Takedown, North America (NTSC-U) retail or one of the two European ones, with
+the system's file picker; no storage permission is asked for. The open file
+goes to the toolkit's installer (`disc_install.c` through `install.c`'s JNI
+functions, in `libmain.so` or the installed disc's library) as a file
+descriptor; the disc is told by its `default.xbe` and every one of its
+manifest's files (716, 786 or 761) is hashed while it is copied, the journal makes a stopped install go on where it was when the same
 image is chosen again, and `.complete` is written last. The page shows the
 file in hand and a bar, keeps the screen on, and Cancel (or Back) stops after
 the file in hand. Each of the installer's answers gets its sentence and what
@@ -112,12 +117,12 @@ region or revision (only NTSC-U retail is supported), a truncated or damaged
 image, no room (3.0 GB free are wanted), an unreadable file. The game does
 not start until the marker is there and names this program's manifest
 (`StartActivity.dataComplete`). A game folder copied into the app's folder by
-hand, the way before this page, is checked where it lies and nothing is
+hand is checked where it lies and nothing is
 copied (716 files in 16 s on the RP5). From adb: `am start -n
 io.github.xenophobentx.takedawn/.SetupActivity --es image <an image under the
 app's files folder>`.
 
-**The driver, in three places.** The launcher's "Takedawn: graphics driver"
+The driver, in three places. The launcher's "Takedawn: graphics driver"
 page; a button on the setup page that opens it and names the present choice;
 and the overlay's Graphics page while the game runs: "Graphics driver in
 use" (what this start loaded), "Driver at the next start" (pressing it steps
@@ -145,7 +150,7 @@ frame by draw count, 1.0 % of frames over 18.5 ms; off, 13.0 passes, GPU 2.7
 to 4.0 ms, 0.5 %. Both hold 60 (no or one second under 57), so both stay on
 by default; off is worth 0.5 to 0.75 ms of GPU time a frame.
 
-**An install of the earlier package** (`io.github.xenophobentx.burnout3`,
+An install of the earlier package (`io.github.xenophobentx.burnout3`,
 "Burnout 3 (recomp)") is another app to Android: the two stay installed side
 by side and neither sees the other's files, so nothing is moved
 automatically. To carry over, with a PC (adb or USB file transfer), from
@@ -159,7 +164,7 @@ automatically. To carry over, with a PC (adb or USB file transfer), from
 
 Then the old app can be uninstalled.
 
-**A release build** (`tools/release/build-android.sh`, called by the release
+A release build (`tools/release/build-android.sh`, called by the release
 script): the sources and the stamped generated code are copied to a Linux
 machine with the Android SDK (`TAKEDAWN_ANDROID_HOST`, in the environment or
 the git-ignored `tools/release/local.env`), `tools/android/build-apk.sh` with
@@ -175,8 +180,7 @@ build and a release do not update each other.
 
 ## Game data on the device
 
-(How the data got there before the setup page, and still a way for a test
-device.) Everything the app reads and writes is in its own external files directory,
+(A way to get the data there by hand, still used on test devices.) Everything the app reads and writes is in its own external files directory,
 which needs no permission and which adb and a USB file transfer both reach:
 
     /sdcard/Android/data/io.github.xenophobentx.takedawn/files/
@@ -235,7 +239,7 @@ Xerenge and the Android emulators do it. A Vulkan 1.1 downport of the
 backend (render passes in place of dynamic rendering in shared code) was
 rejected.
 
-**The driver (first version).** Mesa 26.2.4, built from Mesa's own
+The driver (first version). Mesa 26.2.4, built from Mesa's own
 tarball by `tools/android/fetch-deps.sh` the way
 https://docs.mesa3d.org/android.html describes (`-Dplatforms=android
 -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Degl=disabled
@@ -262,7 +266,7 @@ device up: Turnip Adreno (TM) 650 (Vulkan 1.3.354, driver 0x6802004)`,
 `[vulkan] no VK_KHR_present_wait on Turnip Adreno (TM) 650 (extensions
 missing …)`: it does not reach the app through Android's loader.
 
-**How it is loaded.** libadrenotools opens a private copy of the system's
+How it is loaded. libadrenotools opens a private copy of the system's
 `libvulkan.so` whose driver lookup ends at the replacement; no root, nothing
 outside the app. Its header requires the hook libraries in the app's native
 library directory (hence `extractNativeLibs`) and the driver in app-internal
@@ -273,7 +277,7 @@ themselves are not changed, and `libmain.so` has no `libvulkan.so` dependency
 left). SDL makes the window's surface with the same loader, because the
 exported `vkGetInstanceProcAddr` it finds is the game's.
 
-**The A725 Turnip build (BO-152).** The Mesa 26.2.4 Turnip built from Mesa's
+The A725 Turnip build (BO-152). The Mesa 26.2.4 Turnip built from Mesa's
 release hung the Retroid Pocket 5's Adreno 650 every 2 to 14 minutes in races
 on 2026-10-13 (kgsl "GPU hang detected", RBBM_STATUS 0x00E59005, sometimes
 ending in VK_ERROR_DEVICE_LOST), whatever the game's settings and whichever
@@ -281,7 +285,7 @@ fixed-function paths were switched off. UnleashedRecomp-Android, another
 recompiled game, saw the same freeze on the RP5 (its issues #140 and #170);
 its "A725 Performance" driver stopped it there. That build, with the
 `TU_DEBUG=sysmem,nobin` that app sets for it, ran on the RP5 with no hang.
-It is the Turnip in the APK since: `fetch-deps.sh` downloads that app's
+It has been the Turnip in the APK since then: `fetch-deps.sh` downloads that app's
 v0.6.1 release APK (pinned by sha256), takes the driver out and checks it
 against the sha256 in that app's `driver/README.md`; nothing of that app
 itself is used. The binary calls itself Mesa 26.2.0-devel `git-7fdde2f8f8`;
@@ -292,7 +296,7 @@ On an Adreno 6xx with a driver of the player's choosing, the runtime still
 defaults to `TU_DEBUG=nobin,noubwc`; with the driver in the app,
 `sysmem,nobin` on every Adreno. A `TU_DEBUG` in `env.txt`, even empty, wins.
 
-**Which driver a start uses** (`GpuDriver.java`; the choice is in logcat as
+Which driver a start uses (`GpuDriver.java`; the choice is in logcat as
 `GPU driver: ...`, and the runtime logs `[vulkan] replacement driver ...`):
 
 1. a driver in `<files>/driver/`: a `.so`, or an emulator-style driver package
@@ -304,10 +308,10 @@ defaults to `TU_DEBUG=nobin,noubwc`; with the driver in the app,
 
 `RECOMP_ANDROID_DRIVER=system`, `bundled` or `user` in `env.txt` forces one.
 
-**The player's choice** ("Takedawn: graphics driver", a second entry in
+The player's choice ("Takedawn: graphics driver", a second entry in
 the launcher; `DriverActivity`, `GpuDriver`). Before the order above comes
-what was chosen there: *Automatic* (the order above), *Mesa Turnip, in the
-app*, *This device's driver*, or a *driver package* picked with the system's
+what was chosen there: "Automatic" (the order above), "Mesa Turnip, in the
+app", "This device's driver", or a driver package picked with the system's
 file picker: the `.zip` with `meta.json` that the emulators' driver pages
 distribute, or a bare `.so`. A package is checked before it replaces the
 present one (it is a zip with a `meta.json` whose `libraryName` is in it, or
@@ -342,7 +346,7 @@ same way: the box after the lost device says the next start is on Automatic
 player in its first two seconds counts as a failed trial too. The backend's fence-per-frame scheme
 (`vk_poll=0`) is the default on Android whatever the driver.
 
-**When no driver will do**, the start page says so (the device's Vulkan
+When no driver will do, the start page says so (the device's Vulkan
 version, where a driver goes) and starts on the CPU rasteriser only when
 asked; if a chosen driver then fails in the game, a message box says so in a
 player's words (the reason is in the log) before the CPU rasteriser takes
@@ -427,15 +431,15 @@ Two things were tried after the table above, in scripted races
 
 In the quiet cruise MAILBOX at 2x had 1.5 % slow frames against FIFO's 16.2 %.
 
-- **Perfetto, FIFO** (`bo3-fifo.pftrace`, kept on the build PC in
+- Perfetto, FIFO (`bo3-fifo.pftrace`, kept on the build PC in
   `~/bo3-android/device/`): the present thread sleeps in `dequeueBuffer`
   inside `vkAcquireNextImageKHR` for 10.4 ms of every frame; the executor is
   Running 83 % of the time and its submits never block (longest 1.9 ms).
-- **Perfetto, MAILBOX, busy 2x** (`bo3-mailbox.pftrace`): the `dequeueBuffer`
+- Perfetto, MAILBOX, busy 2x (`bo3-mailbox.pftrace`): the `dequeueBuffer`
   wait is gone (present and queueBuffer under 1 ms a frame); the executor is
   Running 71 %, asleep 27 % in many short sleeps (about 4.7 ms a frame, the
   size of the trace's present step at 2x), waiting for a core 1.3 %.
-- **simpleperf, executor thread** (`bo3-perf-mailbox.data`): 44 % of its
+- simpleperf, executor thread (`bo3-perf-mailbox.data`): 44 % of its
   cycles are the spin of the vblank wait (`flip_pacing_stall ->
   xbox_VblankWaitUntil -> clock_gettime`, which goes into the kernel on this
   device); draws 30 %, the pushbuffer walk about 12 %, Turnip 7.6 %. No
@@ -465,30 +469,29 @@ Vulkan backend: submits by reason, render passes begun, cleared, loaded,
 resumed and empty, the time in each driver call that can wait, the frame's
 GPU time from timestamp queries) in the busy 2x race.
 
-- **Not the submits.** A frame makes 2.2 queue submits (one when the frame is
+- Submits are not the cause. A frame makes 2.2 queue submits (one when the frame is
   complete, one at the flip for the copy into the window's slot, 0.2 at an
   occlusion report), 3 at most; `vkQueueSubmit` took 0.15 ms a frame. The
   "ten submits a frame" read earlier was a miscount (64 491 submits belonged
   to 24 600 presents of the whole session, not to the race's 6 000 flips).
-- **One call waits.** In the frames over 18.5 ms the present step was 6.46 ms,
+- One call waits. In the frames over 18.5 ms the present step was 6.46 ms,
   of which 6.12 ms was a single `vkGetSemaphoreCounterValue` (11.9 ms the
   longest seen); on-time frames lost 2.2 ms a frame to it inside the vblank
   hold, where it did not show.
-- **Why.** Turnip on KGSL has no timeline semaphore of its own; Mesa emulates
+- Why. Turnip on KGSL has no timeline semaphore of its own; Mesa emulates
   it with a list of pending submits and asks each "are you done" with
   `IOCTL_KGSL_DEVICE_WAITTIMESTAMP_CTXTID` and timeout 0 (Mesa 26.2.4:
   `vk_sync_timeline_gc_locked` -> `kgsl_syncobj_wait` ->
   `wait_timestamp_safe`). The KGSL kernel takes timeout 0 as "for ever"
   (`adreno_drawctxt_wait`), so the question returns when the GPU has finished.
   The same question is asked inside every `vkQueueSubmit` that signals such a
-  semaphore (`vk_sync_timeline_alloc_point_locked`): with only our polls
-  removed the wait moved into the flip's submit (6.7 ms in slow frames,
+  semaphore (`vk_sync_timeline_alloc_point_locked`): with the polls removed alone the wait moved into the flip's submit (6.7 ms in slow frames,
   12.4 % slow). `vkGetFenceStatus` goes the same way. So the backend's two
   frames in flight never overlapped: each flip waited for its own frame's GPU
   work, and a frame whose recording ended late (many draws) had no vblank
   hold left to hide that in. That is the threshold in draws, and why the
   wait grew with the pixel count: it was the GPU's time for the frame.
-- **The GPU is not the limit.** GPU time per frame from the timestamps: 2x
+- The GPU is not the limit. GPU time per frame from the timestamps: 2x
   4.8 to 5.4 ms mean, p95 5.9 to 7.2, 9.1 the longest; 1.5x 4.5 mean, p95 5.5.
 - Fixed upstream on 2026-09-30, after 26.2.4: Mesa main
   `e984ef294eaf` "tu/kgsl: Prevent indefinite wait times for 0 timeout waits"
@@ -497,7 +500,7 @@ GPU time from timestamp queries) in the busy 2x race.
 
 Two fixes, independent of each other:
 
-1. **The backend** (toolkit `b830672`, `nv2a_pb_vulkan.c`): on Android it
+1. The backend (toolkit `b830672`, `nv2a_pb_vulkan.c`): on Android it
    does not use the timeline semaphore. A fence per frame, signalled by the
    frame's last submit and waited for (with a real timeout) when the frame's
    slot is taken again two flips later; what is known done is what such a
@@ -506,7 +509,7 @@ Two fixes, independent of each other:
    `<files>/driver/`. Other platforms keep the poll (a native timeline
    semaphore answers it at once, and occlusion counts come back within the
    frame); `RECOMP_DEBUG=vk_poll=0|1` switches.
-2. **The driver** (`tools/android/patches/mesa-26.2.4-kgsl-zero-timeout.patch`,
+2. The driver (`tools/android/patches/mesa-26.2.4-kgsl-zero-timeout.patch`,
    applied by `fetch-deps.sh`): the two upstream commits, adapted by hand to
    26.2.4.
 
@@ -526,12 +529,12 @@ What followed, small and without a change to the picture (toolkit `c1919c9`,
 `2fb1035`; the Vulkan smoke test passes on MoltenVK with each, validation
 layer on, also with a submit forced at every pass boundary):
 
-- **Clears.** A `CLEAR_SURFACE` of colour and depth opened a depth-clearing
+- Clears. A `CLEAR_SURFACE` of colour and depth opened a depth-clearing
   pass, ended it at once without a draw and opened a colour-clearing one that
   loaded the depth just cleared. Now one pass clears both, and a depth clear
   on the open pass clears inside it: 24 passes a frame became 18, none empty,
   depth loads 11 became 5. All platforms.
-- **The frame goes to the GPU in parts** (`RECOMP_DEBUG=vk_batch=<draws>`,
+- The frame goes to the GPU in parts (`RECOMP_DEBUG=vk_batch=<draws>`,
   300 on Android, off elsewhere): when a render pass begins and 300 draws (or
   2 ms with any draw) have gone since the last submit, what is recorded is
   submitted. Never inside a pass, and an occlusion report no longer ends the
@@ -539,9 +542,9 @@ layer on, also with a submit forced at every pass boundary):
   own). 6.5 submits a frame, 0.29 ms in all; the GPU now works on a frame for
   12.8 ms of wall time beside the CPU instead of 6 to 7 ms after it. The
   frame's fence is still signalled by its last submit.
-- **Dynamic state** that has not changed is not set again (some 15
+- Dynamic state that has not changed is not set again (some 15
   `vkCmdSet*` and a pipeline bind per draw before). All platforms.
-- **The vblank spin** reads the CPU's counter (`cntvct_el0`, 19.2 MHz,
+- The vblank spin reads the CPU's counter (`cntvct_el0`, 19.2 MHz,
   124 ns a read on the RP5) instead of `clock_gettime`, which is a system
   call on this device; Android arm64 only, with a check at the first use.
 
@@ -554,8 +557,8 @@ draws per frame, before -> after: 1 200 to 1 350 draws 1.6 % -> 0.9 % slow;
 slow frames the executor waits 12 ms for the title to submit: the title's
 main thread spends 3.3 to 5.4 ms in XDK library code other than Direct3D
 (0.1 ms in an on-time frame). Which library (DirectSound is the guess, with
-many cars sounding) is not resolved; that, not the renderer, is what is left
-in dense traffic. The stretches at 30 a second in a race are the title's own
+many cars sounding) is not resolved; that is what is left in dense traffic,
+and the renderer is not the cause. The stretches at 30 a second in a race are the title's own
 (it asks for every second refresh during a takedown or crash camera).
 
 Next candidates, not done because they touch what is drawn when: moving a
@@ -596,8 +599,7 @@ Strength (Input > Rumble strength, 0 to 3 in quarters) is the same curve as
 on every other host: 1.0 is the Xbox pad's own, the default here is 2.0, and
 the strongest rumble is full at any setting. The game's idle hum (about 1 %
 of full) is silence, as it was on the console's motors;
-`RECOMP_ANDROID_VIBRATION_FLOOR=<speed>` moves that threshold (0: none), it
-is no longer needed for the hum. The vibrator is given one of 16 amplitudes,
+`RECOMP_ANDROID_VIBRATION_FLOOR=<speed>` moves that threshold (0: none), the hum does not need it. The vibrator is given one of 16 amplitudes,
 and a new one only when the level has moved a whole step.
 
 Spin lead in Balanced mode, busy 1.5x race: 8 ms 2.3 % slow frames, 2 ms
@@ -624,8 +626,7 @@ before each start), refuses a root that is the player's own (`takedawn/`,
 Input > Vibration "Auto" shakes the device only for the device's own pad.
 `InputDevice.isExternal()` does not say which that is: the RP5's built-in pad
 (2022:3002, "Xbox Wireless Controller") is a USB device inside the case and
-reports itself external, and Auto was silent on it. The rule now
-(`android_vibration.c`, `pad_is_own`): not external, or a pad without a
+reports itself external. The rule (`android_vibration.c`, `pad_is_own`) is: not external, or a pad without a
 vibrator of its own that is the only pad or controller number 1 (a built-in
 pad is there from boot; a pad paired later gets the next number; the pads
 Android can rumble report a vibrator). The log says what it decided:
@@ -658,20 +659,20 @@ what the file said.
 
 ## How it works
 
-- **Activity.** `StartActivity` (the launcher entry) starts `GameActivity` when
+- Activity. `StartActivity` (the launcher entry) starts `GameActivity` when
   `Burnout 3 Takedown/default.xbe` is there. `GameActivity` extends SDL2's
   `SDLActivity`: it puts the app's directories into the environment
   (`RECOMP_ANDROID_DIR`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`, `env.txt`'s lines)
   and SDL loads `libSDL2.so` and `libmain.so` and calls `SDL_main`, which is
   `main()` of `src/game/main.c`.
-- **Host.** `recomp_android_host_init()` (toolkit) sends stdout and stderr to
+- Host. `recomp_android_host_init()` (toolkit) sends stdout and stderr to
   logcat (tag `takedawn`) and to `takedawn.log`, and makes the files directory
   the working directory. From there on it is the Linux host.
-- **Memory.** No fixed low addresses: the guest's 4 GB are a reservation
+- Memory. No fixed low addresses: the guest's 4 GB are a reservation
   wherever the kernel puts it and every access adds `g_xbox_mem_offset`, as on
   Linux and macOS. `/proc/sys/vm/mmap_min_addr` (32768 on the RP5) does not
   matter.
-- **Library, not executable.** `libmain.so` is linked `-Bsymbolic`, so the
+- Library, not executable. `libmain.so` is linked `-Bsymbolic`, so the
   24 000 lifted functions call each other directly. The guest registers are
   thread-local variables: in a shared library loaded with `dlopen` they are
   reached through TLS descriptors (64 TLSDESC relocations), a call per
@@ -683,82 +684,82 @@ what the file said.
 
 ## Known problems
 
-- **2x in a race**: the wait that broke it is fixed ("The dips in traffic");
+- 2x in a race: the wait that broke it is fixed ("The dips in traffic");
   repeat runs and the default scale are open.
-- **Minimum Android 13 (API 33)** as built: the crash and frame-time code uses
+- Minimum Android 13 (API 33) as built: the crash and frame-time code uses
   `backtrace()`, which bionic has from API 33. Lower needs a fallback
   (`_Unwind_Backtrace`); below API 30 also `memfd_create`, and below 29 ELF
   TLS itself.
-- **Vblank lock.** `RECOMP_VBLANK_SYNC=display` normally takes the display's
+- Vblank lock. `RECOMP_VBLANK_SYNC=display` normally takes the display's
   refresh times from `VK_KHR_present_wait`, which no Android driver here offers.
   On Android they come from the Choreographer (`android_vsync.c` in the
   toolkit; `RECOMP_ANDROID_VSYNC=0` turns that off, and the emulated vblank
   then runs on its own 60 Hz timer beside the panel's).
   `VK_GOOGLE_display_timing` (offered by the stock driver) is not used.
-- **Three swapchain images at least** on this surface (two on the desktop
+- Three swapchain images at least on this surface (two on the desktop
   hosts): one more frame of latency possible; to be measured (BO-74).
-- **The guest core.** Guest threads are pinned to the fastest core the process
+- The guest core. Guest threads are pinned to the fastest core the process
   may use at that moment. The RP5's kernel takes cores in and out of use
   (cpu 6 was missing from the mask in one reading, cpu 7 in another), so the
   choice varies and the pinned core may be taken away later.
   `RECOMP_GUEST_CPUS=token` (the macOS rule) or `=all` are the alternatives.
-- **The panel is mounted sideways** (1080x1920). The swapchain is made with
+- The panel is mounted sideways (1080x1920). The swapchain is made with
   the identity transform and the compositor turns the picture; Android then
   answers every present with VK_SUBOPTIMAL_KHR, which on Android no longer
   rebuilds the swapchain (it did, every frame, and the app was killed after
   two minutes). Drawing pre-rotated would spare the compositor's turn; not
   done, its cost not measured.
-- **Coming back from the background** was a black screen until the
-  presenter learned to make the window's surface and swapchain again (and the
-  title is held while the app is away). Seen working on the RP5 for Home and
+- Coming back from the background: the presenter makes the window's
+  surface and swapchain again (and the title is held while the app is away).
+  Seen working on the RP5 for Home and
   for the recent-apps screen (`the window's surface was replaced` in the
   log); the notification shade needs nothing. Screen off and on showed the
   picture again but logged no life-cycle event, so that case is not proven,
   and a long sleep is not tried.
-- **Background.** Leaving the app destroys the window's surface; the Vulkan
+- Background. Leaving the app destroys the window's surface; the Vulkan
   presenter's handling of that on Android is not written.
-- **No shader pre-build** (it starts the executable again, which an app
+- No shader pre-build (it starts the executable again, which an app
   cannot): shaders compile on first use.
-- **No touch controls, no on-screen menu button.** Pad only; the overlay opens
+- No touch controls, no on-screen menu button. Pad only; the overlay opens
   with Back+Start (Select+Start on the RP5). The overlay's size on a 5.5"
   panel is not looked at (Xerenge's XR-21 was about exactly this).
-- **A missing data file ends the run**: `NtReadFile` on the failed handle
+- A missing data file ends the run: `NtReadFile` on the failed handle
   faults (seen with a data set that lacked `Tracks/US/C5_V1`).
-- **16 KB pages**: the ELF files are 16 KB aligned, and the runtime runs on
+- 16 KB pages: the ELF files are 16 KB aligned, and the runtime runs on
   16 KB pages on macOS, but the Linux path's guest-window bookkeeping counts
   in 4 KB pages and has not run on a 16 KB Linux kernel. The RP5 has 4 KB.
-- **The log** carries the full boot trace (3 000 lines in 16 s) to logcat and
+- The log carries the full boot trace (3 000 lines in 16 s) to logcat and
   to external storage.
 
 ## Devices
 
 Only the Retroid Pocket 5 has run the game. The rest of this table is read
 from Mesa 26.2.4's source (`src/freedreno/common/freedreno_devices.py`)
-and from the makers' and reviewers' pages, and says "expected", not "works".
+and from the makers' and reviewers' pages, and its state column says "expected" for what has not run.
 
 | device | SoC, GPU | Android (as sold) | Mesa 26.2.4's Turnip knows the GPU (the APK's A725 build was not checked) | state |
 |---|---|---|---|---|
-| Retroid Pocket 5 | Snapdragon 865, Adreno 650 | 13 | yes | **tested**: all of this document |
+| Retroid Pocket 5 | Snapdragon 865, Adreno 650 | 13 | yes | tested: all of this document |
 | Retroid Pocket 6 | Snapdragon 8 Gen 2 (QCS8550), Adreno 740 | 13 | yes (FD740, KGSL chip id `0x43050a01`) | expected; not run |
 | AYN Odin 2 | Snapdragon 8 Gen 2, Adreno 740 | 13 | yes (FD740) | expected; not run |
 | AYN Odin 3 | Snapdragon 8 Elite, Adreno 830 | 15 | listed (Adreno 830, KGSL chip id `0x44050001`); the a8xx code is new in the 26 series (26.2's notes still list a8xx fixes) | uncertain; not run |
 
 What cannot be known without the devices, in the order it would bite:
 
-1. **Which driver a start picks.** Automatic uses the bundled Turnip only
+1. Which driver a start picks. Automatic uses the bundled Turnip only
    when the device's own driver is older than Vulkan 1.3. A device whose own
    driver says 1.3 (likely on the Adreno 740 and 830; not checked) runs the
    game on Qualcomm's driver, which this backend has never met; "Mesa Turnip,
    in the app" on the driver page is the other choice there.
-2. **libadrenotools on Android 14 and 15** (the Odin 3 ships 15): it swaps
+2. libadrenotools on Android 14 and 15 (the Odin 3 ships 15): it swaps
    the driver through the linker's namespaces, which newer Android versions
    and some makers' builds restrict. Not checked. If it cannot open a driver,
    the start falls to the next one and says so.
-3. **Page size.** A device with 16 KB pages needs the guest-window
+3. Page size. A device with 16 KB pages needs the guest-window
    bookkeeping of "Known problems".
-4. **The built-in pad and the vibrator**: each maker's pad has its own ids
+4. The built-in pad and the vibrator: each maker's pad has its own ids
    and its own answer to `isExternal()` (the rule is above).
-5. **The panel**: 120 Hz panels (RP6, Odin 3). The display lock follows the
+5. The panel: 120 Hz panels (RP6, Odin 3). The display lock follows the
    Choreographer; the title wants 60, and what a 120 Hz mode does to the
    pacing is not tried.
 
@@ -801,6 +802,18 @@ by several projects: take its lock first
 8. A 20-minute race: temperature, battery drain, the cores
    (`adb shell top -H -p $(adb shell pidof io.github.xenophobentx.takedawn)`).
 9. A crash report: `takedawn/crash/` after a fault.
+10. Sharper menu pictures (BO-326, [upscale-art.md](upscale-art.md#android)):
+    seed the profile from the RP5 backup first, `adb install -r` (never
+    uninstall: the data and saves go with it). On the MODS page of the
+    settings, "Upscale menu pictures with AI". Expect in `adb logcat -s
+    takedawn` the run's lines (`upscale: foreground service on`, then
+    `realesr-general-dn030-x4v3: 229 pictures, on the CPU (...)`, or on the
+    GPU with the app's Turnip). The row counts up; closing the settings and
+    racing shows "paused while you play" when the settings are opened again;
+    Home and back: it went on. When it is done the row says "On" and the
+    World Tour map, the loading screens and the car pictures are sharper at
+    once. The time for the whole set, CPU and Turnip (`TAKEDAWN_UPSCALE_BACKEND=cpu`
+    or `=vulkan` in `env.txt`), the temperature, and "Remove".
 
 ## Sources
 

@@ -43,26 +43,25 @@
 # every release is above the one before and a rebuild of one can be told
 # apart; a pre-release (x.y.z-beta) is 900 below x.y.z (see below).
 #
-# The program's code (src/game/recomp/gen, from regen.sh) is compiled into
-# libmain.so. The game data is not in the APK: the first start installs it
-# from the player's own disc image (SetupActivity).
+# One app for every supported disc (src/game/package.h, BO-341): a native
+# library for each, from its generated code (regen.sh): libmain.so (North
+# America, src/game/recomp/gen), libmain_pal.so (Europe Fr/De/It, gen.pal),
+# libmain_ensv.so (Europe/Australia En/Es/Nl/Sv, gen.pal-ensv). The app loads
+# the one whose disc is installed (StartActivity.library); the setup page's
+# installer takes any of the three discs. BO3_ANDROID_PROGRAMS names the
+# programs to build (default: every one whose generated code is there; a
+# release, BO3_REQUIRE_ALL_PROGRAMS=1, needs all three). The game data is not
+# in the APK: the first start installs it from the player's own disc image
+# (SetupActivity).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
-# The disc: BO3_REGION in the environment or -DBO3_REGION=... among the cmake
-# options (docs/pal.md). The PAL APK is its own app beside the NTSC-U one:
-# package io.github.xenophobentx.takedawn.pal ("Takedawn PAL"), the PAL
-# manifest, out/takedawn-pal-android-arm64*.apk. The Java classes keep their
-# package; only the application's id is renamed.
-REGION="${BO3_REGION:-NTSC-U}"
-for a in "$@"; do case "$a" in -DBO3_REGION=*) REGION="${a#-DBO3_REGION=}" ;; esac; done
-case "$REGION" in
-  NTSC-U) DISC_MANIFEST=ntsc-u-retail; APP_ID=io.github.xenophobentx.takedawn; APP_LABEL=Takedawn; APK_TAG=""
-          DISC_SHORT="NTSC-U"; DISC_LONG="North American (NTSC-U)" ;;
-  PAL)    DISC_MANIFEST=pal-retail; APP_ID=io.github.xenophobentx.takedawn.pal; APP_LABEL="Takedawn PAL"; APK_TAG="-pal"
-          DISC_SHORT="PAL"; DISC_LONG="European (PAL)" ;;
-  *) echo "BO3_REGION must be NTSC-U or PAL" >&2; exit 1 ;;
-esac
-REGION_CMAKE=(-DBO3_REGION="$REGION")
+# One app, io.github.xenophobentx.takedawn ("Takedawn"), for every disc: the
+# separate PAL app (….takedawn.pal) is gone.
+for a in "$@"; do case "$a" in -DBO3_REGION=*)
+  echo "build-apk.sh builds every disc's library itself (BO3_ANDROID_PROGRAMS); no -DBO3_REGION" >&2; exit 1 ;; esac; done
+APP_ID=io.github.xenophobentx.takedawn; APP_LABEL=Takedawn; APK_TAG=""
+# region  build id  generated code  library
+PROGRAMS_ALL="NTSC-U:ntsc-u-retail:gen:main PAL:pal-retail:gen.pal:main_pal PAL-ENSV:pal-ensv-retail:gen.pal-ensv:main_ensv"
 SDK="${ANDROID_HOME:-$HOME/android-sdk}"
 NDK="${ANDROID_NDK_HOME:-$(ls -d "$SDK"/ndk/* 2>/dev/null | sort -V | tail -1)}"
 API="${ANDROID_API:-33}"
@@ -75,8 +74,25 @@ if [ -z "$TK" ]; then
 fi
 [ -d "$TK" ] || { echo "toolkit checkout not found; set XBOXRECOMP_DIR" >&2; exit 1; }
 [ -f "$NDK/build/cmake/android.toolchain.cmake" ] || { echo "NDK not found (ANDROID_NDK_HOME)" >&2; exit 1; }
-[ -f "$D/SDL2/lib/libSDL2.so" ] && [ -f "$D/glslang/lib/libglslang.a" ] || "$HERE/tools/android/fetch-deps.sh"
-ls "$HERE"/src/game/recomp/gen/recomp_*.c >/dev/null 2>&1 || { echo "no generated C: run regen.sh first" >&2; exit 1; }
+[ -f "$D/SDL2/lib/libSDL2.so" ] && [ -f "$D/glslang/lib/libglslang.a" ] && [ -f "$D/ncnn/lib/libncnn.a" ] \
+  && [ -f "$D/upscaler/realesr-general-dn030-x4v3.bin" ] || "$HERE/tools/android/fetch-deps.sh"
+PROGRAMS=""
+for p in $PROGRAMS_ALL; do
+  IFS=: read -r r id g lib <<< "$p"
+  if [ -n "${BO3_ANDROID_PROGRAMS:-}" ]; then
+    case " $BO3_ANDROID_PROGRAMS " in *" $r "*) ;; *) continue ;; esac
+  elif ! ls "$HERE/src/game/recomp/$g"/recomp_*.c >/dev/null 2>&1; then
+    continue
+  fi
+  ls "$HERE/src/game/recomp/$g"/recomp_*.c >/dev/null 2>&1 || { echo "no generated C for $r in src/game/recomp/$g: run regen.sh first" >&2; exit 1; }
+  PROGRAMS="$PROGRAMS $p"
+done
+PROGRAMS="${PROGRAMS# }"
+[ -n "$PROGRAMS" ] || { echo "no generated C: run regen.sh first" >&2; exit 1; }
+case "$PROGRAMS" in NTSC-U:*) ;; *) echo "the North America program (libmain.so, the installer's) must be built" >&2; exit 1 ;; esac
+if [ "${BO3_REQUIRE_ALL_PROGRAMS:-0}" = 1 ] && [ "$PROGRAMS" != "$PROGRAMS_ALL" ]; then
+  echo "a release APK carries all three programs; built would be: $PROGRAMS" >&2; exit 1
+fi
 B="${BUILD_DIR:-$HERE/build-android}"
 JOBS="${JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu)}"
 HOST_TAG="$(ls "$NDK/toolchains/llvm/prebuilt" | head -1)"
@@ -94,19 +110,30 @@ TD="$D/turnip-a725"
 ADRENO=()
 [ -f "$D/adrenotools/lib/libadrenotools.a" ] && ADRENO=(-DXBOXRECOMP_ANDROID_ADRENOTOOLS="$D/adrenotools")
 
-echo "== native (NDK $(basename "$NDK"), android-$API, $ABI)"
-cmake -S "$HERE" -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+for p in $PROGRAMS; do
+IFS=: read -r REGION DISC_MANIFEST GEN_NAME LIB <<< "$p"
+BR="$B"; [ "$REGION" = NTSC-U ] || BR="$B-$REGION"
+echo "== native: lib$LIB.so, $REGION (NDK $(basename "$NDK"), android-$API, $ABI)"
+cmake -S "$HERE" -B "$BR" -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
   -DANDROID_ABI=$ABI -DANDROID_PLATFORM=android-$API -DANDROID_STL=c++_shared \
   -DXBOXRECOMP_DIR="$TK" \
-  -DCMAKE_FIND_ROOT_PATH="$D/SDL2;$D/glslang" \
-  -DCMAKE_PREFIX_PATH="$D/SDL2;$D/glslang" \
+  -DCMAKE_FIND_ROOT_PATH="$D/SDL2;$D/glslang;$D/ncnn" \
+  -DCMAKE_PREFIX_PATH="$D/SDL2;$D/glslang;$D/ncnn" \
   -DVulkan_INCLUDE_DIR="$SYSROOT/usr/include" \
   -DVulkan_LIBRARY="$SYSROOT/usr/lib/aarch64-linux-android/$API/libvulkan.so" \
-  -DBO3_BIN_DIR="$B/lib" \
+  -DBO3_BIN_DIR="$BR/lib" \
   ${ADRENO[@]+"${ADRENO[@]}"} \
-  "${REGION_CMAKE[@]}" "$@"
-cmake --build "$B" --target burnout3 -j"$JOBS"
+  -DBO3_REGION="$REGION" "$@"
+cmake --build "$BR" --target burnout3 -j"$JOBS"
+# -ffp-contract=off held: no fused multiply-add in the game or the toolkit
+# (BO-282.2). glslang and ncnn come prebuilt from fetch-deps.sh with the
+# NDK's default contraction: glslang compiles shaders, and ncnn's NEON
+# kernels run the menu pictures' upscale (BO-326, its fused multiply-adds
+# are intrinsics); neither is the game's arithmetic.
+"$HERE/tools/release/check-fp.sh" "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objdump" "$BR/lib/lib$LIB.so" \
+  '^(_ZN7glslang|_ZNK7glslang|_ZN3spv|_ZNK3spv|_ZN4spvtools|_ZNK4spvtools|_ZN6spvutils|_ZNK6spvutils|_ZN12_GLOBAL__N_1|_ZNK12_GLOBAL__N_1|_ZN3std|_ZN4ncnn|_ZNK4ncnn)'
+done
 
 OUT="$B/apk"
 rm -rf "$OUT"
@@ -132,9 +159,16 @@ VCODE=$(( BASH_REMATCH[1] * 10000000 + BASH_REMATCH[2] * 100000 + BASH_REMATCH[3
 if [ -n "${BASH_REMATCH[4]}" ]; then
     VCODE=$(( VCODE - 900 ))
 fi
-MANIFEST_ID="$(sed -n 's/^# id //p' "$HERE/config/disc/$DISC_MANIFEST.manifest" | head -1)"
-[ -n "$MANIFEST_ID" ] || { echo "no id line in config/disc/$DISC_MANIFEST.manifest" >&2; exit 1; }
-echo "   $APP_LABEL $VNAME ($APP_ID), versionCode $VCODE, disc manifest $MANIFEST_ID"
+J_BUILDS=""; J_IDS=""; J_LIBS=""
+for p in $PROGRAMS; do
+  IFS=: read -r REGION DISC_MANIFEST GEN_NAME LIB <<< "$p"
+  MANIFEST_ID="$(sed -n 's/^# id //p' "$HERE/config/disc/$DISC_MANIFEST.manifest" | head -1)"
+  [ -n "$MANIFEST_ID" ] || { echo "no id line in config/disc/$DISC_MANIFEST.manifest" >&2; exit 1; }
+  echo "   lib$LIB.so: $DISC_MANIFEST, disc manifest $MANIFEST_ID"
+  J_BUILDS="$J_BUILDS${J_BUILDS:+, }\"$DISC_MANIFEST\""; J_IDS="$J_IDS${J_IDS:+, }\"$MANIFEST_ID\""
+  J_LIBS="$J_LIBS${J_LIBS:+, }\"$LIB\""
+done
+echo "   $APP_LABEL $VNAME ($APP_ID), versionCode $VCODE"
 mkdir -p "$OUT/gen/io/github/xenophobentx/takedawn"
 cat > "$OUT/gen/io/github/xenophobentx/takedawn/BuildInfo.java" <<JAVA
 package io.github.xenophobentx.takedawn;
@@ -142,11 +176,14 @@ package io.github.xenophobentx.takedawn;
 /** Made by tools/android/build-apk.sh. */
 final class BuildInfo {
     static final String VERSION = "$VNAME";
-    /** The disc manifest the native library was built with (the installer's marker names it). */
-    static final String MANIFEST_ID = "$MANIFEST_ID";
-    /** The disc this build is for, as the setup page names it. */
-    static final String DISC_SHORT = "$DISC_SHORT";
-    static final String DISC_LONG = "$DISC_LONG";
+    /**
+     * The discs of the package (tools/install/supported.json, src/game/package.h), in its
+     * order: the build, the manifest the installer's marker names, the native library.
+     * The first is the North America disc's, whose installer takes any of them.
+     */
+    static final String[] BUILDS = { $J_BUILDS };
+    static final String[] MANIFEST_IDS = { $J_IDS };
+    static final String[] LIBRARIES = { $J_LIBS };
 }
 JAVA
 
@@ -175,8 +212,14 @@ if [ ${#ADRENO[@]} -gt 0 ]; then
     fi
   fi
 fi
+# The menu pictures' upscale (BO-326): ncnn in libmain.so and the fast model
+# in assets/upscaler/, which the game reads with SDL (upscale.c).
+mkdir -p "$OUT/assets/upscaler"
+cp "$D/upscaler/realesr-general-dn030-x4v3.param" "$D/upscaler/realesr-general-dn030-x4v3.bin" "$OUT/assets/upscaler/"
+[ -f "$AL/ncnn-LICENSE.txt" ] || cp "$D/ncnn/LICENSE.txt" "$AL/ncnn-LICENSE.txt"
+[ -f "$AL/Real-ESRGAN-BSD-3-Clause.txt" ] || cp "$HERE/tools/release/licenses/Real-ESRGAN-BSD-3-Clause.txt" "$AL/"
 if [ "${BO3_REQUIRE_LICENSES:-0}" = 1 ]; then
-  for f in THIRD_PARTY.txt SOURCE.txt takedawn-LICENSE.txt xboxrecomp-LGPL-2.1.txt xboxrecomp-NOTICE.txt \
+  for f in ncnn-LICENSE.txt Real-ESRGAN-BSD-3-Clause.txt THIRD_PARTY.txt SOURCE.txt takedawn-LICENSE.txt xboxrecomp-LGPL-2.1.txt xboxrecomp-NOTICE.txt \
            DearImGui-MIT.txt SDL2-Zlib.txt glslang.txt LLVM-Apache-2.0-with-exceptions.txt \
            libadrenotools-BSD-2-Clause.txt Mesa-license.txt Mesa-MIT.txt Mesa-Turnip-SOURCE.txt; do
     [ -s "$AL/$f" ] || { echo "licence file $f is missing from the APK's assets" >&2; exit 1; }
@@ -198,7 +241,12 @@ find "$OUT/classes" -name '*.class' > "$OUT/classes.txt"
 "$BT/d8" --release --min-api "$API" --lib "$JAR" --output "$OUT/dex" @"$OUT/classes.txt"
 
 echo "== native libraries"
-cp "$B/lib/libmain.so" "$D/SDL2/lib/libSDL2.so" \
+for p in $PROGRAMS; do
+  IFS=: read -r REGION DISC_MANIFEST GEN_NAME LIB <<< "$p"
+  BR="$B"; [ "$REGION" = NTSC-U ] || BR="$B-$REGION"
+  cp "$BR/lib/lib$LIB.so" "$OUT/pack/lib/$ABI/"
+done
+cp "$D/SDL2/lib/libSDL2.so" \
    "$SYSROOT/usr/lib/aarch64-linux-android/libc++_shared.so" "$OUT/pack/lib/$ABI/"
 if [ ${#ADRENO[@]} -gt 0 ]; then
   # libadrenotools opens its hooks from the app's native library directory.

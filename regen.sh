@@ -15,10 +15,22 @@
 #
 # Usage: ./regen.sh [--disasm]
 #
-# BO3_REGION=PAL translates the European disc's default.xbe instead: the
-# seed, spin-wait and patch lists of config/pal/ (tools/region/port_config.py
-# writes them from config/) and recomp/recomp_manual_pal.c. Build it with
-# cmake -DBO3_REGION=PAL.
+# BO3_REGION=PAL translates the European (Fr/De/It) disc's default.xbe
+# instead: the seed, spin-wait and patch lists of config/pal/
+# (tools/region/port_config.py writes them from config/) and
+# recomp/recomp_manual_pal.c, from "Burnout 3 Takedown (PAL)/default.xbe"
+# (else "Burnout 3 Takedown/default.xbe"), into src/game/recomp/gen.pal (its
+# analysis in build/xr-pal). Build it with cmake -DBO3_REGION=PAL.
+#
+# BO3_REGION=PAL-ENSV translates the Europe/Australia (En/Es/Nl/Sv) disc's:
+# config/pal-ensv/ and recomp/recomp_manual_pal_ensv.c, from
+# "Burnout 3 Takedown (PAL-ENSV)/default.xbe", into src/game/recomp/gen.pal-ensv
+# (its analysis in build/xr-pal-ensv). Build it with cmake -DBO3_REGION=PAL-ENSV.
+#
+# Each disc has its own tree, so all three stand in one checkout: every
+# package carries the three programs (docs/release.md).
+#
+# BO3_XBE names another default.xbe than the region's usual place.
 
 set -uo pipefail
 
@@ -41,14 +53,25 @@ fi
 XBE="$BO3/Burnout 3 Takedown/default.xbe"
 CFG="$BO3/config"
 MANUAL="$BO3/src/game/recomp/recomp_manual.c"
+GEN="$BO3/src/game/recomp/gen"
+OUT="$BO3/build/xr"
 case "${BO3_REGION:-NTSC-U}" in
     NTSC-U|ntsc-u|NTSC|ntsc|"") ;;
     PAL|pal)
+        [[ -f "$BO3/Burnout 3 Takedown (PAL)/default.xbe" ]] && XBE="$BO3/Burnout 3 Takedown (PAL)/default.xbe"
         CFG="$BO3/config/pal"
-        MANUAL="$BO3/src/game/recomp/recomp_manual_pal.c" ;;
-    *) echo "BO3_REGION must be NTSC-U or PAL"; exit 1 ;;
+        MANUAL="$BO3/src/game/recomp/recomp_manual_pal.c"
+        GEN="$BO3/src/game/recomp/gen.pal"
+        OUT="$BO3/build/xr-pal" ;;
+    PAL-ENSV|pal-ensv)
+        XBE="$BO3/Burnout 3 Takedown (PAL-ENSV)/default.xbe"
+        CFG="$BO3/config/pal-ensv"
+        MANUAL="$BO3/src/game/recomp/recomp_manual_pal_ensv.c"
+        GEN="$BO3/src/game/recomp/gen.pal-ensv"
+        OUT="$BO3/build/xr-pal-ensv" ;;
+    *) echo "BO3_REGION must be NTSC-U, PAL or PAL-ENSV"; exit 1 ;;
 esac
-OUT="$BO3/build/xr"
+XBE="${BO3_XBE:-$XBE}"
 
 if [[ ! -f "$XBE" ]]; then
     echo "missing $XBE -- extract it from your own disc image"
@@ -76,6 +99,14 @@ SPIN_WAITS="${SPIN_WAITS-$CFG/spin_waits.json}"
 PATCH=()
 PATCHES="${PATCHES-$CFG/patches.json}"
 [[ -n "$PATCHES" && -f "$PATCHES" ]] && PATCH=(--patches "$PATCHES")
+
+# Guest memory ordering on arm64 (tools.recomp --mem-order): config/
+# mem_order.json lists the lock-release stores emitted as store-releases and
+# asks for an acquire fence after every spin-wait candidate. No change to the
+# x86-64 output. MEM_ORDER= (empty) generates without it.
+MEMORD=()
+MEM_ORDER="${MEM_ORDER-$CFG/mem_order.json}"
+[[ -n "$MEM_ORDER" && -f "$MEM_ORDER" ]] && MEMORD=(--mem-order "$MEM_ORDER")
 
 if [[ "${1:-}" == "--disasm" || ! -f "$OUT/disasm/functions.json" ]]; then
     echo "==> xbe_parser"
@@ -110,8 +141,9 @@ echo "==> recomp"
     --exclude-manual "$MANUAL" \
     ${SPIN[@]+"${SPIN[@]}"} \
     ${PATCH[@]+"${PATCH[@]}"} \
+    ${MEMORD[@]+"${MEMORD[@]}"} \
     ${TRACE_FUNCS:+--trace-functions "$TRACE_FUNCS"} \
-    --gen-dir     "$BO3/src/game/recomp/gen" \
+    --gen-dir     "$GEN" \
     -o "$OUT/recomp"
 ) > "$OUT/recomp.log" 2>&1
 st=$?

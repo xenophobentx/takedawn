@@ -1,7 +1,7 @@
 # Draw distance and pop-in: what the title decides where (BO-112)
 
 Study of the NTSC-U Xbox build, and the one switch that came out of it:
-`graphics.vehicle_detail`. Short version: the scenery's draw distance is in
+`graphics.vehicle_detail`. The scenery's draw distance is in
 the track files, not in the executable, and cannot be raised by a patch; the
 camera's far plane is 10 km and is not what limits anything; the distances
 at which vehicles change to simpler models are five floats in the
@@ -39,7 +39,7 @@ patch hard-codes the same race-car level this setting moves.
 Overlay Graphics page, "Vehicle detail distance"; `settings.toml`
 `[graphics] vehicle_detail = "original" | "far" | "farthest"`;
 `RECOMP_GFX_VEHICLE_DETAIL`. Default `far` on the packaged desktop programs and
-the Steam Deck (the owner's decision of 2026-10-12: he played several races on
+the Steam Deck (my decision of 2026-10-12, after I played several races on
 the Deck with it), `original` on Android, in a development build and in a
 `--headless` run.
 
@@ -54,13 +54,13 @@ the full model is what the start grid already draws. Live, from the next
 frame. With the setting at `original` the generated code differs from the
 unpatched build by the five gated statements.
 
-What it does not do: scenery, track, props, traffic appearing, shadows
-(props: `graphics.scenery_detail`, below).
-"Draw distance" would be the wrong name for it.
+It does not change scenery, track, props, traffic appearing or shadows
+(props: `graphics.scenery_detail`, below), so "draw distance" would be the
+wrong name for it.
 
 ## `graphics.scenery_detail` (BO-177)
 
-Overlay Graphics page, "Scenery detail"; `settings.toml` `[graphics]
+Overlay Graphics page, "Scenery detail distance"; `settings.toml` `[graphics]
 scenery_detail = "original" | "far"`; `RECOMP_GFX_SCENERY_DETAIL`. Default
 `far` in release builds and on the Steam Deck (`src/game/main.c`, the
 `env_default` block for a window); `original` in a build from source that
@@ -111,8 +111,9 @@ So the cost is geometry: up to a fifth more indices in a frame with all
 rivals in view, 1 to 5 % more draw calls. Frame time was not measured: the
 runs were headless on a machine other agents were loading, and at these
 counts the Mac shows nothing. On the Deck and the RP5 the vertex work is
-the part to check. Check it on the RP5 before Android gets a default other than `original`
-(the Deck's `far` default is the owner's choice after several races there).
+the part to check. Check it on the RP5 before Android gets a default other
+than `original` (the Deck's `far` default is my choice after several races
+there).
 
 Pictures: `runs/draw2/paused.png` (three pauses and the crash, rows
 original / far / farthest, 640x480 frame dumps), `runs/draw3/rivals_3x.png`

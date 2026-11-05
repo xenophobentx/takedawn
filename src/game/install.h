@@ -101,6 +101,24 @@ const char *bo3_user_dirs_notes(void);
  * the installer's line protocol; returns the exit status. */
 int bo3_install_main(int argc, char **argv);
 
+/* The program's whole command line, from main() before anything else: the
+ * package's programs hand it on to each other (install.c, package.h). */
+void bo3_install_args(int argc, char **argv);
+
+/* Right after bo3_install_args: when another disc's data is the one a start
+ * runs (package.h: the disc installed last, else this program's, else
+ * another whose data is whole), this process becomes that disc's program
+ * with the same line and does not return. Not for --version, --install,
+ * --data, --dest, TAKEDAWN_DATA, a default.xbe on the line, a checkout, or
+ * a process another program of the package started. Not on Android (the
+ * app picks the library). */
+void bo3_package_start(int argc, char **argv);
+
+/* Whether the disc this program was made for has `path` (as on the disc,
+ * forward slashes; case does not matter): its manifest's spelling of it,
+ * or NULL. */
+const char *bo3_manifest_path(const char *path);
+
 /* Find the data (above) and go there. `xbe_named`: case 1. `data_arg`:
  * --data's, or NULL. Flags: BO3_DATA_QUIET, nothing is printed and nothing
  * fails (the bug report, which says itself what is missing);

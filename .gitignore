@@ -1,5 +1,9 @@
 # Your game data: the unpacked disc. Never committed.
 Burnout 3 Takedown/
+# the En/Es/Nl/Sv PAL disc's default.xbe (regen.sh, BO3_REGION=PAL-ENSV)
+Burnout 3 Takedown (PAL-ENSV)/
+# the Fr/De/It PAL disc's default.xbe beside the NTSC-U one (regen.sh, BO3_REGION=PAL)
+Burnout 3 Takedown (PAL)/
 # ... or the symlink the installer (or a worktree) makes to it
 /Burnout 3 Takedown
 *.iso

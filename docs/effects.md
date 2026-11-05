@@ -6,7 +6,7 @@ passes. Two settings set their strength: overlay Graphics page, "Bloom" and
 `[graphics] bloom` / `motion_blur` (0 to 1; the old `false` / `true` read as
 0 / 1); `RECOMP_GFX_BLOOM`, `RECOMP_GFX_MOTION_BLUR` (0 to 1). Both default to
 1, 100%, the console's look, on every platform; 0 is off (BO-212 made them
-strengths, they were switches). Switching an effect off is an opt-in guest patch
+strengths). Switching an effect off is an opt-in guest patch
 (`config/patches.json`; toolkit `docs/pipeline/04-lifting.md`, Guest patches)
 that makes the title's own condition for drawing the effect read false, so
 the title takes its existing path for not drawing it. No draw call is
@@ -24,17 +24,16 @@ track's bloom Threshold and Intensity (`0x7397C0` / `0x7397C4`, read from
 seen), +0x58 a strength, 0.5 at rest and 0.5 + 0.4 x the car's boost amount
 while boosting (0.86 seen), +0x00..+0x1C the blur's centre and scales.
 
-**Bloom** is `sub_0003E520` (PS2 `CB3Bloom::Render`), called from the end of
+Bloom is `sub_0003E520` (PS2 `CB3Bloom::Render`), called from the end of
 a view's 3D (`sub_001AE340`; the garage's `sub_001AE6F0`): the frame's bright
 part into a 320x240 target, through two 160x120 targets, then added over the
 frame. On screen it is a soft glow that comes with the boost: with the car
 at rest or driving without boost, switching it off changes nothing that can
 be measured in the picture (below); while boosting the whole picture is
-visibly hazier and brighter with it. So it is a boost effect more than a
-"bright parts glow" one, and its three passes are drawn in every frame of a
-stage, boost or not.
+visibly hazier and brighter with it. So it is mainly a boost effect. Its three
+passes are drawn in every frame of a stage, boost or not.
 
-**Motion blur** is the radial blur, `sub_00042AD0` (`sub_00041480` draws the
+Motion blur is the radial blur, `sub_00042AD0` (`sub_00041480` draws the
 frame into the 320x240 target, `sub_00041EC0` draws it back over the frame,
 scaled about the centre through the mask): streaks towards the edges of the
 picture that grow with speed (clear from about 90 mph without boost) and
@@ -70,11 +69,11 @@ gated statements only.
 ## Strength between 0 and 100% (BO-212)
 
 The two effects are mixed over the picture by a number the title already
-holds, so a strength below 100% scales that number in the guest and the
+holds, so a strength below 100% scales that number in the guest. The
 backends (Metal, Vulkan) do nothing special. While the setting is anything but
 1, the generated code multiplies the value the instruction loaded by the
 setting (`bloom_strength` / `blur_strength`, `src/game/main.c`); at 1 the
-patch does not run, so 100% is the title's code path as before. 0 is the
+patch does not run, so 100% is the title's own code path. 0 is the
 off path above.
 
 | Effect | Site | The value | Times the strength |
@@ -151,9 +150,15 @@ are the guest sizes. `RECOMP_TRACE=metal_frame` prints the host size after `>`
 | 64x32 (3 draws, first of the frame) | 64x32 | 256x128 | small pass (not identified) |
 
 The blur and bloom draw whole targets with texture coordinates, so their reach
-is the same fraction of the screen at any scale. One thing does change: a
-bilinear 2:1 reduction (2560 to 1280) reads half the texels it would at 1x, so
-the bloom's glow is a little less smoothed at high scales.
+is the same fraction of the screen at any scale. The reductions (the bloom's
+640x480 to 320x240 to 160x120, the radial blur's 640x480 to 320x240) take four
+taps placed in the title's own texels, which at a render scale would land on a
+few of the host texels of each block, so a single bright host texel could pass
+the bloom threshold and show as a glow dot that 1x never draws (BO-178, GitHub
+#78). The toolkit handles it: such a draw reads an area-averaged copy of its
+source at the title's size instead (`docs/runtime/overlay.md` in the toolkit,
+"Reductions of a scaled target"; `RECOMP_DEBUG=rt_reduce=0` gives the old
+picture for a comparison). Nothing is done in the game's own code.
 
 Two extras: `graphics.lod_bias` (`RECOMP_GFX_LOD_BIAS`; "auto" by default on the
 packaged desktop programs and the Steam Deck since 2026-10-12, off elsewhere)

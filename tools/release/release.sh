@@ -5,12 +5,14 @@
 #   tools/release/release.sh <version> [--only macos,windows,linux,android]
 #                                      [--allow-dirty] [--reuse-gen]
 #
-#   dist/<version>/
+#   dist/<version>/                    one package per platform, each with the
+#                                      three programs (src/game/package.h)
 #     Takedawn-<version>-macos-arm64.dmg
 #     Takedawn-<version>-windows-x64-setup.exe
 #     Takedawn-<version>-linux-x86_64.AppImage
-#     (Android: whatever tools/release/build-android.sh puts there)
-#     SHA256SUMS        sha256 of every artefact, `shasum -a 256 -c` format
+#     Takedawn-<version>-android-arm64.apk   (signed by sign-android.sh)
+#     SHA256SUMS        sha256 of the four packages and of BUILDINFO,
+#                       `shasum -a 256 -c` format
 #     BUILDINFO         version, codename, both commits, the regen key, the
 #                       generated tree's hash, the patch count, the disc
 #                       manifest id, the pins, and what was and was not
@@ -60,8 +62,11 @@ t0=$(date +%s)
 
 say "Takedawn $VERSION \"$CODENAME\": game $(commit_of "$REPO"), toolkit $(commit_of "$TOOLKIT")"
 "$T/gen.sh" $REUSE 2>&1 | tee "$LOGS/gen.log"
-assert_gen
-say "generated code: key $GEN_KEY, tree ${GEN_TREE:0:16}, patches $GEN_PATCHES"
+for r in $PKG_REGIONS; do
+    use_region "$r"; assert_gen
+    say "generated code, $BUILD_ID: key $GEN_KEY, tree ${GEN_TREE:0:16}, patches $GEN_PATCHES"
+done
+use_region "${PKG_REGIONS%% *}"; assert_gen
 
 step() {  # <platform> <log name> <command...>: run, keep the log, note the outcome
     local name="$1" log="$LOGS/$2.log" t; shift 2
@@ -88,7 +93,7 @@ if wants macos; then
 fi
 if wants windows; then
     if step windows build-windows "$T/build-windows.sh"; then
-        if [ -f "$DIST/Takedawn-$VERSION$PKG_TAG-windows-x64-setup.exe" ] && ! grep -aq "^==> NOT DONE" "$LOGS/build-windows.log"; then
+        if [ -f "$DIST/Takedawn-$VERSION-windows-x64-setup.exe" ] && ! grep -aq "^==> NOT DONE" "$LOGS/build-windows.log"; then
             DONE+=(windows)
             [ -n "${TAKEDAWN_WIN_DISC:-}" ] || NOTRUN+=("windows: --install --check (TAKEDAWN_WIN_DISC not set)")
             NOTRUN+=("windows: the real setup exe was compiled, not run (a registry-free variant was installed and compared); no game start; the game's hand-over to the setup window (CreateProcess) was not run")
@@ -156,23 +161,40 @@ done
 
 # ── the APK carries its licence texts ────────────────────────────────
 case " ${DONE[*]:-} " in *" android "*)
-    apk="$DIST/Takedawn-$VERSION$PKG_TAG-android-arm64.apk"
+    apk="$DIST/Takedawn-$VERSION-android-arm64.apk"
     if ( check_apk_licenses "$apk" ); then :; else FAILED+=("android: $(basename "$apk") has no licence texts in assets/licenses"); fi ;;
 esac
 
+# ── one package per platform ─────────────────────────────────────────
+# Every package carries the three programs (src/game/package.h, BO-341):
+# exactly these four files, nothing per region beside them.
+PACKAGES="Takedawn-$VERSION-macos-arm64.dmg Takedawn-$VERSION-windows-x64-setup.exe Takedawn-$VERSION-linux-x86_64.AppImage Takedawn-$VERSION-android-arm64.apk"
+for f in "$DIST"/Takedawn-* "$DIST"/takedawn-*; do
+    [ -f "$f" ] || continue
+    case "$(basename "$f")" in *-unsigned.apk|*.idsig) continue ;; esac   # not for release
+    case " $PACKAGES " in *" $(basename "$f") "*) ;; *) FAILED+=("$(basename "$f") in $DIST is no package of this release (one per platform)") ;; esac
+done
+
 # ── checksums and build information ──────────────────────────────────
-( cd "$DIST" && rm -f SHA256SUMS && for f in Takedawn-* takedawn-*; do
-      case "$f" in *-unsigned.apk|*.idsig) continue ;; esac   # not for release
+# SHA256SUMS: the packages, then BUILDINFO (which lists the packages'
+# lines itself), so that `shasum -a 256 -c SHA256SUMS` checks all of them.
+( cd "$DIST" && rm -f SHA256SUMS && for f in $PACKAGES; do
       [ -f "$f" ] && printf '%s  %s\n' "$(sha256_of "$f")" "$f"; done > SHA256SUMS.tmp; mv SHA256SUMS.tmp SHA256SUMS )
 {
     echo "Takedawn $VERSION \"$CODENAME\""
     echo "built      $(date -u +%Y-%m-%dT%H:%M:%SZ) on $(uname -s) $(uname -m)"
     echo "game       $(commit_of "$REPO") ($(git -C "$REPO" rev-parse --abbrev-ref HEAD))"
     echo "toolkit    $(commit_of "$TOOLKIT") ($(git -C "$TOOLKIT" rev-parse --abbrev-ref HEAD))"
-    echo "regen key  $GEN_KEY"
-    echo "gen tree   $GEN_TREE ($(stamp_field files) files)"
-    echo "patches    $GEN_PATCHES guest patch sites, $(stamp_field spin_waits) spin waits"
-    echo "manifest   $(manifest_id) ($BUILD_ID disc)"
+    echo "programs   one per disc in every package (src/game/package.h), the first the main one"
+    for r in $PKG_REGIONS; do
+        use_region "$r"; assert_gen
+        echo "  $BUILD_ID (Takedawn$PROG_SUFFIX)"
+        echo "    regen key  $GEN_KEY"
+        echo "    gen tree   $GEN_TREE ($(stamp_field files) files)"
+        echo "    patches    $GEN_PATCHES guest patch sites, $(stamp_field spin_waits) spin waits"
+        echo "    manifest   $(manifest_id)"
+    done
+    use_region "${PKG_REGIONS%% *}"; assert_gen
     echo "signing    none on macOS (ad hoc seal without identity, not notarised), Windows and Linux; the Android APK with the project's key"
     echo
     echo "pins"
@@ -192,6 +214,7 @@ esac
     echo "times"
     for n in "${TIMES[@]+"${TIMES[@]}"}"; do echo "  $n"; done
 } > "$DIST/BUILDINFO"
+printf '%s  %s\n' "$(sha256_of "$DIST/BUILDINFO")" BUILDINFO >> "$DIST/SHA256SUMS"
 
 echo
 cat "$DIST/BUILDINFO"

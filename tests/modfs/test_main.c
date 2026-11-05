@@ -1144,6 +1144,142 @@ static void mod_list(void)
     bo3_modfs_state_file(NULL);
 }
 
+/* Texture packs (BO-312): the textures/ folders, in lookup order. */
+static void texture_dirs(void)
+{
+    static const char ok_toml[] = "id = \"%s\"\nname = \"%s\"\n";
+    char t[200], list[1500], dir[700], name[700], state[700];
+    int n;
+
+    CHECK(make_file("tx1/textures/0000000000000001.png", "x") && make_file("tx1/Data/z.bin", "z"),
+          "setup tx1 loose textures");
+    fit(t, sizeof t, ok_toml, "tx.b", "B");
+    CHECK(make_file("tx1/mb/mod.toml", t) && make_file("tx1/mb/Textures/0000000000000002.png", "x"),
+          "setup tx.b (a Textures folder)");
+    fit(t, sizeof t, ok_toml, "tx.a", "A");
+    CHECK(make_file("tx1/ma/mod.toml", t) && make_file("tx1/ma/textures/0000000000000003.png", "x")
+          && make_file("tx1/ma/files/Data/q.bin", "q"), "setup tx.a");
+    fit(t, sizeof t, ok_toml, "tx.c", "C");
+    CHECK(make_file("tx1/mc/mod.toml", t) && make_file("tx1/mc/files/Data/c.bin", "c"), "setup tx.c (no textures)");
+    fit(t, sizeof t, ok_toml, "tx.d", "D");
+    CHECK(make_file("tx1/md/mod.toml", t) && make_file("tx1/md/textures", "a file, not a folder"),
+          "setup tx.d (textures is a file)");
+    CHECK(make_file("tx2/textures/0000000000000004.png", "x"), "setup tx2");
+    CHECK(make_dir(at("txstate")), "setup state folder");
+    fit(state, sizeof state, "%s", at("txstate/mod-list.toml"));
+    remember(state, 0);
+    {
+        char p[720];
+        fit(p, sizeof p, "%s.tmp", state);
+        remember(p, 0);
+    }
+    bo3_modfs_state_file(state);
+    fit(list, sizeof list, "%s;%s", at("tx1"), at("tx2"));
+    set_mods(list);
+    /* folder 1's loose textures, its mods by id (tx.a, tx.b), then folder 2 */
+    CHECK(bo3_modfs_texture_dir(0, dir, sizeof dir, name, sizeof name) && strstr(dir, "tx1") && !strstr(dir, "ma")
+          && !strcmp(name, "folder 1"), "first: folder 1's textures (%s %s)", dir, name);
+    CHECK(bo3_modfs_texture_dir(1, dir, sizeof dir, name, sizeof name) && strstr(dir, "ma") && !strcmp(name, "tx.a"),
+          "second: tx.a (%s)", dir);
+    CHECK(bo3_modfs_texture_dir(2, dir, sizeof dir, name, sizeof name) && strstr(dir, "mb") && !strcmp(name, "tx.b")
+          && strstr(dir, "Textures"), "third: tx.b, in its own spelling (%s)", dir);
+    CHECK(bo3_modfs_texture_dir(3, dir, sizeof dir, name, sizeof name) && strstr(dir, "tx2") && !strcmp(name, "folder 2"),
+          "fourth: folder 2's textures (%s)", dir);
+    CHECK(!bo3_modfs_texture_dir(4, dir, sizeof dir, name, sizeof name) && !bo3_modfs_texture_dir(-1, dir, sizeof dir, name, sizeof name),
+          "no fifth; tx.c has none, tx.d's is a file");
+    /* the loose textures/ folder is not a mod's, and its files are loose disc files named textures/... */
+    /* off: tx.a's pack is not in the list (from the next start) */
+    CHECK(bo3_modfs_set_enabled("tx.a", 0), "tx.a off: saved");
+    set_mods(list);
+    n = 0;
+    while (bo3_modfs_texture_dir(n, dir, sizeof dir, name, sizeof name))
+        n++;
+    CHECK(n == 3, "tx.a off: three packs (%d)", n);
+    CHECK(bo3_modfs_texture_dir(1, dir, sizeof dir, name, sizeof name) && !strcmp(name, "tx.b"), "tx.b follows the loose one");
+    /* no mod folder: none */
+    set_mods(NULL);
+    CHECK(!bo3_modfs_texture_dir(0, dir, sizeof dir, name, sizeof name), "no folder: no packs");
+
+    /* BO-311: the folder of mods made on this computer comes after the named
+     * ones, and alone when nothing is named; a missing one is no folder. */
+    fit(t, sizeof t, ok_toml, "takedawn.ai-upscaled-art", "Sharper menu pictures");
+    CHECK(make_file("txgen/ai-upscaled-art/mod.toml", t)
+          && make_file("txgen/ai-upscaled-art/textures/0000000000000005.png", "x"), "setup the made folder");
+    bo3_modfs_generated_dir(at("txgen"));
+    set_mods(NULL);
+    CHECK(bo3_modfs_folder_count() == 1 && bo3_modfs_texture_dir(0, dir, sizeof dir, name, sizeof name)
+          && !strcmp(name, "takedawn.ai-upscaled-art"), "made folder alone: its pack (%s)", name);
+    set_mods(at("tx2"));
+    CHECK(bo3_modfs_folder_count() == 2 && bo3_modfs_texture_dir(1, dir, sizeof dir, name, sizeof name)
+          && !strcmp(name, "takedawn.ai-upscaled-art"), "made folder after TAKEDAWN_MODS (%s)", name);
+    CHECK(bo3_modfs_set_enabled("takedawn.ai-upscaled-art", 0), "the made pack off: saved");
+    set_mods(NULL);
+    CHECK(!bo3_modfs_texture_dir(0, dir, sizeof dir, name, sizeof name), "the made pack off: no packs");
+    bo3_modfs_set_enabled("takedawn.ai-upscaled-art", 1);
+    bo3_modfs_generated_dir(at("txgen-missing"));
+    set_mods(NULL);
+    CHECK(bo3_modfs_folder_count() == 0, "a made folder that is not there: no folder");
+    bo3_modfs_generated_dir(NULL);
+    set_mods(NULL);
+
+    /* BO-327: the default mods folder is read with no TAKEDAWN_MODS (a pad
+     * player has no shell), after the folders TAKEDAWN_MODS names when it is
+     * set, and not at all when it is set empty; a default folder that is not
+     * there is no folder. */
+    fit(t, sizeof t, ok_toml, "def.a", "Default A");
+    CHECK(make_file("defmods/def-a/mod.toml", t) && make_file("defmods/def-a/textures/0000000000000007.png", "x"),
+          "setup the default folder");
+    bo3_modfs_default_dir(at("defmods"));
+    CHECK(!strcmp(bo3_modfs_default_dir_name(), at("defmods")), "the default folder's name comes back");
+    set_mods(NULL);
+    CHECK(bo3_modfs_folder_count() == 1 && bo3_modfs_mod_count() == 1 && !strcmp(bo3_modfs_mod(0)->manifest.id, "def.a"),
+          "no TAKEDAWN_MODS: the default folder alone (%d folders)", bo3_modfs_folder_count());
+    set_mods(at("tx2"));
+    CHECK(bo3_modfs_folder_count() == 2 && bo3_modfs_texture_dir(1, dir, sizeof dir, name, sizeof name)
+          && !strcmp(name, "def.a"), "the default folder after TAKEDAWN_MODS's (%s)", name);
+    set_mods("");
+    CHECK(bo3_modfs_folder_count() == 0, "TAKEDAWN_MODS set empty: the default folder is off");
+    bo3_modfs_default_dir(at("defmods-missing"));
+    set_mods(NULL);
+    CHECK(bo3_modfs_folder_count() == 0, "a default folder that is not there: no folder");
+    bo3_modfs_default_dir(NULL);
+    CHECK(!bo3_modfs_default_dir_name()[0], "no default folder: an empty name");
+    set_mods(NULL);
+
+    /* A mod folder whose path is not plain ASCII (a user name with an accent
+     * in the per-user folder): taken, on Windows by its short name. */
+    if (!make_file("m\xc3\xbc" "ds/Data/u.dat", "umlaut folder")) {
+        SKIP("a folder with a non-ASCII name could not be made here");
+    } else {
+        const char *host;
+        set_mods(at("m\xc3\xbc" "ds"));
+        host = ask("D:\\Data\\u.dat");
+        CHECK(bo3_modfs_folder_count() == 1, "a non-ASCII folder is a mod folder");
+        CHECK(!strcmp(read_back("D:\\Data\\u.dat"), "umlaut folder"), "its file is served (%s)", host ? host : "none");
+        CHECK(host && handoff_ok(host), "the toolkit can open what it hands back");
+#if defined(_WIN32)
+        {
+            const unsigned char *q;
+            int ascii = 1;
+            for (q = (const unsigned char *)(host ? host : ""); *q; q++)
+                ascii = ascii && *q >= 0x20 && *q < 0x7F;
+            CHECK(host && ascii, "Windows: by its short name, plain ASCII (%s)", host ? host : "none");
+        }
+#endif
+        set_mods(NULL);
+    }
+#if !defined(_WIN32)
+    {
+        char o[64];
+        CHECK(bo3_modfs_host_path("/home/j\xc3\xb3zsi/x", o, sizeof o) && !strcmp(o, "/home/j\xc3\xb3zsi/x"),
+              "UTF-8 path kept as it is");
+        CHECK(!bo3_modfs_host_path("/home/a\\b", o, sizeof o), "a backslash is refused");
+        CHECK(!bo3_modfs_host_path("/home/a\x01b", o, sizeof o), "a control character is refused");
+    }
+#endif
+    bo3_modfs_state_file(NULL);
+}
+
 int main(void)
 {
     char list[4096];
@@ -1451,8 +1587,9 @@ int main(void)
     }
 #endif
 
-    /* A folder whose path is not plain ASCII, with a real file in it: the
-     * same tree as modN (found), so only the folder's name stops it. */
+    /* A folder whose path is not plain ASCII, with a real file in it, the
+     * same tree as modN: found too (BO-311: a user name with an accent; on
+     * Windows by the folder's short name). */
     {
 #if defined(_WIN32)
         const char *na = "mod\xe9";           /* the ANSI code page's e-acute */
@@ -1467,7 +1604,7 @@ int main(void)
             set_mods(at("modN"));
             CHECK(!strcmp(read_back("D:\\Data\\x.dat"), "N plain"), "the plain twin modN is found");
             set_mods(at(na));
-            CHECK(refused("D:\\Data\\x.dat"), "a non-ASCII folder is ignored");
+            CHECK(!strcmp(read_back("D:\\Data\\x.dat"), "non-ASCII"), "a non-ASCII folder is taken");
         }
     }
 
@@ -1617,6 +1754,7 @@ int main(void)
 
     manifests(sensitive);
     mod_list();
+    texture_dirs();
 
     remove_all();
     printf("modfs: %d passed, %d failed, %d skipped\n", s_pass, s_fail, s_skip);

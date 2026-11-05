@@ -4,7 +4,8 @@
 #
 #   REPO        this checkout
 #   TOOLKIT     the toolkit checkout: XBOXRECOMP_DIR, else ../xboxrecomp
-#   GEN         src/game/recomp/gen, the generated C (never committed)
+#   GEN         src/game/recomp/gen, the generated C (never committed);
+#               gen.pal and gen.pal-ensv for the package's PAL programs
 #   DIST        dist/<version>/ in this checkout (git-ignored): the artefacts
 #   WORK        build/release/ in this checkout (git-ignored): build trees
 #   DEPS        ~/.cache/takedawn-deps (TAKEDAWN_DEPS): pinned libraries
@@ -41,24 +42,46 @@ TOOLKIT="${XBOXRECOMP_DIR:-$REPO/../xboxrecomp}"
 TOOLKIT="$(cd "$TOOLKIT" && pwd)"
 export XBOXRECOMP_DIR="$TOOLKIT"
 
-# The disc the release is for: BO3_REGION=NTSC-U (the default) or PAL
-# (docs/pal.md). It picks the build of supported.json, config/ or
-# config/pal/, and the manifest; and the packages' identity, so that the two
-# install side by side and their files never overwrite each other:
-# APP_TITLE (the app's name), PKG_TAG (in every package file name:
-# Takedawn-<version><tag>-...), ID_SUFFIX (after the macOS bundle id and the
-# Android package id).
-BO3_REGION="${BO3_REGION:-NTSC-U}"
-case "$BO3_REGION" in
-    NTSC-U) BUILD_ID=ntsc-u-retail; CFG="$REPO/config"; DISC_NAME="NTSC-U (North America)"
-            APP_TITLE="Takedawn"; PKG_TAG=""; ID_SUFFIX="" ;;
-    PAL)    BUILD_ID=pal-retail;    CFG="$REPO/config/pal"; DISC_NAME="PAL (Europe)"
-            APP_TITLE="Takedawn PAL"; PKG_TAG="-pal"; ID_SUFFIX=".pal" ;;
-    *) echo "BO3_REGION must be NTSC-U or PAL" >&2; exit 1 ;;
+# One package per platform for every supported disc (src/game/package.h,
+# BO-341): the three programs, PKG_REGIONS, in supported.json's order. The
+# main one is the North America (NTSC-U) disc's under the package's program
+# name (Takedawn, takedawn, Takedawn.exe, libmain.so); beside it the Europe
+# Fr/De/It disc's with "-pal" and the Europe/Australia En/Es/Nl/Sv disc's with
+# "-ensv" (libmain_pal.so, libmain_ensv.so). The main program starts the one
+# whose disc is installed. APP_TITLE is the app's name, PKG_TAG (in every
+# package file name: Takedawn-<version><tag>-...) and ID_SUFFIX (after the
+# macOS bundle id and the Android package id) stay empty: there is no second
+# package any more. BO3_REGION for one program alone is the developer
+# build's (cmake -DBO3_REGION=..., docs/pal.md), not a package's.
+case "${BO3_REGION:-NTSC-U}" in
+    NTSC-U) ;;
+    *) echo "BO3_REGION=$BO3_REGION: every package carries all three programs now (BO-341); leave BO3_REGION unset" >&2
+       exit 1 ;;
 esac
+BO3_REGION=NTSC-U
+# (no slash in it: the READMEs take it through sed)
+DISC_NAME="the North America (NTSC-U) retail disc or one of the two European (PAL) ones"
+APP_TITLE="Takedawn"; PKG_TAG=""; ID_SUFFIX=""; PKG_REGIONS="NTSC-U PAL PAL-ENSV"
 export BO3_REGION
 
-GEN="$REPO/src/game/recomp/gen"
+# use_region <region>: one program of the package. PROG_REGION (its
+# BO3_REGION for regen.sh and cmake), BUILD_ID (supported.json),
+# CFG (its config/), GEN (its generated C), XBE (its default.xbe in this
+# checkout), PROG_SUFFIX (after the main program's file name; supported.json
+# program_suffix). Every script starts on the main one.
+use_region() {
+    PROG_REGION="$1"
+    case "$1" in
+        NTSC-U)   BUILD_ID=ntsc-u-retail;   CFG="$REPO/config";          GEN="$REPO/src/game/recomp/gen"
+                  XBE="$REPO/Burnout 3 Takedown/default.xbe"; PROG_SUFFIX="" ;;
+        PAL)      BUILD_ID=pal-retail;      CFG="$REPO/config/pal";      GEN="$REPO/src/game/recomp/gen.pal"
+                  XBE="$REPO/Burnout 3 Takedown (PAL)/default.xbe"; PROG_SUFFIX="-pal" ;;
+        PAL-ENSV) BUILD_ID=pal-ensv-retail; CFG="$REPO/config/pal-ensv"; GEN="$REPO/src/game/recomp/gen.pal-ensv"
+                  XBE="$REPO/Burnout 3 Takedown (PAL-ENSV)/default.xbe"; PROG_SUFFIX="-ensv" ;;
+        *) echo "use_region: no program $1" >&2; exit 1 ;;
+    esac
+}
+use_region "${PKG_REGIONS%% *}"
 WORK="${TAKEDAWN_WORK:-$REPO/build/release$PKG_TAG}"
 DEPS="${TAKEDAWN_DEPS:-$HOME/.cache/takedawn-deps}"
 JOBS="${JOBS:-4}"
@@ -107,7 +130,7 @@ build_commit_line() {
 regen_key() {
     local t
     t="$(mktemp -d)"
-    cmake -DBO3_ROOT="$REPO" -DXBOXRECOMP_DIR="$TOOLKIT" -DBO3_RELEASE_DIR="$t" -DBO3_REGION="$BO3_REGION" \
+    cmake -DBO3_ROOT="$REPO" -DXBOXRECOMP_DIR="$TOOLKIT" -DBO3_RELEASE_DIR="$t" -DBO3_REGION="$PROG_REGION" \
           -P "$REPO/cmake/release_info.cmake" >/dev/null 2>&1 \
         || { rm -rf "$t"; die "cmake/release_info.cmake failed"; }
     sed -n 's/^#define BO3_REGEN_KEY "\(.*\)"/\1/p' "$t/bo3_release.h"
@@ -127,8 +150,15 @@ gen_tree_hash() {
 }
 stamp_field() { sed -n "s/^$1 //p" "$GEN/regen.stamp" 2>/dev/null | head -1; }
 
-# The generated code is the stamped tree for this checkout, patches in.
-# Every build script starts with this.
+# The generated code is the stamped tree for this checkout, patches in: of
+# the current program (use_region). Every build script starts with
+# assert_gen_all, every program of the package.
+assert_gen_all() {
+    local r first="${PKG_REGIONS%% *}"
+    for r in $PKG_REGIONS; do use_region "$r"; assert_gen; done
+    use_region "$first"
+    assert_gen
+}
 assert_gen() {
     [ -f "$GEN/regen.stamp" ] || die "no $GEN/regen.stamp: run tools/release/gen.sh first"
     local key tree patches
@@ -238,6 +268,7 @@ copy_licenses() {  # <dest dir> [qt]: with "qt", Qt's notices too
     cp "$TOOLKIT/LICENSES/ADPCM-XQ-BSD-3-Clause.txt" "$dest/ADPCM-XQ-BSD-3-Clause.txt"
     cp "$TOOLKIT/third_party/dr_libs/LICENSE.txt" "$dest/dr_libs-LICENSE.txt"
     cp "$TOOLKIT/third_party/stb_vorbis/LICENSE.txt" "$dest/stb_vorbis-LICENSE.txt"
+    cp "$TOOLKIT/third_party/stb/LICENSE.txt" "$dest/stb-LICENSE.txt"
     if [ "${1:-}" = qt ]; then
         cp "$REPO/tools/install/gui/licenses/"Qt-*.txt "$dest/"
         sed -i.bak "s/@QT_VERSION@/${QT_VERSION:?pins.env}/g" "$dest/Qt-NOTICE.txt" && rm -f "$dest/Qt-NOTICE.txt.bak"
@@ -265,6 +296,45 @@ recompiler, and the data is installed from the user's own disc.
 EOF
 }
 
+# The menu pictures' upscaler for a package (BO-311, pins.env UPSCALER_*):
+# <os> is macos, linux or windows; the program (and on Windows vcomp140.dll)
+# into <exe dir>, the models into <models dir> (realesrgan-x4plus.param/.bin,
+# realesr-general-dn030-x4v3.param/.bin). Downloads are cached in $DEPS/dl and
+# checked against their SHA-256; the fast model is blended here once.
+stage_upscaler() {  # <os> <exe dir> <models dir>
+    local os="$1" exe_dir="$2" models="$3" zip sha f py="${TAKEDAWN_PYTHON:-python3}" exe=realesrgan-ncnn-vulkan
+    case "$os" in
+        macos)   zip="$UPSCALER_MACOS_ZIP";   sha="$UPSCALER_MACOS_SHA256" ;;
+        linux)   zip="$UPSCALER_LINUX_ZIP";   sha="$UPSCALER_LINUX_SHA256" ;;
+        windows) zip="$UPSCALER_WINDOWS_ZIP"; sha="$UPSCALER_WINDOWS_SHA256"; exe=realesrgan-ncnn-vulkan.exe ;;
+        *) die "stage_upscaler: unknown system $os" ;;
+    esac
+    pinned() {  # <url> <sha256> <file name> -> path in the cache
+        local p="$DEPS/dl/$3"
+        mkdir -p "$DEPS/dl"
+        [ -s "$p" ] && [ "$(sha256_of "$p")" = "$2" ] || curl -fL --retry 3 -o "$p" "$1" >&2 || die "cannot fetch $1"
+        [ "$(sha256_of "$p")" = "$2" ] || die "$3: sha256 is not the pinned one"
+        printf '%s' "$p"
+    }
+    f="$(pinned "$UPSCALER_BASE/$zip" "$sha" "$zip")"
+    mkdir -p "$exe_dir" "$models"
+    unzip -p "$f" "$exe" > "$exe_dir/$exe" || die "$zip has no $exe"
+    chmod 755 "$exe_dir/$exe"
+    [ "$os" = windows ] && { unzip -p "$f" vcomp140.dll > "$exe_dir/vcomp140.dll" || die "$zip has no vcomp140.dll"; }
+    unzip -p "$f" models/realesrgan-x4plus.param > "$models/realesrgan-x4plus.param" || die "$zip: no x4plus"
+    unzip -p "$f" models/realesrgan-x4plus.bin > "$models/realesrgan-x4plus.bin" || die "$zip: no x4plus"
+    local gp gb wb fast="$DEPS/dl/realesr-general-dn030-x4v3.bin"
+    gp="$(pinned "$UPSCALER_FAST_BASE/RealESRGAN_General_x4_v3.param" "$UPSCALER_GENERAL_PARAM_SHA256" RealESRGAN_General_x4_v3.param)"
+    if [ ! -s "$fast" ] || [ "$(sha256_of "$fast")" != "$UPSCALER_FAST_SHA256" ]; then
+        gb="$(pinned "$UPSCALER_FAST_BASE/RealESRGAN_General_x4_v3.bin" "$UPSCALER_GENERAL_BIN_SHA256" RealESRGAN_General_x4_v3.bin)"
+        wb="$(pinned "$UPSCALER_FAST_BASE/RealESRGAN_General_WDN_x4_v3.bin" "$UPSCALER_WDN_BIN_SHA256" RealESRGAN_General_WDN_x4_v3.bin)"
+        "$py" "$REPO/tools/release/upscaler/blend_ncnn.py" "$gp" "$gb" "$wb" 0.3 "$fast" || die "the fast model could not be blended"
+        [ "$(sha256_of "$fast")" = "$UPSCALER_FAST_SHA256" ] || die "the blended fast model is not the pinned one"
+    fi
+    cp "$gp" "$models/realesr-general-dn030-x4v3.param"
+    cp "$fast" "$models/realesr-general-dn030-x4v3.bin"
+}
+
 # A release APK carries the licence texts: the same set as the other
 # packages (copy_licenses) and the texts of the Android-only parts, as
 # assets/licenses/ (the app's Licences page shows them). Fails otherwise.
@@ -277,8 +347,11 @@ check_apk_licenses() {  # <apk>
     for f in THIRD_PARTY.txt SOURCE.txt takedawn-LICENSE.txt xboxrecomp-LICENSE.txt xboxrecomp-NOTICE.txt \
              xboxrecomp-LGPL-2.1.txt DearImGui-MIT.txt SDL2-Zlib.txt glslang.txt \
              LLVM-Apache-2.0-with-exceptions.txt libadrenotools-BSD-2-Clause.txt \
-             linkernsbypass-BSD-2-Clause.txt Mesa-license.txt Mesa-MIT.txt Mesa-Turnip-SOURCE.txt; do
-        printf '%s\n' "$list" | grep -qx "assets/licenses/$f" \
+             linkernsbypass-BSD-2-Clause.txt Mesa-license.txt Mesa-MIT.txt Mesa-Turnip-SOURCE.txt \
+             ncnn-LICENSE.txt Real-ESRGAN-BSD-3-Clause.txt; do
+        # A here-string, not printf | grep -q: under pipefail grep -q's early
+        # exit gave printf a SIGPIPE, and a file that was there read as missing.
+        grep -qx "assets/licenses/$f" <<< "$list" \
             || die "$(basename "$apk"): assets/licenses/$f is missing"
     done
     # not empty either

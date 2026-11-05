@@ -38,11 +38,19 @@ void bo3_spark_history(bo3_hirefresh_fn title_fn);
 
 /* sub_0013EF40, the race audio manager: once a step. */
 void bo3_race_audio(bo3_hirefresh_fn title_fn);
+/* sub_001CA530, the audio world's update (sources, stream states, bus
+ * fades) from sub_000170B0: once a step with the race audio manager. */
+void bo3_audio_world(bo3_hirefresh_fn title_fn);
 
 /* sub_00188750, the effects clock (the race-end flash): gains the steps'
  * time only; the flash drawn at the picture's time. */
 void bo3_fx_clock(bo3_hirefresh_fn title_fn);
 void bo3_spark_draw(bo3_hirefresh_fn title_fn);
+
+/* sub_0003FA20, the car's reflection cube (six faces around a point the
+ * steps set): drawn once a step, kept in a picture with no step
+ * (BO-282.1). */
+void bo3_reflection_cube(bo3_hirefresh_fn title_fn);
 
 /* sub_00350DB0, D3D's swap: counted, so the frame being built knows which
  * edge of the toolkit's flip grid it will flip at. */

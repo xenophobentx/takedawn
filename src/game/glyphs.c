@@ -7,10 +7,13 @@
 #ifdef BO3_HAVE_GLYPH_ART
 
 #include "bo3_glyph_art.h"          /* made at build time by tools/glyphs/build.py */
+#include "input/keyboard.h"
 #include "input/pad_glyphs.h"
+#include "keycap.h"
 #include "nv2a_texrep.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #define R(x, y, w, h) { (x), (y), (w), (h) }
 
@@ -58,7 +61,7 @@ static const struct nv2a_texrep_rect k_dpad_all[] = {
 /* variants[set - 1], set = xbox_glyph_set (pad_glyphs.h). The last five are the sets drawn for a pad read
  * by letter: the face layout (Input > Face buttons = Nintendo) makes the game's A the right-hand button,
  * so the prompts show what that button is (pad_glyphs.h has the table). */
-static const struct nv2a_texrep_variant k_sheet[] = {
+static struct nv2a_texrep_variant k_sheet[] = {
     ALL(bo3_glyph_playstation_buttons),
     ALL(bo3_glyph_nintendo_position_buttons),
     ALL(bo3_glyph_nintendo_label_buttons),
@@ -74,7 +77,7 @@ static const struct nv2a_texrep_variant k_sheet[] = {
     ALL(bo3_glyph_steam_swapped_buttons),
     TOP_LOWER(bo3_glyph_xbox_modern_swapped_buttons)
 };
-static const struct nv2a_texrep_variant k_a[] = {
+static struct nv2a_texrep_variant k_a[] = {
     ONE(bo3_glyph_playstation_a_button),
     ONE(bo3_glyph_nintendo_position_a_button),
     ONE(bo3_glyph_nintendo_label_a_button),
@@ -90,7 +93,7 @@ static const struct nv2a_texrep_variant k_a[] = {
     ONE(bo3_glyph_steam_swapped_a_button),
     ONE(bo3_glyph_xbox_modern_swapped_a_button)
 };
-static const struct nv2a_texrep_variant k_b[] = {
+static struct nv2a_texrep_variant k_b[] = {
     ONE(bo3_glyph_playstation_b_button),
     ONE(bo3_glyph_nintendo_position_b_button),
     ONE(bo3_glyph_nintendo_label_b_button),
@@ -141,10 +144,111 @@ static void on_set(int set)
     nv2a_texrep_set_variant(set);
 }
 
+/* ── the keyboard set follows the player's keys (BO-267) ──────────────
+ *
+ * The keyboard variants' pictures show the game's default keys. For a button whose first key is another
+ * one (Settings > Input), its cap is drawn again (keycap.c) over a copy of the baked picture, and the
+ * variant points at the copy. Buttons with their default key keep the baked pixels, so with the
+ * defaults the variants point at the baked arrays themselves, as before. A few copies a picture are
+ * kept in turn: a backend that is still reading the last one is never written under. */
+#define KB_COPIES 3
+
+struct kb_pic {
+    struct nv2a_texrep_variant *variant;       /* k_sheet[8], k_a[8], k_b[8] */
+    const uint32_t *baked;
+    int w, h;
+    uint32_t *copy[KB_COPIES];
+    unsigned next;
+};
+
+static uint32_t s_sheet_copy[KB_COPIES][128 * 64], s_a_copy[KB_COPIES][32 * 32], s_b_copy[KB_COPIES][32 * 32];
+static struct kb_pic s_pic[3];
+#define KB_SHEET 0
+#define KB_A 1
+#define KB_B 2
+
+/* A cell: which picture, what kind of cap and where, and the button whose first key it shows. */
+static const struct { int pic, kind; float cx, cy; int action; } k_cell[] = {
+    { KB_SHEET, BO3_CAP_FACE, 15.0f, 15.5f, XBOX_KEYACT_CRASHBREAKER },     /* the sheet's B */
+    { KB_SHEET, BO3_CAP_FACE, 45.0f, 15.5f, XBOX_KEYACT_BOOST },            /* A */
+    { KB_SHEET, BO3_CAP_FACE, 75.0f, 15.5f, XBOX_KEYACT_LOOK_BACK },        /* X */
+    { KB_SHEET, BO3_CAP_FACE, 105.0f, 15.5f, XBOX_KEYACT_CHANGE_VIEW },     /* Y */
+    { KB_SHEET, BO3_CAP_SHOULDER, 15.0f, 47.0f, XBOX_KEYACT_WHITE },
+    { KB_SHEET, BO3_CAP_SHOULDER, 45.0f, 47.0f, XBOX_KEYACT_BLACK },
+    { KB_SHEET, BO3_CAP_TRIGGER, 70.5f, 38.25f, XBOX_KEYACT_BRAKE },        /* L trigger */
+    { KB_SHEET, BO3_CAP_TRIGGER, 70.5f, 55.25f, XBOX_KEYACT_ACCELERATE },   /* R trigger */
+    { KB_SHEET, BO3_CAP_START, 104.0f, 46.5f, XBOX_KEYACT_START },
+    { KB_A, BO3_CAP_FACE, 16.0f, 16.5f, XBOX_KEYACT_BOOST },
+    { KB_B, BO3_CAP_FACE, 16.0f, 16.5f, XBOX_KEYACT_CRASHBREAKER },
+};
+
+/* The key a button's prompt shows: its first key (the second when the first is empty), 0 for none. */
+static int kb_shown(int action)
+{
+    const int k = xbox_InputKeyBinding(action, 0);
+    return k ? k : xbox_InputKeyBinding(action, 1);
+}
+
+static int kb_default_shown(int action)
+{
+    return xbox_InputKeyDefault(action, 0);
+}
+
+static void kb_regenerate(void)
+{
+    int changed[3] = { 0, 0, 0 };
+
+    if (!s_pic[0].variant)
+        return;
+    for (size_t i = 0; i < sizeof k_cell / sizeof k_cell[0]; i++)
+        if (kb_shown(k_cell[i].action) != kb_default_shown(k_cell[i].action))
+            changed[k_cell[i].pic] = 1;
+    for (int p = 0; p < 3; p++) {
+        struct kb_pic *pic = &s_pic[p];
+
+        if (!changed[p]) {
+            pic->variant->image = pic->baked;           /* the defaults: the baked art itself */
+            continue;
+        }
+        {
+            uint32_t *img = pic->copy[pic->next++ % KB_COPIES];
+
+            memcpy(img, pic->baked, (size_t)pic->w * pic->h * sizeof *img);
+            for (size_t i = 0; i < sizeof k_cell / sizeof k_cell[0]; i++) {
+                const int a = k_cell[i].action;
+
+                if (k_cell[i].pic != p || kb_shown(a) == kb_default_shown(a))
+                    continue;
+                bo3_keycap_draw(img, pic->w, pic->h, k_cell[i].kind, k_cell[i].cx, k_cell[i].cy,
+                                bo3_keycap_label(kb_shown(a)));
+            }
+            pic->variant->image = img;
+        }
+    }
+    nv2a_texrep_refresh();
+}
+
+static void kb_init(void)
+{
+    const int kb = XBOX_GLYPH_SET_KEYBOARD - 1;
+
+    s_pic[KB_SHEET] = (struct kb_pic){ &k_sheet[kb], bo3_glyph_keyboard_buttons, 128, 64, { 0 }, 0 };
+    s_pic[KB_A] = (struct kb_pic){ &k_a[kb], bo3_glyph_keyboard_a_button, 32, 32, { 0 }, 0 };
+    s_pic[KB_B] = (struct kb_pic){ &k_b[kb], bo3_glyph_keyboard_b_button, 32, 32, { 0 }, 0 };
+    for (int c = 0; c < KB_COPIES; c++) {
+        s_pic[KB_SHEET].copy[c] = s_sheet_copy[c];
+        s_pic[KB_A].copy[c] = s_a_copy[c];
+        s_pic[KB_B].copy[c] = s_b_copy[c];
+    }
+    xbox_InputKeyBindingsSetListener(kb_regenerate);
+    kb_regenerate();                    /* the keys from settings.toml, if they are not the default */
+}
+
 void bo3_glyphs_init(void)
 {
     nv2a_texrep_register(k_tex, sizeof k_tex / sizeof k_tex[0]);
     xbox_InputSetGlyphListener(on_set);
+    kb_init();
 }
 
 const struct nv2a_texrep_variant *bo3_glyphs_sheets(unsigned *n)

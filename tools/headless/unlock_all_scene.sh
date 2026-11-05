@@ -4,7 +4,7 @@
 # The overlay's Unlock everything (BO-131, src/game/unlockall.c, the
 # toolkit's xbox_OverlaySetCheats) with a window (the overlay needs one):
 #
-#   1. Main menu; the overlay (driven through RECOMP_OVERLAY_TEST), Advanced
+#   1. Main menu; the overlay (driven through RECOMP_OVERLAY_TEST), System
 #      page, "Unlock everything": A arms it (its warning shows), A switches
 #      it on. The title's saves now go to <save root>/cheat-session.
 #      Shots overlay_armed (the warning, under the row) and overlay_cheat
@@ -62,7 +62,7 @@ to_row() {
 open_advanced() {
     ov "pad back+start"; sleep 1
     local k=0
-    until st | grep -q '^page Advanced'; do ov "pad rb"; k=$((k + 1)); [ $k -gt 7 ] && { bad "no Advanced page"; return 1; }; done
+    until st | grep -q '^page System'; do ov "pad rb"; k=$((k + 1)); [ $k -gt 7 ] && { bad "no System page"; return 1; }; done
 }
 
 to_main_menu

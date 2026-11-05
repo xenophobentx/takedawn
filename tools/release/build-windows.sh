@@ -12,7 +12,12 @@
 # setup compiler needs Windows. The program folder:
 #
 #   Takedawn.exe          the game; a window program with the icon and a
-#                         version resource. Takedawn.exe --install <image|folder>
+#                         version resource: the North America disc's program,
+#                         which starts the program of the disc that is
+#                         installed (src/game/package.h).
+#                         Takedawn.exe --install <image|folder>
+#   Takedawn-pal.exe      the Europe Fr/De/It disc's program
+#   Takedawn-ensv.exe     the Europe/Australia En/Es/Nl/Sv disc's
 #   SDL2.dll              the pinned SDL2 (Zlib licence)
 #   licenses\             the notices, licence texts and SOURCE.txt
 #   shaders\upscale\      the texture upscaler's LGPL shader files (BO-245)
@@ -46,7 +51,7 @@ source "$REPO/tools/release/pins.env"
 SETUP=1; WITH_SETUP="${TAKEDAWN_SETUP:-1}"
 for a in "$@"; do case "$a" in --no-setup) SETUP=0 ;; --no-setup-window) WITH_SETUP=0 ;; *) die "unknown option $a" ;; esac; done
 
-assert_gen
+assert_gen_all
 B="$WORK/windows"
 D="${BO3_WINDEPS:-$HOME/.cache/bo3-windeps}"
 t0=$(date +%s)
@@ -60,25 +65,44 @@ for s in 16 24 32 48 64 128 256; do
 done
 "${TAKEDAWN_PYTHON:-python3}" "$REPO/tools/release/make_ico.py" "$B/takedawn.ico" "${pngs[@]}"
 
-say "configuring (x86_64-w64-mingw32, SDL2 + Vulkan)"
-cmake -S "$REPO" -B "$B/build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DBO3_RELEASE=ON -DBO3_REGION="$BO3_REGION" \
-    -DCMAKE_TOOLCHAIN_FILE="$REPO/cmake/llvm-mingw-x86_64.cmake" -DLLVM_MINGW_ROOT="$D/llvm-mingw" \
-    -DXBOXRECOMP_DIR="$TOOLKIT" -DBO3_BIN_DIR="$B/bin" -DBO3_WIN_ICON="$B/takedawn.ico" \
-    -DCMAKE_PREFIX_PATH="$(native_path "$D/SDL2/x86_64-w64-mingw32");$(native_path "$D/glslang")" \
-    -DVulkan_INCLUDE_DIR="$D/vulkan/include" -DVulkan_LIBRARY="$D/vulkan/lib/libvulkan-1.dll.a" \
-    > "$B/configure.log" 2>&1 || { tail -20 "$B/configure.log" >&2; die "configure failed ($B/configure.log)"; }
-say "building (-j$JOBS, nice $NICE)"
-tb=$(date +%s)
-nice -n "$NICE" cmake --build "$B/build" --target burnout3 -j"$JOBS" > "$B/build.log" 2>&1 \
-    || { tail -30 "$B/build.log" >&2; die "build failed ($B/build.log)"; }
-say "build took $(( $(date +%s) - tb )) s"
+# Each program of the package (common.sh, PKG_REGIONS): build/, bin/ for the
+# main one, build<suffix>/, bin<suffix>/ for the PAL package's second.
+for r in $PKG_REGIONS; do
+    use_region "$r"
+    say "$r: configuring (x86_64-w64-mingw32, SDL2 + Vulkan)"
+    cmake -S "$REPO" -B "$B/build$PROG_SUFFIX" -G Ninja -DCMAKE_BUILD_TYPE=Release -DBO3_RELEASE=ON -DBO3_REGION="$PROG_REGION" \
+        -DCMAKE_TOOLCHAIN_FILE="$REPO/cmake/llvm-mingw-x86_64.cmake" -DLLVM_MINGW_ROOT="$D/llvm-mingw" \
+        -DXBOXRECOMP_DIR="$TOOLKIT" -DBO3_BIN_DIR="$B/bin$PROG_SUFFIX" -DBO3_WIN_ICON="$B/takedawn.ico" \
+        -DCMAKE_PREFIX_PATH="$(native_path "$D/SDL2/x86_64-w64-mingw32");$(native_path "$D/glslang")" \
+        -DVulkan_INCLUDE_DIR="$D/vulkan/include" -DVulkan_LIBRARY="$D/vulkan/lib/libvulkan-1.dll.a" \
+        > "$B/configure$PROG_SUFFIX.log" 2>&1 || { tail -20 "$B/configure$PROG_SUFFIX.log" >&2; die "configure failed ($B/configure$PROG_SUFFIX.log)"; }
+    say "$r: building (-j$JOBS, nice $NICE)"
+    tb=$(date +%s)
+    nice -n "$NICE" cmake --build "$B/build$PROG_SUFFIX" --target burnout3 -j"$JOBS" > "$B/build$PROG_SUFFIX.log" 2>&1 \
+        || { tail -30 "$B/build$PROG_SUFFIX.log" >&2; die "build failed ($B/build$PROG_SUFFIX.log)"; }
+    say "$r: build took $(( $(date +%s) - tb )) s"
+    # -ffp-contract=off held: no fused multiply-add anywhere (BO-282.2).
+    "$REPO/tools/release/check-fp.sh" "$D/llvm-mingw/bin/llvm-objdump" "$B/bin$PROG_SUFFIX/Takedawn.exe" \
+        || die "$r: fused multiply-add in the program (tools/release/check-fp.sh)"
+done
+use_region "${PKG_REGIONS%% *}"; assert_gen
 
 # ── the program folder ───────────────────────────────────────────────
 PKG="$B/Takedawn"
 rm -rf "$PKG"; mkdir -p "$PKG"
 cp "$B/bin/Takedawn.exe" "$PKG/"
+# The other discs' programs, which Takedawn.exe starts when that disc or its
+# data is the player's.
+for r in $PKG_REGIONS; do
+    use_region "$r"
+    [ -z "$PROG_SUFFIX" ] || cp "$B/bin$PROG_SUFFIX/Takedawn.exe" "$PKG/Takedawn$PROG_SUFFIX.exe"
+done
+use_region "${PKG_REGIONS%% *}"
 cp "$D/SDL2/x86_64-w64-mingw32/bin/SDL2.dll" "$PKG/"
 copy_licenses "$PKG/licenses"
+# The menu pictures' upscaler (BO-311): realesrgan-ncnn-vulkan.exe, its
+# vcomp140.dll and the two models, in upscaler\ beside Takedawn.exe.
+stage_upscaler windows "$PKG/upscaler" "$PKG/upscaler/models"
 # The texture upscaler's LGPL shader files (BO-245): the game reads them at
 # runtime from <exe dir>\shaders\upscale, and with none there texture upscale
 # stays off. The same file set as the Linux package; the .metal copies are the
@@ -109,7 +133,7 @@ if [ "$WITH_SETUP" = 1 ]; then
     icon_py=(); [ -n "${TAKEDAWN_PYTHON:-}" ] && icon_py=(-DTAKEDAWN_ICON_PYTHON="$TAKEDAWN_PYTHON")
     PATH="$qt_path" LLVM_MINGW="$(native_path "$D/llvm-mingw")" cmake -S "$REPO/tools/install/gui" -B "$B/setup" -G Ninja -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_TOOLCHAIN_FILE="$REPO/tools/install/gui/packaging/windows-toolchain.cmake" \
-        -DCMAKE_PREFIX_PATH="$QTW" -DQT_HOST_PATH="$QTH" -DTAKEDAWN_ICO="$B/takedawn.ico" -DTAKEDAWN_REGION="$BO3_REGION" \
+        -DCMAKE_PREFIX_PATH="$QTW" -DQT_HOST_PATH="$QTH" -DTAKEDAWN_ICO="$B/takedawn.ico" \
         ${icon_py[@]+"${icon_py[@]}"} > "$B/setup-configure.log" 2>&1 \
         || { tail -20 "$B/setup-configure.log" >&2; die "setup window: configure failed"; }
     PATH="$qt_path" LLVM_MINGW="$(native_path "$D/llvm-mingw")" nice -n "$NICE" cmake --build "$B/setup" --target takedawn-setup -j"$JOBS" \
@@ -150,18 +174,22 @@ else
     say "the folder is built without the setup window (--no-setup-window)"
 fi
 
-# What the exe imports: SDL2.dll, the driver's Vulkan loader and Windows.
-pe="$("$D/llvm-mingw/bin/llvm-objdump" -p "$PKG/Takedawn.exe")"
-imports="$(printf '%s\n' "$pe" | sed -n 's/^ *DLL Name: //p' | tr 'A-Z' 'a-z' | sort -u)"
-bad="$(printf '%s\n' "$imports" | grep -v -E '^(sdl2|vulkan-1|kernel32|user32|gdi32|dbghelp|advapi32|shell32|ole32|oleaut32|winmm|ws2_32|bcrypt|ntdll|dxgi|version|imm32|setupapi|shlwapi|psapi|winhttp|api-ms-win-crt-[a-z0-9-]+)\.dll$' || true)"
-[ -z "$bad" ] || die "Takedawn.exe imports DLLs the package does not carry: $bad"
-case "$pe" in *"(Windows GUI)"*) ;; *) die "Takedawn.exe is not a window program" ;; esac
+# What each exe imports: SDL2.dll, the driver's Vulkan loader and Windows.
+for r in $PKG_REGIONS; do
+    use_region "$r"
+    pe="$("$D/llvm-mingw/bin/llvm-objdump" -p "$PKG/Takedawn$PROG_SUFFIX.exe")"
+    imports="$(printf '%s\n' "$pe" | sed -n 's/^ *DLL Name: //p' | tr 'A-Z' 'a-z' | sort -u)"
+    bad="$(printf '%s\n' "$imports" | grep -v -E '^(sdl2|vulkan-1|kernel32|user32|gdi32|dbghelp|advapi32|shell32|ole32|oleaut32|winmm|ws2_32|iphlpapi|bcrypt|ntdll|dxgi|version|imm32|setupapi|shlwapi|psapi|winhttp|api-ms-win-crt-[a-z0-9-]+)\.dll$' || true)"
+    [ -z "$bad" ] || die "Takedawn$PROG_SUFFIX.exe imports DLLs the package does not carry: $bad"
+    case "$pe" in *"(Windows GUI)"*) ;; *) die "Takedawn$PROG_SUFFIX.exe is not a window program" ;; esac
+done
+use_region "${PKG_REGIONS%% *}"
 say "program folder: $(du -sh "$PKG" | cut -f1), Takedawn.exe $(( $(stat -c %s "$PKG/Takedawn.exe" 2>/dev/null || stat -f %z "$PKG/Takedawn.exe") / 1024 / 1024 )) MB (setup window: $HAVE_SETUP)"
 
 HOST="${TAKEDAWN_WIN_HOST:-}"
 if [ "$SETUP" = 0 ] || [ -z "$HOST" ]; then
     say "NOT DONE: the setup exe. Compile tools/release/windows/takedawn.iss with Inno Setup $INNOSETUP_VERSION on Windows:"
-    say "  ISCC.exe /DPackage=<copy of $PKG> /DVersion=$VERSION /DIcon=<copy of $B/takedawn.ico>$([ "$BO3_REGION" = PAL ] && printf ' /DRegion=PAL') takedawn.iss"
+    say "  ISCC.exe /DPackage=<copy of $PKG> /DVersion=$VERSION /DIcon=<copy of $B/takedawn.ico> takedawn.iss"
     say "  (set TAKEDAWN_WIN_HOST and TAKEDAWN_WIN_DIR to have this script do it over ssh,"
     say "   or TAKEDAWN_WIN_HOST=local when this is Windows)"
     exit 0
@@ -188,7 +216,7 @@ to_win "$PKG" "$B/takedawn.ico" "$REPO/tools/release/windows/takedawn.iss" \
 disc_arg=""
 [ -n "${TAKEDAWN_WIN_DISC:-}" ] && disc_arg="-Disc '$TAKEDAWN_WIN_DISC'"
 say "running on Windows: --version, the setup compile, the payload check"
-on_win "powershell -NoProfile -ExecutionPolicy Bypass -File '$WDIR\\remote.ps1' -Dir '$WDIR' -Version $VERSION -Region $BO3_REGION $disc_arg" \
+on_win "powershell -NoProfile -ExecutionPolicy Bypass -File '$WDIR\\remote.ps1' -Dir '$WDIR' -Version $VERSION $disc_arg" \
     > "$B/remote.log" 2>&1 || { tail -15 "$B/remote.log" >&2; die "the Windows step failed ($B/remote.log)"; }
 grep -a "^STEP\|^RESULT" "$B/remote.log" | tr -d '\r' | sed 's/^/    /'
 mkdir -p "$DIST"
@@ -196,6 +224,14 @@ EXE="$DIST/Takedawn-$VERSION$PKG_TAG-windows-x64-setup.exe"
 from_win "out/Takedawn-$VERSION$PKG_TAG-windows-x64-setup.exe" "$EXE" || die "could not fetch the setup exe"
 from_win version.txt "$B/version.txt"
 from_win version-installed.txt "$B/version-installed.txt"
+for r in $PKG_REGIONS; do
+    use_region "$r"
+    [ -n "$PROG_SUFFIX" ] || continue
+    from_win "version$PROG_SUFFIX.txt" "$B/version$PROG_SUFFIX.txt" || die "no --version of Takedawn$PROG_SUFFIX.exe"
+    assert_gen
+    check_version "$B/version$PROG_SUFFIX.txt" "Takedawn$PROG_SUFFIX.exe on Windows"
+done
+use_region "${PKG_REGIONS%% *}"; assert_gen
 [ -n "$disc_arg" ] && from_win check.txt "$B/check.txt"
 want="$(grep -a '^RESULT OK' "$B/remote.log" | tr -d '\r' | awk '{print $3}')"
 [ "$(sha256_of "$EXE")" = "$want" ] || die "the fetched setup exe is not the one compiled"

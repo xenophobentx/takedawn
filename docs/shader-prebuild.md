@@ -11,8 +11,8 @@ It is always optional. The setup window has it as a box that is ticked by
 default (*Prepare graphics for smooth first races*, a few seconds, ~2 MB;
 untick it to skip), and the settings overlay has it as an action (Graphics,
 *Build shaders now*). The game never asks about it by itself at its first
-start. Without it the game works as before: each shader compiles when it is
-first drawn, and is remembered from then on. Where there is no setup window
+start. Without it each shader compiles when it is first drawn, and is
+remembered from then on. Where there is no setup window
 step (Android, which cannot start a second copy of the game) nothing is
 offered and the game compiles as it plays.
 
@@ -42,8 +42,8 @@ itself is in the system's per-app Metal cache, which the pre-build fills
 because it runs the same executable: in an app bundle, start the bundle's
 executable (or its launcher), not a copy elsewhere.
 
-The key lists are kept across rebuilds: their version names the key format,
-not the toolkit commit. A changed shader generator, a driver update or an OS
+The key lists are kept across rebuilds: their version is the key
+format's, independent of the toolkit commit. A changed shader generator, a driver update or an OS
 update only makes the next start's pre-warm compile again, in the background,
 from the same list. Tests and the installer's smoke runs must set
 `RECOMP_RENDER_SHADER_CACHE` to a directory of their own (`tools/headless`
@@ -51,9 +51,9 @@ does: `build/shader-cache` in the checkout).
 
 ## The shipped coverage manifest (BO-208)
 
-The scene pre-build above learns only what its two scenes draw. Since BO-208
-the program carries a list of what a game needs, made by a sweep of the title
-on the developer's machines, and builds all of it before the first race.
+The scene pre-build above learns only what its two scenes draw, so the program
+also carries a list of what a game needs, made by a sweep of the title on the
+developer's machines, and builds all of it before the first race (BO-208).
 
 `graphics/pipelines-vulkan.manifest` and `graphics/pipelines-metal.manifest`
 are compiled into the program (`src/game/pcmanifest.c`), so they are the same
@@ -80,9 +80,9 @@ draw while the pre-warm works, up to 180 s (`RECOMP_PCACHE_HOLD_S`), with
 *Preparing graphics N/M* on the screen (the overlay line, so Android has it
 too). With the caches warm it is lookups, 0.1 to 0.3 s. The installer's
 *Prepare graphics* step and the overlay's *Build shaders now* run the same build
-(`--build-shaders`, scene `manifest`, seconds instead of minutes); the old scene
-pre-build stays as `--build-shaders --scenes race,crash`, used by default only
-in a build without a manifest.
+(`--build-shaders`, scene `manifest`, seconds instead of minutes). The scene
+pre-build is still available as `--build-shaders --scenes race,crash` and is the
+default only in a build without a manifest.
 
 ### What a setting changes
 
@@ -95,8 +95,7 @@ detection (BO-207) only has to make `nv2a_host_hdr_potential()` greater than
 1. Metal's HDR is the prototype of BO-110 and keeps no HDR keys. Anti-aliasing
 (FXAA, SMAA), sharpening, the render scale and the title's own bloom and
 motion blur are the presenter's passes or part of the frame; their pipelines
-are built at the presenter's first frame (SMAA used to be built at the moment
-it was switched on), and the title's pipelines have one sample and no
+are built at the presenter's first frame, and the title's pipelines have one sample and no
 resolution in their keys.
 
 ### The sweep
@@ -119,6 +118,14 @@ dumps a frame at every mark. Then:
 The manifest only grows (`--base` keeps what it had). The key list of a Metal
 sweep gives the Metal manifest. One Vulkan manifest serves every Vulkan
 platform: the keys do not depend on the driver.
+
+Sweep again when the combiner state (`NV2ACombinerState`) gets a field. The
+build guard stops a manifest of another size, and `pcache_keys.py widen` only
+adds zero bytes to each state, so a state that has the new field on is still
+missing and is built at its first draw. BO-320 did that for `alpha_kill` (0.3):
+the standard visits above plus a dozen more autopilot races
+(`RECOMP_DEBUG=autopilot=1`, `autorace` and `autoroadrage`), 228 visits on each
+backend.
 
 ## Cache hygiene (BO-208)
 
@@ -144,18 +151,18 @@ game draws with an HDR variant of each combiner shader and with pipelines
 for half-float targets. These are built and kept only where HDR can be
 used:
 
-- **No HDR display, HDR never switched on** (most desktops, all Android):
-  nothing HDR is built, listed or cached; the pre-build's time and the
-  cache's size are what they were.
-- **The display can show HDR** (the Graphics page has the HDR row) **or HDR
-  is on**: *Build shaders now* in the overlay builds the HDR variants too
+- No HDR display, HDR never switched on (most desktops, all Android):
+  nothing HDR is built, listed or cached, so the pre-build's time and the
+  cache's size are unaffected by HDR.
+- The display can show HDR (the Display page has the HDR row) or HDR
+  is on: *Build shaders now* in the overlay builds the HDR variants too
   (the game starts the pre-build with `RECOMP_PCACHE_HDR=1`; each scene
   process's pre-warm builds the HDR variant of every key in the list beside
   the SDR one, so the SPIR-V cache and the driver's cache hold both). The
   setup window's pre-build runs before any display is known and builds SDR
   only.
-- **HDR switched on for the first time on a machine that has not built
-  them**: the switch (made in the paused overlay, applied at the next flip)
+- HDR switched on for the first time on a machine that has not built
+  them: the switch (made in the paused overlay, applied at the next flip)
   starts the pre-warm thread on the HDR variants of the whole key list,
   derived from the SDR keys (the HDR variant of each combiner state, each
   pipeline on a half-float target with it). The draws wait for its
@@ -189,8 +196,8 @@ on Windows `burnout3.exe --build-shaders` with the working directory
 | `--status` | print what is built and exit: status 0 all built, 10 not all |
 | `--speed <n>` | how fast the scenes may play, in times real time (default 8): `1` plays them at a game's own pace, `max` has no bound. See *How fast* |
 
-It plays, each in a process of its own (`--build-shaders-scene <name>`, not
-for anyone else to call), on an empty scratch save folder
+It plays, each in a process of its own (`--build-shaders-scene <name>`, an
+internal option), on an empty scratch save folder
 (`<cache>/prebuild/saves`, removed afterwards; the player's profile is not
 opened) with a new profile that is never saved:
 
@@ -222,7 +229,7 @@ time, frame for frame: the same number of flips between two points of a scene
 | kernel timers, `KeDelayExecutionThread` | due on that clock; a sleeping thread wakes when the clock is moved past its time |
 | the sound chip's frame clock | on that clock; what it mixes is dropped instead of waiting for a sound device, so films and music keep the title's time |
 | the USB bus the pad is on, and the script's button holds | on that clock: a press of 200 ms is 12 frames at any speed |
-| the script's own waits | flips and files the title opens, never time (a step that waits 150 s of real time for nothing has lost its way, as before) |
+| the script's own waits | flips and files the title opens, never time (a step that waits 150 s of real time for nothing has lost its way) |
 | a wait's time-out on a kernel object | on that clock, looked at every millisecond |
 | the host's own threads (file reads, the pre-warm's compiles, the runtime's housekeeping) | real time |
 
@@ -315,7 +322,7 @@ plays the rest.
 
 ## In the game
 
-- **Settings overlay, Graphics page**: a status line and *Build shaders now*
+- Settings overlay, Graphics page: a status line and *Build shaders now*
   (*Stop building shaders* while it runs, *Build shaders again* after). The
   game starts the same command as a child and shows its progress. The game is
   paused while the overlay is open; closing the overlay stops the build, and
@@ -324,10 +331,9 @@ plays the rest.
   ("loading them into the running game", 16 to 33 s on the Mac, where Metal
   compiles again in this process); *built* is shown when that is done, and no
   restart is needed.
-- **First start**: nothing. The game opens no menu and asks nothing about
-  shaders; the offer is the setup window's ticked box. (An older version
-  wrote `offer never` into `prebuild/state.txt` for a question that is gone;
-  the line is kept and ignored.)
+- First start: the game opens no menu and asks nothing about shaders; the
+  offer is the setup window's ticked box. (`prebuild/state.txt` may hold an
+  `offer never` line for a question the game no longer asks; it is ignored.)
 - `BO3_SHADERBUILD_TEST=start[:<options>]` does what the action does without a
   window (a headless test of that path).
 
@@ -339,8 +345,8 @@ empty system Metal cache; on Windows an empty `--cache-dir`).
 
 | | Steam Deck (Vulkan, RADV) | Mac M5 (Metal) | Windows (Vulkan, RX 9060 XT) |
 |---|---|---|---|
-| the pre-build, scenes at real time (`--speed 1`, as it was) | 261 s | 265 to 273 s | 263 s |
-| the pre-build as it is now (scenes at up to 8 times real time) | not measured yet | 57 to 65 s (78 s beside another agent's game) | not measured yet |
+| the pre-build, scenes at real time (`--speed 1`) | 261 s | 265 to 273 s | 263 s |
+| the pre-build, scenes at up to 8 times real time (the default) | not measured yet | 57 to 65 s (78 s beside another agent's game) | not measured yet |
 | on disk | 7.5 MB (SPIR-V 6.8, key list 0.5, driver cache 0.15) + 2 MB in Mesa's own cache | key list 0.5 MB + 3.7 MB in the app's Metal cache | 7.3 MB (SPIR-V 6.8, key list 0.5) |
 | key list | 29 vertex, 329 fragment (34 drawn, the rest from the executable), about 70 pipelines | the same | the same |
 | start-up pre-warm of that list | 45 ms, done 0.6 s after launch (windowed) | 36 to 77 ms, done 0.2 s after launch | not measured |

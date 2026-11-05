@@ -15,6 +15,13 @@
 #                (MIT), built here from Mesa's own release tarball (pinned by
 #                the sha256 of its release notes) the way docs.mesa3d.org's
 #                android page says; BO3_ANDROID_TURNIP=0 skips it
+#     ncnn/      ncnn (Tencent, BSD-3-Clause), built static from its release's
+#                full source (pinned by sha256) for the menu pictures' upscale
+#                in the app (BO-326, docs/upscale-art.md): CPU and Vulkan, on
+#                the glslang above, only the layers the model uses
+#     upscaler/  the fast model of that upscale (realesr-general-x4v3 at
+#                denoise 0.3, Real-ESRGAN's weights, BSD-3-Clause): the files
+#                tools/release/pins.env pins, blended as the desktop packages'
 #
 # The Vulkan headers and libvulkan.so are the NDK's own.
 #
@@ -38,6 +45,13 @@ ADRENOTOOLS_URL=https://github.com/bylaws/libadrenotools.git
 ADRENOTOOLS_COMMIT=8fae8ce254dfc1344527e05301e43f37dea2df80     # 2024-09-10, master
 MESA_VER=26.2.4
 MESA_SHA256=bce5f7fbebb934373b86c999a064d52fb5065878dc57f287f95346648ec832e9
+NCNN_VER=20260526
+NCNN_SHA256=754659d6fe65545cf2ef4483ffb84526fea631f8764c44b150f1601d0fb4004b
+# The layers of the fast model (Input, Split, Convolution, PReLU,
+# PixelShuffle, Interp, BinaryOp) and the ones ncnn makes for itself
+# (packing, casts, padding, the fused activations); every other is left out.
+NCNN_LAYERS="input split convolution prelu pixelshuffle interp binaryop padding packing cast crop flatten
+             reshape innerproduct bias scale relu clip sigmoid mish hardswish noop memorydata"
 JOBS="${JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu)}"
 
 [ -f "$NDK/build/cmake/android.toolchain.cmake" ] || { echo "NDK not found (ANDROID_NDK_HOME)" >&2; exit 1; }
@@ -158,6 +172,57 @@ CROSS
     "$MESA_VER" "https://archive.mesa3d.org/$A" "$MESA_SHA256" "$(basename "$NDK")" "$API" "${MESA_PATCHES:-none}" > turnip/SOURCE.txt
   cp mesa-src/docs/license.rst turnip/mesa-license.rst
 fi
+# BO-326: ncnn for the menu pictures' upscale in the app. Its own glslang is
+# not built: it takes the one above (NCNN_SYSTEM_GLSLANG), so libmain.so has
+# one copy. SIMPLEVK: ncnn opens the Vulkan loader itself, and the game hands
+# it its own (upscale.c), the one that reaches the app's Turnip. SIMPLEOMP:
+# its threads without an OpenMP runtime. No int8 or bf16 paths (the model is
+# float).
+if [ ! -f ncnn/lib/libncnn.a ]; then
+  A="ncnn-$NCNN_VER-full-source.zip"
+  fetch "https://github.com/Tencent/ncnn/releases/download/$NCNN_VER/$A" "$A"
+  echo "$NCNN_SHA256  dl/$A" | sha256sum -c - >/dev/null || { echo "ncnn: checksum mismatch" >&2; exit 1; }
+  rm -rf ncnn-src ncnn-build && mkdir ncnn-src && unzip -q "dl/$A" -d ncnn-src
+  NCNN_OFF=()
+  for l in $(grep -o 'ncnn_add_layer([A-Za-z0-9_]*' ncnn-src/src/CMakeLists.txt | sed 's/ncnn_add_layer(//' | tr 'A-Z' 'a-z'); do
+    case " $(echo $NCNN_LAYERS) " in *" $l "*) ;; *) NCNN_OFF+=(-DWITH_LAYER_$l=OFF) ;; esac
+  done
+  tc_cmake -S ncnn-src -B ncnn-build "${TC[@]}" -DCMAKE_INSTALL_PREFIX="$PREFIX/ncnn" \
+    -DNCNN_VULKAN=ON -DNCNN_SYSTEM_GLSLANG=ON -Dglslang_DIR="$PREFIX/glslang/lib/cmake/glslang" \
+    -DNCNN_SIMPLEVK=ON -DNCNN_OPENMP=ON -DNCNN_SIMPLEOMP=ON -DNCNN_INT8=OFF -DNCNN_BF16=OFF \
+    -DNCNN_C_API=OFF -DNCNN_PLATFORM_API=OFF -DNCNN_PIXEL_ROTATE=OFF -DNCNN_PIXEL_AFFINE=OFF \
+    -DNCNN_PIXEL_DRAWING=OFF -DNCNN_BUILD_TOOLS=OFF -DNCNN_BUILD_EXAMPLES=OFF -DNCNN_BUILD_BENCHMARK=OFF \
+    -DNCNN_BUILD_TESTS=OFF "${NCNN_OFF[@]}"
+  cmake --build ncnn-build -j"$JOBS"
+  cmake --install ncnn-build
+  cp ncnn-src/LICENSE.txt ncnn/LICENSE.txt
+  printf 'ncnn %s, built from https://github.com/Tencent/ncnn/releases/download/%s/%s\nsha256 of the archive: %s\n' \
+    "$NCNN_VER" "$NCNN_VER" "$A" "$NCNN_SHA256" > ncnn/SOURCE.txt
+fi
+# The fast model, as the desktop packages make it (tools/release/common.sh
+# stage_upscaler): the files and hashes of tools/release/pins.env, blended
+# 0.3 / 0.7 by tools/release/upscaler/blend_ncnn.py (the standard library's
+# Python only), and the result checked against its own pinned hash.
+if [ ! -f upscaler/realesr-general-dn030-x4v3.bin ]; then
+  PINS="$HERE/../release/pins.env"
+  UPSCALER_FAST_BASE="$(sed -n 's/^UPSCALER_FAST_BASE=//p' "$PINS")"
+  pin() { sed -n "s/^$1=//p" "$PINS"; }
+  fetch "$UPSCALER_FAST_BASE/RealESRGAN_General_x4_v3.param" RealESRGAN_General_x4_v3.param
+  fetch "$UPSCALER_FAST_BASE/RealESRGAN_General_x4_v3.bin" RealESRGAN_General_x4_v3.bin
+  fetch "$UPSCALER_FAST_BASE/RealESRGAN_General_WDN_x4_v3.bin" RealESRGAN_General_WDN_x4_v3.bin
+  echo "$(pin UPSCALER_GENERAL_PARAM_SHA256)  dl/RealESRGAN_General_x4_v3.param" | sha256sum -c - >/dev/null \
+    && echo "$(pin UPSCALER_GENERAL_BIN_SHA256)  dl/RealESRGAN_General_x4_v3.bin" | sha256sum -c - >/dev/null \
+    && echo "$(pin UPSCALER_WDN_BIN_SHA256)  dl/RealESRGAN_General_WDN_x4_v3.bin" | sha256sum -c - >/dev/null \
+    || { echo "upscaler: a model file's checksum is not the pinned one" >&2; exit 1; }
+  mkdir -p upscaler.new
+  "${TAKEDAWN_PYTHON:-python3}" "$HERE/../release/upscaler/blend_ncnn.py" dl/RealESRGAN_General_x4_v3.param \
+    dl/RealESRGAN_General_x4_v3.bin dl/RealESRGAN_General_WDN_x4_v3.bin 0.3 upscaler.new/realesr-general-dn030-x4v3.bin
+  echo "$(pin UPSCALER_FAST_SHA256)  upscaler.new/realesr-general-dn030-x4v3.bin" | sha256sum -c - >/dev/null \
+    || { rm -rf upscaler.new; echo "upscaler: the blended model is not the pinned one" >&2; exit 1; }
+  cp dl/RealESRGAN_General_x4_v3.param upscaler.new/realesr-general-dn030-x4v3.param
+  rm -rf upscaler && mv upscaler.new upscaler
+fi
+
 # BO-152: the Turnip the APK carries by default, a prebuilt one. The Mesa
 # 26.2.4 build above hangs the Retroid Pocket 5's Adreno 650 every few
 # minutes in races; this build ran without a hang. It is whitebelyash's

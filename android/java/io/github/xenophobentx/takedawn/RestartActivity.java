@@ -26,6 +26,9 @@ import java.util.List;
  */
 public class RestartActivity extends Activity {
     static final String EXTRA_PID = "io.github.xenophobentx.takedawn.OLD_PID";
+    /** "setup": open the setup page in the new process, not the game (SetupActivity: another
+     * disc's library after an install). */
+    static final String EXTRA_THEN = "io.github.xenophobentx.takedawn.THEN";
     private static final String TAG = GameActivity.TAG;
     /** How long the old process is given before it is ended from here. */
     private static final long WAIT_MS = 4000;
@@ -59,9 +62,7 @@ public class RestartActivity extends Activity {
                 Log.i(TAG, "restart: the game's process " + oldPid + " is gone after "
                         + waited + " ms" + (killed ? " (ended from here)" : "")
                         + "; starting the game again");
-                startActivity(new Intent(RestartActivity.this, StartActivity.class)
-                        .putExtra(EXTRA_PID, oldPid)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                startActivity(next());
                 finish();
                 return;
             }
@@ -73,15 +74,21 @@ public class RestartActivity extends Activity {
             } else if (killed && waited >= WAIT_MS + KILLED_WAIT_MS) {
                 Log.w(TAG, "restart: the game's process " + oldPid + " did not go in "
                         + waited + " ms; starting anyway");
-                startActivity(new Intent(RestartActivity.this, StartActivity.class)
-                        .putExtra(EXTRA_PID, oldPid)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                startActivity(next());
                 finish();
                 return;
             }
             handler.postDelayed(this, POLL_MS);
         }
     };
+
+    /** What opens once the old process is gone: the game (StartActivity), or the setup page. */
+    private Intent next() {
+        Class<?> c = "setup".equals(getIntent().getStringExtra(EXTRA_THEN)) ? SetupActivity.class
+                : StartActivity.class;
+        return new Intent(RestartActivity.this, c).putExtra(EXTRA_PID, oldPid)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+    }
 
     /**
      * Whether the process is still there: its /proc entry (this app's own

@@ -7,8 +7,8 @@ every platform:
 
 | Setting | Overlay | `settings.toml` | Environment |
 |---|---|---|---|
-| 60 fps in split screen | Graphics page, "60 fps split screen" | `[graphics] split_60fps` | `RECOMP_GFX_SPLIT_60FPS=1` |
-| music in split screen | Audio page, "Music in split screen" | `[audio] split_music` | `RECOMP_AUDIO_SPLIT_MUSIC=1` |
+| 60 fps in split screen | Game page, "60 fps split screen" | `[graphics] split_60fps` | `RECOMP_GFX_SPLIT_60FPS=1` |
+| music in split screen | Game page, "Music in split screen" | `[audio] split_music` | `RECOMP_AUDIO_SPLIT_MUSIC=1` |
 
 Both are opt-in guest patches (`config/patches.json`; toolkit
 `docs/pipeline/04-lifting.md`, Guest patches) on the title's own choices; no

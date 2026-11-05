@@ -40,3 +40,21 @@ rendered files are kept here. A developer build without a renderer builds withou
 the prompts and prints a warning; a release build stops.
 
     tools/glyphs/build.py assets/glyphs out.c out.h --png preview/   # to look at them
+
+## The heading font's W (`headfont/`)
+
+`headfont/w.svg` (34x38) is not a button prompt: it is the letter W for the
+game's heading font, the one the red page headings (SINGLE EVENT, DRIVER
+DETAILS, the online pages' heading) are drawn with. The font is in the game's
+executable and has only the letters its headings use, none of which has a W,
+so TAKEDAWN ONLINE could not be written with it. `src/game/headfont.c` puts
+this W into a free corner of the font's atlas and its glyph table at run time
+(see `headfont.h`). It is drawn from the W of [Anton](https://github.com/googlefonts/AntonFont)
+(SIL Open Font License 1.1, Copyright 2020 The Anton Project Authors; the
+licence is `headfont/Anton-OFL.txt`) by `tools/glyphs/headfont.py`, which
+scales the outline into the cell and gives it a one-texel stroke so it is as
+heavy as the game's letters. Nothing of the game's font is in it. It is
+rendered with the prompts (`build.py`) as `bo3_glyph_headfont_w`.
+
+    tools/glyphs/headfont.py Anton-Regular.ttf            # write headfont/w.svg (needs fontTools)
+    tools/glyphs/headfont.py Anton-Regular.ttf --check    # status 1 if it differs

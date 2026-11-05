@@ -11,25 +11,39 @@ keeps the emulated hard disk (profile, cache partitions) in the save folder,
 see [Saves, backups and crash reports](#saves-backups-and-crash-reports).
 Delete its `UDATA` to go through first boot again.
 
-- **Windowed** by default. The title bar reads
+- Windowed by default. The title bar reads
   `Burnout 3: Takedown | FPS: 14 | draws: 212`. The title comes from the XBE
   certificate; draws are the draw calls in the last frame.
-- **`--build-shaders`** compiles the shaders ahead of time by playing two
+- `--build-shaders` compiles the shaders ahead of time by playing two
   scenes headless; optional, see [shader-prebuild.md](shader-prebuild.md).
-- **`--bug-report [--out <dir>]`** writes a bug report archive and exits,
+- `--bug-report [--out <dir>]` writes a bug report archive and exits,
   without starting the game; see [Reporting a bug](#reporting-a-bug).
-- **`--headless`** opens no window. Use it for scripts, CI, and over RDP, where a
+- `--headless` opens no window. Use it for scripts, CI, and over RDP, where a
   window would land on whatever screen the remote session is showing.
-- **`--record out.mp4`** writes every presented frame as a BMP into
+- `--record out.mp4` writes every presented frame as a BMP into
   `%TEMP%\bo3rec_<pid>\`. When the run ends, after `--seconds N` or on Ctrl+C,
   it encodes them with `ffmpeg` at 30 fps. If ffmpeg is missing or fails, the
   frames stay where they are and the path is printed. The frames go to
-  disk, not through a pipe: at a few fps streaming gains nothing, and an encoder
-  that fails cannot lose the run.
+  disk because at a few fps streaming gains nothing, and an encoder that
+  fails cannot lose the run.
 
 The fps is real frames per wall-clock second. The title steps its simulation a
 fixed amount per frame, so at 3 fps a race plays in slow motion but correctly,
 and a recording played back at 30 fps looks close to full speed.
+
+## Quitting
+
+The main menu has a QUIT line below Driver Details (BO-301,
+`src/game/mainquit.c`). It closes the game the way the window's close button
+does: the host's quit request, then `SDL_QUIT`, so the saves in flight finish,
+the pads stop and the GPU and the audio device are taken down in order. The
+log has `[MENU] main menu: QUIT listed` when the menu was built and
+`[MENU] main menu: QUIT chosen` then `[QUIT] asked for` when it was used.
+`TAKEDAWN_QUIT_MENU=0` leaves the menu as the title has it, and a headless run
+has no window to close and does not list it (`TAKEDAWN_QUIT_MENU=1` lists it
+there too, for the scene). Settings > Quit game (on every page)
+and Alt+F4 are still there. `tools/headless/mainquit_scene.sh` (WINDOW=1)
+drives it.
 
 ## Saves, backups and crash reports
 
@@ -41,6 +55,13 @@ The save folder is per user:
 | Linux, Steam Deck | `$XDG_DATA_HOME/takedawn`, else `~/.local/share/takedawn` |
 | Windows | `%APPDATA%\Takedawn` |
 | Android | `takedawn/` in the app's folder, `Android/data/io.github.xenophobentx.takedawn/files` |
+
+Portable mode (Windows and Linux, BO-263): an empty `portable.txt`, or a
+`data` folder, beside `Takedawn.exe` (on Linux beside the `.AppImage` file,
+from `$APPIMAGE`; in a build run from a checkout, beside the executable) puts
+the saves in `data/Saves`, the game data in `data/Game` and the shader cache
+in `data/cache`. Without the marker the folders above are used. The log has a
+`[SAVE] portable mode` line. `RECOMP_SAVE_DIR` still wins for the saves.
 
 A folder of the port's earlier name (`Burnout3`, `burnout3`) is moved to the
 new name once, at the first start ([installer.md](installer.md)).
@@ -88,13 +109,13 @@ game's main thread ten seconds in, to see a report being made.
 
 The game never looks for updates by itself and sends nothing at start. To
 check, open the settings (Back+Start on a pad, F1, Cmd+, on a Mac), go to the
-**Advanced** page, under the version line, and choose **Check for updates**.
+System page, under the version line, and choose Check for updates.
 That makes one anonymous HTTPS request to GitHub's latest-release record for
 this port (`https://api.github.com/repos/xenophobentx/takedawn/releases/latest`,
 with a `Takedawn/<version>` User-Agent), off the main thread, giving up after
 ten seconds. The row then says one of: you have the latest version; version X
-is out, with the first lines of its release notes and **Open the download
-page** (it opens the release page in your browser, nothing is downloaded or
+is out, with the first lines of its release notes and Open the download
+page (it opens the release page in your browser, nothing is downloaded or
 installed); no release is published yet; or why it could not check (offline,
 timed out). On macOS and Windows the system's own networking does the
 request; on Linux the system's `curl` is started. Android has no such row.
@@ -102,23 +123,23 @@ request; on Linux the system's `curl` is started. Android has no such row.
 ## Reporting a bug
 
 The game can pack what a bug report needs into one zip file. Nothing is sent
-anywhere: the file is written to your disk, you can open it and read it, and
+anywhere. The file is written to your disk, you can open it and read it, and
 you attach it to the issue yourself.
 
 How to make one:
 
-- **In the game:** open the settings (Back+Start on a pad, F1, Cmd+, on a
-  Mac), go to the **Advanced** page and choose **Create bug report**, or
-  **Create bug report with a screenshot** to add the picture that is behind
+- In the game: open the settings (Back+Start on a pad, F1, Cmd+, on a
+  Mac), go to the System page and choose Create bug report, or
+  Create bug report with a screenshot to add the picture that is behind
   the menu. The line under the menu then says where the file is.
-- **When the game does not start, or without starting it:**
+- When the game does not start, or without starting it:
   `burnout3 --bug-report` (`bin\burnout3.exe --bug-report` on Windows) from
   the game's folder. It prints the file's path. `--out <dir>` writes it
   somewhere else.
-- **Android:** the same entry in the in-game settings; and the page the app
+- Android: the same entry in the in-game settings; and the page the app
   shows when it cannot start the game (no game data, no usable graphics
-  driver) has a **Create bug report** button (Y on a pad), with
-  **Save a copy to Downloads** and **Share** on the page after it.
+  driver) has a Create bug report button (Y on a pad), with
+  Save a copy to Downloads and Share on the page after it.
 
 Where it goes: `reports/takedawn-report-<date>-<time>.zip` in the
 [save folder](#saves-backups-and-crash-reports), beside `settings.toml`:
@@ -189,16 +210,16 @@ drives the pads in this run` in the log and, in a window with the overlay, a
 red line at the top of the screen. The script and a controller are not mixed:
 the first button or trigger held on a controller takes that pad back from the
 script for the rest of the run (`PAD: a controller is used on pad N`), and a
-headless scripted run does not read the controllers at all. Before this a
-script holding the accelerator (`rt:600000`) stayed on top of the player's
+headless scripted run does not read the controllers at all. Otherwise a
+script holding the accelerator (`rt:600000`) would stay on top of the player's
 pad, and the title, which brakes but never reverses while the accelerator is
-held, looked as if reverse gear were broken (BO-96).
+held, would look as if reverse gear were broken (BO-96).
 `RECOMP_DEBUG=pad_script_keep=1` brings the merge back, `pad_script_note=0`
 hides the line. Lines already in a `RECOMP_PAD_LIVE` file that was last
 written more than 30 s before the game's first pad read are an earlier run's
 and are not pressed.
 
-A **pad script** drives them without hands:
+A pad script drives them without hands:
 
 ```
 set RECOMP_PAD_SCRIPT=20000:start:1200,30000:a:400,90000:rt:60000,90000:p2-rt:60000
@@ -246,9 +267,9 @@ environment variable that wins over the file.
 
 | Key | Variable | What it does |
 |---|---|---|
-| `display.widescreen` | `RECOMP_DISPLAY_WIDESCREEN=1` | The Xbox dashboard's 16:9 setting. The game reads it at start-up: 16:9 projection, D3D's widescreen mode. |
+| `display.widescreen` | `RECOMP_DISPLAY_WIDESCREEN=1` | The Xbox dashboard's 16:9 setting. The game reads it at start-up: 16:9 projection, D3D's widescreen mode. `16:10` (BO-271, overlay Display > Aspect ratio 16:10) is the same mode laid out for a 16:10 picture: the camera keeps 16:9's horizontal view and shows more above and below (vert+), the HUD and menus are placed for 1.6, the window shows 16:10. |
 | `display.hdtv` | `RECOMP_DISPLAY_HDTV=480p` | The dashboard's HDTV modes. The game asks D3D for 480p (progressive). It has no 720p or 1080i mode. |
-| `present.aspect` | `RECOMP_PRESENT_ASPECT` | The window's frame shape. `auto` (default) is 16:9 with widescreen on, else 4:3. |
+| `present.aspect` | `RECOMP_PRESENT_ASPECT` | The window's frame shape. `auto` (default) is 16:9 with widescreen on (16:10 with `display.widescreen` 16:10), else 4:3; also `frame`, `4:3`, `16:9`, `16:10`. |
 | `render.scale` | `RECOMP_RENDER_SCALE=1..4` | Internal resolution: 2 is 1280x960, 3 is 1920x1440, 4 is 2560x1920. Metal and D3D11 backends; the CPU rasteriser ignores it. |
 
 ### What a first start looks like
@@ -261,15 +282,15 @@ pages.
 
 | Machine | Full screen | Aspect | HUD fix | Fit | Filter | Render scale | Anti-aliasing | Sharpening | Menu/HUD upscaling | Texture sharpness | Vehicle detail |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| Steam Deck, and anything under gamescope | on | 16:9 | on | letterbox (the whole frame on the 16:10 panel; `fill16x10` is in the overlay) | linear | 2 | SMAA | 0.30 | 2x | auto | far |
-| macOS, Windows, desktop Linux: the packaged program (`-DBO3_RELEASE=ON`) | on (borderless, the desktop's resolution) | 16:9 | on | letterbox | linear | 3 | SMAA | 0.30 | 2x | auto | far |
+| Steam Deck, and anything under gamescope | on | 16:10 on a Deck or a 16:10 screen (BO-271), else 16:9 | on | letterbox (the whole frame; on the Deck's panel a 16:10 picture fills it; `fill16x10` crops a 16:9 one) | linear | 2 | SMAA | 0.30 | 2x | auto | far |
+| macOS, Windows, desktop Linux: the packaged program (`-DBO3_RELEASE=ON`) | on (borderless, the desktop's resolution) | 16:10 when the main display's shape is nearer 16:10 than 16:9 (1.45 to 1.69: a 16:10 monitor, a MacBook), else 16:9 | on | letterbox | linear | 3 | SMAA | 0.30 | 2x | auto | far |
 | a development build on a desktop | off | 4:3 | off | letterbox | nearest | 1 | off | 0 | off | off | original |
 | Android | on | 16:9 | on | letterbox | linear | 1.5 | FXAA | 0.30 | 2x | off | original |
 | any `--headless` run | - | 4:3 | off | - | - | 1 | off | 0 | off | off | original |
 
-These values are the owner's decision of 2026-10-12; the overlay's "Y default"
+These values were decided on 2026-10-12; the overlay's "Y default"
 and "Reset this page" go back to the same per-platform values. The Deck's
-earlier row (3x, `fill16x10`, no post passes) was measured there in Game Mode
+row with 3x, `fill16x10` and no post passes was measured there in Game Mode
 with the Balanced power mode, a 90 s race: flips p50 16.67 / p95 16.78 / p99
 16.84 ms, 0.17 % over 20 ms, APU 9.2 W (the same race at 1x: p99 16.70 ms,
 7.5 W; at 3x with the nearest filter, 120 s: p99 16.70 ms, 8.6 W). The new
@@ -352,7 +373,7 @@ Then `ffmpeg -framerate 30 -i runs/mp/f%05d.bmp -pix_fmt yuv420p mp.mp4`.
 
 `tools/headless/` holds one driver per reference scene. Each starts the game
 headless, presses buttons through `RECOMP_PAD_LIVE`, and waits on the game's
-own log, never on the clock:
+own log:
 
 | Driver | Scene | Ends at |
 |---|---|---|
@@ -378,23 +399,23 @@ Proton), `GAME_DIR`, `GAME_PATH_PREFIX` (`Z:` under Wine), `SAVES`,
 
 How the waits work:
 
-- **Flips.** The drivers run the game with `RECOMP_FLIP_MARK=1`, which
+- Flips. The drivers run the game with `RECOMP_FLIP_MARK=1`, which
   prints `[GPU] flip N T ms` once a frame (toolkit bo3/scenes; on an older
   build `SCENE_FLIPS=log` uses `RECOMP_FLIP_LOG`, whose lines start the same
   but which also starts the kick-watcher thread, so not for measurements).
   The title steps its simulation and menu animations once a frame, so "wait
   90 flips" is the same moment of the game whether it runs at 60 fps on
   Metal, 15 on the CPU rasteriser or under Proton on the Deck.
-- **Presses.** Each line appended to `pad.txt` is answered by
+- Presses. Each line appended to `pad.txt` is answered by
   `PAD: live "<press>" at t=... ms` when the runtime takes it; the driver
   waits for that line and counts flips from it.
-- **Files.** `[FILE] <path>` names every file the title opens: the scene
+- Files. `[FILE] <path>` names every file the title opens: the scene
   changes (movies, the profile, a car, a track) are anchored on those.
-- **Retries.** Where a screen ignores input while it slides in (the title
+- Retries. Where a screen ignores input while it slides in (the title
   screen, the profile screen), the driver presses again every 120-180 flips
-  until the file that screen opens shows up, instead of trusting one press.
-- Wall time only bounds a wait (`SCENE_TIMEOUT`, 900 s) so a stuck run fails
-  with `FAIL: ...` in `<rundir>/scene.txt` instead of hanging.
+  until the file that screen opens shows up.
+- Wall time only bounds a wait (`SCENE_TIMEOUT`, 900 s) so a stuck run ends
+  with `FAIL: ...` in `<rundir>/scene.txt`.
 
 Every run starts from a fresh copy of the reference saves
 (`<repo>/saves`, or the main checkout's `saves/` from a worktree; `SAVES=` to change): one profile,
@@ -417,11 +438,11 @@ All scenes start the same way (`to_main_menu` in `scene_lib.sh`):
 
 Then per scene:
 
-- **intro** (`to_intro.sh`): `D:\ovid\englis30.xmv` (EA, legal),
+- intro (`to_intro.sh`): `D:\ovid\englis30.xmv` (EA, legal),
   `D:\ovid\cri_rw30.xmv` (Criterion, RenderWare), `D:\ovid\Titles30.xmv`
   (the 57 s intro film), `D:\tracks\_FEMain.xmv` (attract loop).
-- **menu** (`to_menu.sh`): the common start, then down, A: Single Event.
-- **race** (`to_race.sh`): A (Race: Select Options), right (Region: USA),
+- menu (`to_menu.sh`): the common start, then down, A: Single Event.
+- race (`to_race.sh`): A (Race: Select Options), right (Region: USA),
   down, right (Track: Silver Lake Southbound; both default to Random), A:
   `D:\pveh\COMP\CAR1.bgv` (Select Car), A: loading, then
   `D:\tracks\US\C3_V1\Gamedata.bgd`, `...\Intro.kfs`, and
@@ -430,7 +451,7 @@ Then per scene:
   flips later (the race begins: the intro camera, whose cuts differ from run
   to run, then the rolling start by itself). The accelerator goes on at
   crash1.rws + 300 flips, at the GO.
-- **crash** (`to_crash.sh`): down x3 (Crash), A (Junction Selection), down
+- crash (`to_crash.sh`): down x3 (Crash), A (Junction Selection), down
   (1. Trailer Trash), A: `CAR1.bgv` (Select Car), A:
   `D:\ovid\TrC_ENG.xmv` (Crash Training, ~100 s, plays once a launch while
   profiles do not save), `D:\sound\crash.awd`, `D:\sound\crashmod.awd`,
@@ -440,7 +461,7 @@ Then per scene:
   flips starts the countdown, the accelerator goes on 60 flips later, and
   `D:\tracks\US\C3_v1\crash1.rws` comes with the impact; the slow-motion
   crash cam ("Impact Time") and Crash Results follow by themselves.
-- **garage** (`to_garage.sh`): down x4, A (Driver Details), B, up x3, A
+- garage (`to_garage.sh`): down x4, A (Driver Details), B, up x3, A
   (Select Mode), A (Race: Select Options), A: `CAR1.bgv` (Select Car).
 
 ### On the Steam Deck (Proton)
@@ -515,15 +536,15 @@ presents.
 
 What the columns showed (Mac M5, 2026-10-10):
 
-- **Determinism.** Two Metal runs of each scene give the same frames: the
+- Determinism. Two Metal runs of each scene give the same frames: the
   intro, garage and attract shots bit-exact, the rest within 0.5 mean
   difference (the menu's scrolling ticker; the window catches a movie frame
   one flip off). Two CPU-rasteriser runs likewise, except the shots over the
   attract movie.
-- **The intro movies** are drawn scaled to 640x448 at y 16 in a 640x464
+- The intro movies are drawn scaled to 640x448 at y 16 in a 640x464
   frame; ffmpeg's decode placed so (`xmv_place`) matches every intro shot
   within mean difference 0.2-1.5, the frame within 3 of the shot's time.
-- **CPU rasteriser against Metal**: the intro, the race's GO, the crash
+- CPU rasteriser against Metal: the intro, the race's GO, the crash
   junction's flyby and captions and the garage match within the
   cross-backend limits (mean difference 0.3-2.5). Skipped, with the reason
   in `golden.json`: the shots over the attract movie (it plays on its own
@@ -531,7 +552,7 @@ What the columns showed (Mac M5, 2026-10-10):
   flip), and the crash cam and results (player-driven: at ~5 fps the title
   can take more than one simulation step a frame while the accelerator is
   held by the wall clock, so the car meets the traffic elsewhere).
-- **The movies keep their own clock.** On a loaded Mac (load 10-23 from
+- The movies keep their own clock. On a loaded Mac (load 10-23 from
   other agents' builds and runs) a run flips slower than 60 for a while and
   the movie runs on: 1 of 30 Metal runs had the attract movie several frames
   on (before the menu shots' window grew to 12), and 2 of 4 intro runs had

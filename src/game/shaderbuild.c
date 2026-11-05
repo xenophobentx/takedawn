@@ -1463,7 +1463,7 @@ static int host_start(void)
     snprintf(cancel, sizeof cancel, "%s/cancel", s_host_work);
     remove(cancel);
     /* BO-110: the HDR variants too, only where they can be used: the
-     * display can show HDR (the Graphics page has the row) or HDR is on. */
+     * display can show HDR (the Display page has the row) or HDR is on. */
     put_env("RECOMP_PCACHE_HDR",
             nv2a_host_hdr_potential() > 1.0f || nv2a_host_hdr_active() ? "1" : NULL);
     if (pthread_create(&th, NULL, host_run, NULL) != 0) {

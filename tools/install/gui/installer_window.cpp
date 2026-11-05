@@ -1,14 +1,5 @@
 #include "installer_window.h"
 
-// The disc this package is for (CMake TAKEDAWN_REGION: NTSC-U or PAL,
-// the program's BO3_REGION; docs/pal.md).
-#ifndef TAKEDAWN_DISC_SHORT
-#define TAKEDAWN_DISC_SHORT "NTSC-U"
-#endif
-#ifndef TAKEDAWN_DISC_LONG
-#define TAKEDAWN_DISC_LONG "North America (NTSC-U)"
-#endif
-
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
@@ -246,7 +237,7 @@ InstallerWindow::InstallerWindow(const LaunchConfig& config, QWidget* parent) : 
   root->setSpacing(0);
   header_ = new HeaderBand;
   header_->SetTitle(tr("Takedawn"));
-  header_->SetSubtitle(tr("Setup. The game's data comes from your own Burnout 3: Takedown (" TAKEDAWN_DISC_SHORT ") disc."));
+  header_->SetSubtitle(tr("Setup. The game's data comes from your own Burnout 3: Takedown disc."));
   header_->SetIcon(AppIconPixmap(72, devicePixelRatioF()));
   root->addWidget(header_);
 
@@ -588,6 +579,24 @@ QWidget* InstallerWindow::BuildInstallSection() {
   Hint(shaders_cost_);
   cur->addWidget(shaders_cost_);
 
+  // The menu picture upscale (BO-311): shown where the game offers it, ticked where
+  // the computer is fast enough (the game says which: --data-status).
+  upscale_box_ = new QCheckBox(tr("Sharper menu pictures: upscale the loading screens and menu art with AI"));
+  upscale_box_->setMinimumHeight(couch_ ? 44 : 26);
+  upscale_box_->setToolTip(tr("Real-ESRGAN, a free AI upscaler, makes the game's loading screens, menu backgrounds and car "
+                              "pictures four times sharper, on this computer, from your own disc. Nothing of the game is "
+                              "uploaded. You can turn them off on the game's MODS page."));
+  cur->addWidget(upscale_box_);
+  connect(upscale_box_, &QCheckBox::toggled, this, [this] {
+    if (late_upscale_ && phase_ == Phase::Done) SetPhase(phase_);  // its button comes and goes with the tick
+  });
+  upscale_cost_ = new QLabel;
+  upscale_cost_->setWordWrap(true);
+  upscale_cost_->setMinimumWidth(300);
+  upscale_cost_->setContentsMargins(28, 0, 0, 0);
+  Hint(upscale_cost_);
+  cur->addWidget(upscale_cost_);
+
   if (linux_ui_ && SteamStepAvailable()) {
     steam_box_ = new QCheckBox(tr("Add Takedawn to my Steam library"));
     steam_box_->setMinimumHeight(couch_ ? 44 : 26);
@@ -660,8 +669,9 @@ void InstallerWindow::ShowAbout() {
            "<p><b>A fan project.</b> It is not made, endorsed or supported by Electronic Arts or Criterion Games and "
            "has no connection with them. Burnout is a trademark of its owners.</p>"
            "<p><b>Bring your own disc.</b> Takedawn is the program only. The game's data is not part of it and is not "
-           "downloaded: this window copies it from your own " TAKEDAWN_DISC_LONG " retail disc, as an image (.iso) or "
-           "as extracted files, checks every file, and keeps it on this computer. It needs about 3 GB free.</p>")
+           "downloaded: this window copies it from your own retail disc (North America, or one of the two European "
+           "discs), as an image (.iso) or as extracted files, checks every file, and keeps it on this computer. It "
+           "needs about 3 GB free.</p>")
             .arg((version_line_.isEmpty() ? tr("Takedawn %1").arg(TAKEDAWN_SETUP_VERSION) : version_line_).toHtmlEscaped()));
     text->setWordWrap(true);
     text->setTextFormat(Qt::RichText);
@@ -812,6 +822,12 @@ void InstallerWindow::QueryStatus() {
       else if (key == "bytes") data_bytes_ = value.toLongLong();
       else if (key == "free-needed") free_needed_ = value.toLongLong();
       else if (key == "version") version_line_ = value;
+      else if (key == "build") data_build_ = value.trimmed();
+      else if (key == "upscale-pack") upscale_pack_ = value.trimmed();
+      else if (key == "upscale") {
+        upscale_offer_ = value.section(' ', 0, 0);
+        upscale_quality_ = value.section(' ', 1, 1) == "fast" ? "fast" : "best";
+      }
     } else if (e.kind == Event::Kind::Fail && e.step == "data") {
       status_code_ = e.code;
       status_text_ = e.text;
@@ -830,11 +846,34 @@ void InstallerWindow::QueryStatus() {
   proc->Start(program_, QStringList{"--data-status"} + StatusArgs(), ChildEnvironment(), QString());
 }
 
+// Another disc than the one the first question was answered for (the package's programs, one
+// for each disc: src/game/package.h): its program keeps the data in its own folder and the disc
+// is another size, so "Installs to" and the space line follow it, unless the player chose the
+// folder (Change...) or the game was told one (--dest).
+void InstallerWindow::AdoptDiscProgram(const QString& build, const QString& root, const QString& place,
+                                       const QString& def, qint64 bytes, qint64 free_needed) {
+  if (build.isEmpty() || build == data_build_) return;
+  AppendLog("check: the disc's program is " + build + "; its data goes to " + root);
+  data_build_ = build;
+  if (bytes > 0) data_bytes_ = bytes;
+  if (free_needed > 0) free_needed_ = free_needed;
+  if (!DestFixed() && target_.isEmpty() && !root.isEmpty()) {
+    data_root_ = root;
+    if (!def.isEmpty()) default_root_ = def;
+    if (!place.isEmpty()) data_place_ = place;
+    dest_label_->SetFullText(QDir::toNativeSeparators(data_root_));
+    dest_label_->setToolTip(QDir::toNativeSeparators(data_root_));
+    RefreshDestControls();
+  }
+  RefreshSpace();
+}
+
 void InstallerWindow::OnStatus(const DriverProcess::Result& result) {
   if (!result.started) {
     Break("program-start", result.start_error);
     return;
   }
+  RefreshUpscaleOffer();
   if (data_root_.isEmpty() && !config_.dest.isEmpty()) data_root_ = QDir::cleanPath(config_.dest);
   dest_label_->SetFullText(data_root_.isEmpty() ? tr("the game's own data folder") : QDir::toNativeSeparators(data_root_));
   dest_label_->setToolTip(QDir::toNativeSeparators(data_root_));
@@ -865,6 +904,9 @@ void InstallerWindow::OnStatus(const DriverProcess::Result& result) {
       UpdateRow(*row);
     }
     SetDiscState(DiscState::Valid, tr("The game's data is installed."), tr("No disc is needed."), QString());
+    // An update over an install without the upscaled pictures: offered once, unticked.
+    late_upscale_ = upscale_box_->property("offered").toBool() && upscale_pack_ == "none";
+    if (late_upscale_) upscale_box_->setChecked(config_.upscale == 1);
     Succeed();
     return;
   }
@@ -1191,7 +1233,45 @@ void InstallerWindow::closeEvent(QCloseEvent* event) {
       wait.exec();
     }
   }
+  if (late_upscale_ && phase_ == Phase::Done) DismissUpscaleOffer();
   event->accept();
+}
+
+// The update's offer (late_upscale_): only the upscale step runs, its own row
+// under the data's, and the window is Done again after it.
+void InstallerWindow::StartLateUpscale() {
+  if (!late_upscale_ || !upscale_box_->isChecked()) return;
+  late_upscale_ = false;
+  upscale_answered_ = true;
+  upscale_warning_.clear();
+  upscale_work_.clear();
+  cancel_requested_ = false;
+  BuildRows({"disc", "upscale"});
+  if (StepRow* row = Row("disc")) {
+    row->status = RowStatus::Skipped;
+    row->fraction = 1.0;
+    row->detail = tr("%n file(s), checked against the disc's list", nullptr, data_files_);
+    UpdateRow(*row);
+  }
+  queue_.clear();
+  play_->setVisible(false);
+  run_millis_ = 0;
+  run_clock_.start();
+  tick_.start();
+  RunUpscale();
+}
+
+// The box was seen and not used: the game is told not to offer it here again
+// (Settings, Graphics keeps it). Once per window, and never after it was used.
+void InstallerWindow::DismissUpscaleOffer() {
+  if (upscale_answered_) return;
+  upscale_answered_ = true;
+  late_upscale_ = false;
+  AppendLog("$ " + program_ + " --upscale-art --dismiss");
+  QProcess p;
+  p.setProcessEnvironment(ChildEnvironment());
+  p.start(program_, DataArgs() + QStringList{"--no-setup", "--upscale-art", "--dismiss"});
+  p.waitForFinished(5000);
 }
 
 // The built-in list of folders and discs, in the window itself.
@@ -1217,7 +1297,7 @@ void InstallerWindow::CloseBrowser() {
 
 void InstallerWindow::NativeImageDialog() {
   const QString start = browser_->CurrentFolder().isEmpty() ? QDir::homePath() : browser_->CurrentFolder();
-  const QString path = QFileDialog::getOpenFileName(this, tr("Choose your Burnout 3: Takedown (" TAKEDAWN_DISC_SHORT ") disc image"), start,
+  const QString path = QFileDialog::getOpenFileName(this, tr("Choose your Burnout 3: Takedown disc image"), start,
                                                     tr("Disc images (*.iso *.xiso);;All files (*)"));
   if (path.isEmpty()) return;
   CloseBrowser();
@@ -1295,7 +1375,7 @@ void InstallerWindow::BrowseImage() {
     return;
   }
   const QString start = disc_path_.isEmpty() ? QDir::homePath() : QFileInfo(disc_path_).absolutePath();
-  const QString path = QFileDialog::getOpenFileName(this, tr("Choose your Burnout 3: Takedown (" TAKEDAWN_DISC_SHORT ") disc image"), start,
+  const QString path = QFileDialog::getOpenFileName(this, tr("Choose your Burnout 3: Takedown disc image"), start,
                                                     tr("Disc images (*.iso *.xiso);;All files (*)"));
   if (!path.isEmpty()) SetDisc(path);
 }
@@ -1348,10 +1428,19 @@ void InstallerWindow::CheckDisc() {
   const QString path = disc_path_;
   auto* proc = new DriverProcess(this);
   disc_proc_ = proc;
-  struct Answer { QString ok, code, text; };
+  struct Answer { QString ok, code, text, build, root, place, def; qint64 bytes = 0, free_needed = 0; };
   auto answer = std::make_shared<Answer>();
   connect(proc, &DriverProcess::EventReceived, this, [answer](const Event& e) {
-    if (e.kind == Event::Kind::Ok && e.step == "disc") {
+    if (e.kind == Event::Kind::Log && e.step == "disc") {
+      // The disc's own program answers (src/game/package.h): where it puts the data.
+      const QString key = e.text.section(' ', 0, 0), value = e.text.section(' ', 1);
+      if (key == "build") answer->build = value.trimmed();
+      else if (key == "root") answer->root = QDir::cleanPath(value);
+      else if (key == "place") answer->place = value.trimmed();
+      else if (key == "default") answer->def = QDir::cleanPath(value);
+      else if (key == "bytes") answer->bytes = value.toLongLong();
+      else if (key == "free-needed") answer->free_needed = value.toLongLong();
+    } else if (e.kind == Event::Kind::Ok && e.step == "disc") {
       answer->ok = e.text;
     } else if (e.kind == Event::Kind::Fail && e.step == "disc") {
       answer->code = e.code;
@@ -1373,6 +1462,7 @@ void InstallerWindow::CheckDisc() {
       disc_valid_for_ = path;
       verify_ = false;
       source_ = path;
+      AdoptDiscProgram(answer->build, answer->root, answer->place, answer->def, answer->bytes, answer->free_needed);
       SetDiscState(DiscState::Valid, tr("Burnout 3: Takedown found."),
                    tr("Looks like the right disc. Every file is checked while copying."), answer->ok);
       AppendLog("check: " + answer->ok);
@@ -1415,8 +1505,8 @@ void InstallerWindow::SetDiscState(DiscState state, const QString& headline, con
         html = Span(theme::kLit, tr("No disc is needed right now."), true) + "<br>" +
                Span(theme::kDim, tr("If the check finds a damaged file, your disc image or folder repairs it."));
       } else {
-        html = Span(theme::kLit, couch_ ? tr("Choose your Burnout 3: Takedown (" TAKEDAWN_DISC_SHORT ") disc")
-                                        : tr("Drop your Burnout 3: Takedown (" TAKEDAWN_DISC_SHORT ") disc image here"), true) + "<br>" +
+        html = Span(theme::kLit, couch_ ? tr("Choose your Burnout 3: Takedown disc")
+                                        : tr("Drop your Burnout 3: Takedown disc image here"), true) + "<br>" +
                Span(theme::kDim, tr("The .iso of your own Xbox disc, or the folder its files were extracted to. "
                                     "It is only read."));
       }
@@ -1448,7 +1538,9 @@ void InstallerWindow::SetDiscState(DiscState state, const QString& headline, con
 // ------------------------------------------------------------ the install
 
 void InstallerWindow::OnPrimaryButton() {
-  if (phase_ == Phase::Running) {
+  if (phase_ == Phase::Done && late_upscale_) {
+    StartLateUpscale();
+  } else if (phase_ == Phase::Running) {
     Cancel();
   } else if (phase_ == Phase::Broken) {
     close();
@@ -1463,6 +1555,8 @@ void InstallerWindow::StartInstall() {
   saw_failure_ = false;
   cancel_requested_ = false;
   shader_warning_.clear();
+  upscale_warning_.clear();
+  upscale_work_.clear();
   gpu_warning_.clear();
   shader_cache_.clear();
   failure_ = {};
@@ -1471,6 +1565,9 @@ void InstallerWindow::StartInstall() {
   progress_->setValue(0);
   QStringList steps{"disc"};
   if (shaders_box_->isChecked()) steps << "shaders";
+  if (upscale_box_->isVisible() && upscale_box_->isChecked()) steps << "upscale";
+  if (upscale_box_->isVisible() && !upscale_box_->isChecked()) DismissUpscaleOffer();
+  else if (upscale_box_->isVisible()) upscale_answered_ = true;
   BuildRows(steps);
   queue_ = steps.mid(1);
   run_millis_ = 0;
@@ -1498,6 +1595,39 @@ void InstallerWindow::RunShaders() {
   StartStep("shaders", DataArgs() + QStringList{"--no-setup", "--build-shaders"});
 }
 
+// `--upscale-art`: the game's menu picture upscale (BO-311), the same protocol with
+// the one step "upscale"; the quality the game suggested for this computer.
+void InstallerWindow::RunUpscale() {
+  StartStep("upscale", DataArgs() + QStringList{"--no-setup", "--upscale-art", "--quality", upscale_quality_});
+}
+
+bool InstallerWindow::RunNextOptional() {
+  if (queue_.isEmpty()) return false;
+  const QString next = queue_.takeFirst();
+  if (next == "shaders") RunShaders();
+  else if (next == "upscale") RunUpscale();
+  else return RunNextOptional();
+  return true;
+}
+
+// The box as the game offers it: hidden on "no" (and with an older game that says
+// nothing), ticked on "on"; the cost line says what it downloads and how long.
+void InstallerWindow::RefreshUpscaleOffer() {
+  const bool offered = (upscale_offer_ == "on" || upscale_offer_ == "off") && upscale_pack_ == "none";
+  upscale_box_->setProperty("offered", offered);
+  upscale_box_->setChecked(config_.upscale >= 0 ? config_.upscale == 1 : upscale_offer_ == "on");
+  const QString time = upscale_quality_ == "fast" ? tr("a few minutes") : tr("about 5 to 10 minutes on a fast graphics card");
+  QString text = tr("Takes %1, on this computer, with no internet needed; the pictures use about 400 MB of disk. "
+                    "Optional: the game looks as the original without it, and it can be done later in the game's "
+                    "settings (Mods).").arg(time);
+  if (upscale_offer_ == "off") {
+    text += " " + tr("Not ticked on this computer: it is slow here (a handheld or a built-in graphics chip), so the "
+                     "quicker model is used.");
+  }
+  upscale_cost_->setText(text);
+  SetPhase(phase_);
+}
+
 void InstallerWindow::StartStep(const QString& step, const QStringList& arguments) {
   current_step_ = step;
   saw_failure_ = false;
@@ -1513,6 +1643,7 @@ void InstallerWindow::StartStep(const QString& step, const QStringList& argument
 
 QString InstallerWindow::RunningVerb() const {
   if (current_step_ == "shaders") return tr("Preparing graphics");
+  if (current_step_ == "upscale") return tr("Upscaling the menu pictures");
   return verify_ ? tr("Checking the installed data") : tr("Copying the game's data");
 }
 
@@ -1543,6 +1674,7 @@ void InstallerWindow::OnEvent(const Event& e) {
       break;
     case K::Log:
       if (e.step == "shaders" && e.text.startsWith("cache ")) shader_cache_ = e.text.mid(6).trimmed();
+      if (e.step == "upscale" && e.text.startsWith("work ")) upscale_work_ = e.text.mid(5).trimmed();
       AppendLog("[" + e.step + "] " + e.text);
       break;
     case K::Warn:
@@ -1593,7 +1725,7 @@ void InstallerWindow::OnFinished(const DriverProcess::Result& result) {
   cancel_timer_.stop();
   driver_->deleteLater();
   driver_ = nullptr;
-  const bool shaders = current_step_ == "shaders";
+  const bool optional = current_step_ == "shaders" || current_step_ == "upscale";
   Failure failure = failure_;
   failure.step = current_step_;
   failure.stderr_tail = result.stderr_tail;
@@ -1624,17 +1756,24 @@ void InstallerWindow::OnFinished(const DriverProcess::Result& result) {
     failed = false;
   }
 
-  if (shaders) {
-    // The optional step: whatever happened to it, the install is whole.
+  if (optional) {
+    // An optional step: whatever happened to it, the install is whole. A stop of
+    // one stops the ones after it too (the player asked to stop).
+    const bool shaders = current_step_ == "shaders";
     if (failed) {
-      shader_warning_ = failure.code;
-      if (StepRow* row = Row("shaders")) {
+      (shaders ? shader_warning_ : upscale_warning_) = failure.code;
+      if (StepRow* row = Row(current_step_)) {
         row->status = RowStatus::Warning;
-        row->detail = messages::ExplainShaders(failure.code).headline;
+        row->detail = shaders ? messages::ExplainShaders(failure.code).headline
+                              : messages::ExplainUpscale(failure.code).headline;
         row->millis = row->clock.isValid() ? row->clock.elapsed() : 0;
         UpdateRow(*row);
       }
-      AppendLog("[shaders] did not finish (" + failure.code + ")", true);
+      AppendLog("[" + current_step_ + "] did not finish (" + failure.code + ")", true);
+    }
+    if (!(failed && failure.code == "cancelled")) {
+      cancel_requested_ = false;
+      if (RunNextOptional()) return;
     }
     Succeed();
     return;
@@ -1648,10 +1787,7 @@ void InstallerWindow::OnFinished(const DriverProcess::Result& result) {
     return;
   }
   status_code_.clear();
-  if (!queue_.isEmpty() && queue_.takeFirst() == "shaders") {
-    RunShaders();
-    return;
-  }
+  if (RunNextOptional()) return;
   Succeed();
 }
 
@@ -1674,6 +1810,9 @@ void InstallerWindow::Succeed() {
   }
   if (!shader_warning_.isEmpty()) {
     const auto why = messages::ExplainShaders(shader_warning_);
+    SetNote(NoteTone::Warning, why.headline, tr("The game is installed and ready. ") + why.advice, false);
+  } else if (!upscale_warning_.isEmpty()) {
+    const auto why = messages::ExplainUpscale(upscale_warning_);
     SetNote(NoteTone::Warning, why.headline, tr("The game is installed and ready. ") + why.advice, false);
   }
   if (!gpu_warning_.isEmpty()) {
@@ -1946,6 +2085,8 @@ void InstallerWindow::Cancel() {
   QString file;
   if (current_step_ == "shaders") {
     if (!shader_cache_.isEmpty()) file = shader_cache_ + "/prebuild/cancel";
+  } else if (current_step_ == "upscale") {
+    if (!upscale_work_.isEmpty()) file = upscale_work_ + "/cancel";
   } else if (!data_root_.isEmpty()) {
     file = (config_.dest.isEmpty() || verify_ ? data_root_ : QDir::cleanPath(config_.dest)) + "/install.cancel";
   }
@@ -1982,6 +2123,7 @@ void InstallerWindow::Break(const QString& code, const QString& detail) {
 // Starts the game and leaves: the window's work is done.
 void InstallerWindow::Play() {
   ++play_count_;
+  if (late_upscale_) DismissUpscaleOffer();
   if (config_.test) return;
   const QStringList args = DataArgs();
 #ifdef Q_OS_LINUX
@@ -2038,7 +2180,7 @@ void InstallerWindow::BuildRows(const QStringList& steps) {
   for (const QString& id : steps) {
     StepRow row;
     row.id = id;
-    row.weight = id == "shaders" ? 60 : 100;
+    row.weight = id == "shaders" ? 60 : id == "upscale" ? 80 : 100;
     row.glyph = new StepGlyph;
     row.title = new QLabel(messages::StepTitle(id == "disc" && verify_ ? QString("verify") : id));
     row.title->setMinimumHeight(30);
@@ -2086,6 +2228,8 @@ void InstallerWindow::UpdateRow(StepRow& row) {
   } else if (row.id == "shaders" && (row.status == RowStatus::Ok || row.status == RowStatus::Skipped)) {
     // The game's own line (counts, bytes, the cache folder) is too long for the row; it stays in the tooltip and the log.
     info = row.status == RowStatus::Ok ? tr("The graphics are ready.") : tr("The graphics were already prepared.");
+  } else if (row.id == "upscale" && (row.status == RowStatus::Ok || row.status == RowStatus::Skipped)) {
+    info = row.status == RowStatus::Ok ? tr("The menu pictures are upscaled.") : tr("The menu pictures were already upscaled.");
   }
   row.info->SetFullText(info);
   row.info->setToolTip(row.detail);
@@ -2134,7 +2278,16 @@ void InstallerWindow::SetPhase(Phase phase) {
   const bool offer = phase != Phase::Done && phase != Phase::Broken;  // once installed, "Build shaders now" in the game's settings
   shaders_box_->setVisible(offer);
   shaders_cost_->setVisible(offer);
-  primary_->setVisible(phase != Phase::Done);
+  const bool late = late_upscale_ && phase == Phase::Done;
+  const bool up = (offer && upscale_box_->property("offered").toBool()) || late;
+  upscale_box_->setEnabled(can_choose || late);
+  upscale_cost_->setEnabled(can_choose || late);
+  upscale_box_->setVisible(up);
+  upscale_cost_->setVisible(up);
+  if (up) upscale_shown_ = true;
+  // Once installed the big button is only for the late offer, and only when ticked.
+  primary_->setVisible(phase != Phase::Done || (late && upscale_box_->isChecked()));
+  if (late) primary_->setText(tr("Upscale menu pictures"));
   if (auto* caption = findChild<QLabel*>("destCaption")) {
     caption->setText(phase == Phase::Done ? tr("Installed in") : tr("Installs to"));
   }

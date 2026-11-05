@@ -1,6 +1,7 @@
 package io.github.xenophobentx.takedawn;
 
 import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 import android.system.Os;
 import android.util.Log;
@@ -136,6 +137,25 @@ public class GameActivity extends SDLActivity {
         } catch (UnsatisfiedLinkError | RuntimeException e) {
             Log.w(TAG, "back: " + e);
             super.onBackPressed();
+        }
+    }
+
+    /**
+     * The menu pictures' run (upscale.c, BO-326), from its thread: a
+     * foreground service while it lasts (UpscaleService), so that the app in
+     * the background is not frozen in the middle of it.
+     */
+    @SuppressWarnings("unused")
+    public void upscaleService(boolean on) {
+        Intent i = new Intent(this, UpscaleService.class);
+        try {
+            if (on) {
+                startService(i);
+            } else {
+                stopService(i);
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "upscale service: " + e);
         }
     }
 
@@ -588,9 +608,13 @@ public class GameActivity extends SDLActivity {
         }
     }
 
+    // The installed disc's program (StartActivity.library: libmain.so, libmain_pal.so or
+    // libmain_ensv.so, src/game/package.h); SDL calls SDL_main in the last one.
     @Override
     protected String[] getLibraries() {
-        return new String[] { "SDL2", "main" };
+        String lib = StartActivity.library(this);
+        Log.i(TAG, "game library: lib" + lib + ".so");
+        return new String[] { "SDL2", lib };
     }
 
     // Landscape either way up, whatever SDL works out from the window size.

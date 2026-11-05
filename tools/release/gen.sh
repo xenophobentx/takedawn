@@ -24,17 +24,27 @@
 # --reuse keeps an existing tree when its stamp is right for this checkout
 # (same key, same files); otherwise the regen runs (about four minutes).
 #
-# Needs: the user's default.xbe at "Burnout 3 Takedown/default.xbe" in this
-# checkout (a link is fine), Python 3 with capstone (.venv here, or python3).
+# Every package has three programs (common.sh, PKG_REGIONS), so three
+# trees, each stamped: gen/ from the North America disc, gen.pal/ from the
+# Europe Fr/De/It one and gen.pal-ensv/ from the Europe/Australia En/Es/Nl/Sv
+# one.
+#
+# Needs: the three discs' default.xbe in this checkout (links are fine):
+# "Burnout 3 Takedown/default.xbe" (NTSC-U), "Burnout 3 Takedown (PAL)/
+# default.xbe" (Fr/De/It) and "Burnout 3 Takedown (PAL-ENSV)/default.xbe"
+# (En/Es/Nl/Sv); Python 3 with capstone (.venv here, or python3).
 source "$(dirname "$0")/common.sh"
 
-if [ "${1:-}" = "--reuse" ] && [ -f "$GEN/regen.stamp" ] \
+REUSE=0; [ "${1:-}" = "--reuse" ] && REUSE=1
+
+gen_one() {
+
+if [ "$REUSE" = 1 ] && [ -f "$GEN/regen.stamp" ] \
    && [ "$(stamp_field key)" = "$(regen_key)" ] && [ "$(stamp_field tree)" = "$(gen_tree_hash)" ]; then
-    say "generated code is current (key $(stamp_field key), patches $(stamp_field patches))"
-    exit 0
+    say "$PROG_REGION: generated code is current (key $(stamp_field key), patches $(stamp_field patches))"
+    return 0
 fi
 
-XBE="$REPO/Burnout 3 Takedown/default.xbe"
 [ -f "$XBE" ] || die "missing $XBE"
 want_xbe="$("${TAKEDAWN_PYTHON:-python3}" -c 'import json,sys; print(next(b["xbe"]["sha256"] for b in json.load(open(sys.argv[1]))["builds"] if b["id"] == sys.argv[2]))' "$REPO/tools/install/supported.json" "$BUILD_ID")"
 [ "$(sha256_of "$XBE")" = "$want_xbe" ] || die "default.xbe is not the supported build ($want_xbe)"
@@ -46,13 +56,14 @@ if [ ! -x "$REPO/.venv/bin/python3" ] && [ -n "${TAKEDAWN_REGEN_VENV:-}" ]; then
 fi
 
 rm -f "$GEN/regen.stamp"
-mkdir -p "$REPO/build/xr"
-mark="$REPO/build/xr/.gen-start"; : > "$mark"
-say "regen (regen.sh --disasm, patches and spin waits on)"
+case "$PROG_REGION" in PAL) XR="$REPO/build/xr-pal" ;; PAL-ENSV) XR="$REPO/build/xr-pal-ensv" ;; *) XR="$REPO/build/xr" ;; esac
+mkdir -p "$XR"
+mark="$XR/.gen-start"; : > "$mark"
+say "$PROG_REGION: regen (regen.sh --disasm, patches and spin waits on)"
 start=$(date +%s)
 # The defaults, said out loud: an inherited PATCHES= or SPIN_WAITS= would
 # generate without them.
-( cd "$REPO" && env -u TRACE_FUNCS PATCHES="$CFG/patches.json" \
+( cd "$REPO" && env -u TRACE_FUNCS -u BO3_XBE BO3_REGION="$PROG_REGION" PATCHES="$CFG/patches.json" \
       SPIN_WAITS="$CFG/spin_waits.json" nice -n "$NICE" bash ./regen.sh --disasm )
 say "regen took $(( $(date +%s) - start )) s"
 
@@ -63,7 +74,7 @@ doc = json.load(open(sys.argv[1]))
 print("%d/%d" % (doc[sys.argv[2]], len(doc["sites"])))
 EOF
 }
-R="$REPO/build/xr/recomp"
+R="$XR/recomp"
 [ "$R/patches.json" -nt "$mark" ] || die "the recompiler wrote no patch report"
 patches="$(report "$R/patches.json" patched_sites)"
 case "$patches" in 0/*) die "no guest patch went in ($patches)" ;; esac
@@ -79,4 +90,10 @@ spins="$(grep -ac RECOMP_SPIN_WAIT "$GEN"/recomp_0*.c | awk -F: '{n+=$2} END {pr
     echo "patches $patches"
     echo "spin_waits $spins"
 } > "$GEN/regen.stamp"
-say "stamped:"; sed 's/^/    /' "$GEN/regen.stamp"
+say "$PROG_REGION stamped:"; sed 's/^/    /' "$GEN/regen.stamp"
+}
+
+for r in $PKG_REGIONS; do
+    use_region "$r"
+    gen_one
+done

@@ -126,7 +126,7 @@ Android through `tools/android/scene-launch.sh`.
 Cars and events are locked behind progress. To test a late car without
 earning it:
 
-- `RECOMP_DEBUG=cheats` shows the cheat rows on the overlay's Advanced page
+- `RECOMP_DEBUG=cheats` shows the cheat rows on the overlay's System page
   (players never see them). Unlock everything asks twice. From the first
   cheat on, the title's saves go to a copy, `<save root>/cheat-session`. When
   the last cheat goes off, the page asks whether to keep that progress (the
@@ -187,6 +187,13 @@ The scenes that test one setting leave a table behind and have a
 reader for it: `pace_report.py` (pacing per game state), `draw_report.py`,
 `fx_report.py`, `hud_extents.py`, `level_report.py`, `voices_report.py`.
 
+The online scenes run several copies on one machine. `tools/headless/td6_vote.sh
+<rundir> <scene>` plays the lobby's track vote on LAN with two or three copies
+(`two`, `three`, `tie`, `leave`, `hostgone`, `hostkill`, `late`, `cycles`, `long`).
+Frames land in each copy's `burst-vote` folder and the `[VOTE]` log lines are
+printed at the end. `TAKEDAWN_VOTE_TRACKS=a,b,c` fixes the rows and
+`TAKEDAWN_VOTE_TEST=cycles` repeats votes in one lobby without racing.
+
 ## The settings menu, off screen
 
 On a Mac the toolkit builds `overlay_shot`: the overlay drawn with Metal into
@@ -235,7 +242,7 @@ python3 tools/deck/stats.py runs/x/log.txt 30                  # last 30 s, flip
 | `vk_present=<file>` | present times on Vulkan; `tools/perf/present_stats.py` |
 | `pcache=<file>` | shader and pipeline compiles per flip; `tools/headless/pcache_stats.py` |
 
-Numbers we read: the flip interval p50, p95 and p99, and the share of frames
+The numbers to read: the flip interval p50, p95 and p99, and the share of frames
 over 20 ms. At 60 Hz a steady run has p50 near 16.7 ms and p99 within a
 millisecond or two of it (the goals are p95 under 17.5 ms and p99 under
 18.5 ms). The title's simulation should step 60.0 times a second whatever the
@@ -245,7 +252,7 @@ graph can mark frames in which the title ran more than one step
 covered reports no on-glass times, so keep a measured run visible
 (`RECOMP_DEBUG=window_float=1` keeps it on top).
 
-The overlay shows the same live: the performance overlay on the Advanced page
+The overlay shows the same live: the performance overlay on the Display page
 (`RECOMP_OVERLAY_PERF=1`) draws the frame-time graph with p50, p99 and the
 on-glass line.
 
@@ -318,7 +325,7 @@ The build and install steps are in [android.md](android.md).
 ## Bug reports and logging
 
 When a test finds a bug, attach the game's own report.
-Advanced > Create bug report writes a zip (with a screenshot if you pick
+System > Create bug report writes a zip (with a screenshot if you pick
 that row) to `reports/` in the save folder. It holds the system, GPU and
 driver, the settings in effect and where each came from, the frame-time
 summary, the last logs and crash reports, and it replaces your home folder
@@ -328,7 +335,7 @@ writes the same file and prints its path; `RECOMP_DEBUG=bug_report=30` writes
 one 30 seconds into an unattended run. What is in it and what never is:
 [running.md](running.md#reporting-a-bug).
 
-A release build is quiet. Advanced > Diagnostic logging turns the full
+A release build is quiet. System > Diagnostic logging turns the full
 log on, live; do that before reproducing, so the report carries it. A build
 from source, and any run with `RECOMP_TRACE`, `RECOMP_DEBUG` or `--headless`,
 logs fully already. A crash or hang report is written on its own to

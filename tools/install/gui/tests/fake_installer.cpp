@@ -6,6 +6,7 @@
 //   fake_installer --data-status [--data <dir>]
 //   fake_installer --install <image-or-folder> [--dest <dir>] [--remember] [--check]
 //   fake_installer --build-shaders
+//   fake_installer --upscale-art [--quality q] | --upscale-art --dismiss
 //   fake_installer [--data <dir>]          "the game": writes <dest>/played, status 0
 //
 // What it answers is told by the source's file name, so one window can be shown
@@ -18,6 +19,8 @@
 //   crash.iso             the install ends without a RESULT line (status 9)
 //   nostart.iso           the program never gets going, as with a missing library: one line
 //                         on stderr, no protocol line, an abort
+//   europe-<x>.iso        a good European disc: the check is its own program's, with
+//                         another data root ("<default root> PAL") and size
 //   anything else         a good disc; the install runs to the end
 //
 // The install's state is kept in <dest> as the real installer keeps it: a
@@ -35,7 +38,10 @@
 // directory's "fake-root"), TAKEDAWN_FAKE_PACE the milliseconds between progress
 // lines (default 4), TAKEDAWN_FAKE_FREE_NEEDED the bytes it says must be free (default 3000000000;
 // a huge number makes any disk too small), TAKEDAWN_FAKE_SHADERS = ok | fail | hold | nogpu
-// (nogpu: finishes, but warns that the scenes ran on the CPU).
+// (nogpu: finishes, but warns that the scenes ran on the CPU), TAKEDAWN_FAKE_UPSCALE = on | off
+// (--data-status offers the menu picture upscale, ticked or not; unset: an older game that
+// says nothing), TAKEDAWN_FAKE_UPSCALE_RUN = ok | fail | hold. The upscale keeps its state in
+// the root: fake-upscale-made (the pack) and fake-upscale-declined (--dismiss).
 #include <chrono>
 #include <csignal>
 #include <cstdio>
@@ -138,6 +144,13 @@ int DataStatus(const std::string& root, const std::string& place) {
   const char* needed = std::getenv("TAKEDAWN_FAKE_FREE_NEEDED");  // a test makes the disk look too small
   Out(std::string("LOG data free-needed ") + (needed && *needed ? needed : "3000000000"));
   Out("LOG data version Takedawn 0.1.0 \"Lazy Generation\"");
+  Out("LOG data build ntsc-u-retail");
+  if (const char* up = std::getenv("TAKEDAWN_FAKE_UPSCALE"); up && *up) {
+    Out(std::string("LOG data upscale ") + up + (std::string(up) == "on" ? " best a graphics card" : " fast built-in graphics"));
+    Out(std::string("LOG data upscale-pack ") +
+        (fs::exists(fs::path(root) / "fake-upscale-made", ec) ? "made"
+         : fs::exists(fs::path(root) / "fake-upscale-declined", ec) ? "declined" : "none"));
+  }
   if (fs::exists(fs::path(root) / ".complete", ec)) {
     Out("STEP data OK installed by 0.1.0, manifest 81dc20fd647fb0b1");
     Out("RESULT OK " + root);
@@ -183,6 +196,21 @@ int Install(const std::string& source, const std::string& dest, bool check, bool
   if (IsCode(name)) return Fail("disc", name, Message(name, source, dest));
   const bool in_place = fs::equivalent(fs::path(source), fs::path(dest) / kGameDir, ec);
   if (check) {
+    // The package's programs (src/game/package.h): a disc named europe-*.iso is a
+    // European one, answered by its own program, which keeps its data elsewhere.
+    if (name.rfind("europe-", 0) == 0) {
+      Out("LOG disc build pal-retail");
+      Out("LOG disc root " + DefaultRoot() + " PAL");
+      Out("LOG disc place default");
+      Out("LOG disc default " + DefaultRoot() + " PAL");
+      Out("LOG disc bytes 2966033036");
+      Out("LOG disc free-needed 3400000000");
+      Out("STEP disc OK Burnout 3: Takedown, Europe (PAL, Fr/De/It) retail (a disc image, game partition at 0x0)");
+      Out("RESULT OK " + source);
+      return 0;
+    }
+    Out("LOG disc build ntsc-u-retail");
+    Out("LOG disc root " + dest);
     Out(fs::is_directory(source, ec)
             ? "STEP disc OK Burnout 3: Takedown, North America (NTSC-U) retail (an extracted folder)"
             : "STEP disc OK Burnout 3: Takedown, North America (NTSC-U) retail (a disc image, game partition at 0x0)");
@@ -284,6 +312,45 @@ int Shaders(const std::string& root) {
   return 0;
 }
 
+int Upscale(const std::string& root, bool dismiss) {
+  std::error_code ec;
+  fs::create_directories(root, ec);
+  Out("PROTOCOL 1");
+  Out("PLAN upscale");
+  if (dismiss) {
+    std::ofstream(fs::path(root) / "fake-upscale-declined") << "declined\n";
+    Out("RESULT OK declined");
+    return 0;
+  }
+  const char* m = std::getenv("TAKEDAWN_FAKE_UPSCALE_RUN");
+  const std::string mode = m && *m ? m : "ok";
+  const fs::path work = fs::path(root) / "fake-upscale-work";
+  fs::create_directories(work, ec);
+  const fs::path cancel_file = work / "cancel";
+  fs::remove(cancel_file, ec);
+  Out("STEP upscale BEGIN Upscaling the menu pictures with Real-ESRGAN (best quality)");
+  Out("LOG upscale work " + work.string());
+  for (int i = 0; i <= 40; ++i) {
+    if (Cancelled(cancel_file)) {
+      fs::remove(cancel_file, ec);
+      return Fail("upscale", "cancelled", "stopped; what was finished is kept");
+    }
+    if (mode == "fail" && i == 10) return Fail("upscale", "gpu-lost", "the graphics device failed while upscaling");
+    char line[160];
+    std::snprintf(line, sizeof line, "PROGRESS upscale %.3f upscaling: %d of 229 pictures", i / 40.0, i * 5);
+    Out(line);
+    if (mode == "hold" && i == 20) {
+      while (!Cancelled(cancel_file)) Nap(5);
+      continue;
+    }
+    Nap();
+  }
+  std::ofstream(fs::path(root) / "fake-upscale-made") << "made\n";
+  Out("STEP upscale OK 229 pictures upscaled (best quality) into " + root + "/generated-mods; 307 s");
+  Out("RESULT OK " + root);
+  return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -291,13 +358,16 @@ int main(int argc, char** argv) {
   std::signal(SIGTERM, OnSignal);
   std::vector<std::string> args(argv + 1, argv + argc);
   std::string dest, source, mode = "play", place = "named";
-  bool check = false, remember = false;
+  bool check = false, remember = false, dismiss = false;
   for (size_t i = 0; i < args.size(); ++i) {
     if ((args[i] == "--dest" || args[i] == "--data") && i + 1 < args.size()) dest = args[++i];
     else if (args[i] == "--check") check = true;
     else if (args[i] == "--remember") remember = true;
     else if (args[i] == "--install" || args[i] == "--data-status" || args[i] == "--build-shaders") mode = args[i].substr(2);
     else if (args[i] == "--no-setup") continue;
+    else if (args[i] == "--upscale-art") mode = "upscale";
+    else if (args[i] == "--dismiss") dismiss = true;
+    else if (args[i] == "--quality" && i + 1 < args.size()) ++i;
     else if (args[i].rfind("--", 0) == 0) return 2;
     else source = args[i];
   }
@@ -309,6 +379,7 @@ int main(int argc, char** argv) {
   if (mode == "data-status") return DataStatus(dest, place);
   if (mode == "install") return source.empty() ? 2 : Install(source, dest, check, remember);
   if (mode == "build-shaders") return Shaders(dest);
+  if (mode == "upscale") return Upscale(dest, dismiss);
   std::error_code ec;
   fs::create_directories(dest, ec);
   std::ofstream(fs::path(dest) / "played") << "played\n";  // "the game was started"

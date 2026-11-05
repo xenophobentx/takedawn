@@ -1,9 +1,12 @@
 # Making a release (BO-103)
 
-A release is a set of prebuilt programs, one per platform, all compiled from
-the same generated code. None of them contains game data: the player's own
-disc supplies that at first start ([installer.md](installer.md), "The data
-installer in the game").
+A release is one package per platform, each with the three prebuilt programs
+(one per supported disc: North America, Europe Fr/De/It, Europe/Australia
+En/Es/Nl/Sv; BO-341, [pal.md](pal.md) "Packages"), all compiled from the same
+three generated-code trees. The player does not need to know which disc they
+own: the package's main program starts the program of the disc they install.
+None of them contains game data: the player's own disc supplies that at first
+start ([installer.md](installer.md), "The data installer in the game").
 
 ```
 tools/release/release.sh 0.1.0
@@ -20,8 +23,13 @@ builds everything it can reach, smoke-runs it, and leaves in `dist/0.1.0/`
 | `Takedawn-0.1.0-android-arm64.apk` | `build-android.sh`, `sign-android.sh` | built on the Android build machine, signed here |
 | `SHA256SUMS`, `BUILDINFO` | `release.sh` | |
 
+Exactly these four packages: `release.sh` fails when another `Takedawn-*`
+file is in the folder.
+`SHA256SUMS` lists the four and `BUILDINFO`; `BUILDINFO` names each program's
+regen key, tree, patches and manifest.
+
 None of these scripts uploads, tags or pushes anything, and none
-has a step that could. A person publishes.
+has a step that could; a person publishes.
 
 Nothing is code-signed on any platform (decided); what the player sees at
 first start is under [Unsigned](#unsigned-what-the-player-sees).
@@ -30,7 +38,11 @@ first start is under [Unsigned](#unsigned-what-the-player-sees).
 
 The recompiled C is made once, on the Mac, by `tools/release/gen.sh`: the
 repository's `regen.sh` with the guest patches (`config/patches.json`) and the
-spin-wait list. It then writes `src/game/recomp/gen/regen.stamp`:
+spin-wait list, once per disc (`gen` from the North America `default.xbe`,
+`gen.pal` from the Fr/De/It one at `Burnout 3 Takedown (PAL)/default.xbe`,
+`gen.pal-ensv` from the En/Es/Nl/Sv one at `Burnout 3 Takedown (PAL-ENSV)/`;
+links are fine; about 100 s each on an M-series Mac). Each tree gets its
+`regen.stamp`:
 
 ```
 key e1005046d21e29c8        the regen key (cmake/release_info.cmake)
@@ -40,7 +52,7 @@ patches 80/80               patch sites that went in / listed, from the recompil
 spin_waits 2
 ```
 
-Every platform compiles this tree and no other:
+Every platform compiles these trees and no others:
 
 - the Windows cross build and the Mac build read it in place;
 - the Linux build copies it with rsync and compares the tree hash and key on
@@ -64,8 +76,8 @@ same two commits.
 ## The name
 
 A release build names the program `takedawn` (`Takedawn.exe`,
-`Takedawn.app`). The CMake target is still `burnout3`, and a build without
-`-DBO3_RELEASE=ON` is what it always was: `bin/burnout3`. The release build
+`Takedawn.app`). The CMake target is `burnout3`, and a build without
+`-DBO3_RELEASE=ON` produces `bin/burnout3`. The release build
 trees are in `build/release/<platform>/`, so they never replace a developer
 binary.
 
@@ -90,7 +102,10 @@ test bed, is compiled out), deployment target macOS 13.0.
 ```
 Takedawn.app/Contents/
   Info.plist                 io.github.xenophobentx.takedawn
-  MacOS/Takedawn             the game (CFBundleExecutable)
+  MacOS/Takedawn             the game (CFBundleExecutable): the North America disc's
+                             program, which starts the installed disc's
+  MacOS/Takedawn-pal         the Europe Fr/De/It disc's program
+  MacOS/Takedawn-ensv        the Europe/Australia En/Es/Nl/Sv disc's
   MacOS/takedawn-setup       the setup window; the game opens it when its data is missing
   Frameworks/libSDL2-2.0.0.dylib   sdl2-compat 2.32.74
   Frameworks/libSDL3.0.dylib       SDL 3.4.18  (libSDL3.dylib links to it)
@@ -102,7 +117,7 @@ Takedawn.app/Contents/
   Resources/shaders/upscale/ the texture upscaler's shader files (*.metal, VERSION, NOTICE.md, COPYING*, upstream/)
 ```
 
-- **No Homebrew on the player's Mac.** SDL is built here from the pinned
+- No Homebrew on the player's Mac. SDL is built here from the pinned
   source archives, with `@rpath` install names and the deployment target, into
   `~/.cache/takedawn-deps`; these are the versions the Mac builds have always
   run on (Homebrew's `sdl2` is sdl2-compat over SDL3), but Homebrew's own
@@ -113,7 +128,7 @@ Takedawn.app/Contents/
   API-availability warning. libepoxy and OpenSSL are needed by the toolkit's
   configure at build time only; the program links neither, and with Metal as
   the only backend there is no glslang, SPIRV-Tools or Vulkan loader either.
-- **The setup window** (`tools/install/gui`) is built by the same script
+- The setup window (`tools/install/gui`) is built by the same script
   against a qt.io kit (`pins.env`: Qt 6.10.3, fetched once with the pinned
   aqtinstall into the cache: only `qtbase`; Homebrew's Qt would drag ICU in)
   and deployed by `tools/install/gui/packaging/deploy-qt-macos.sh`, which the
@@ -121,14 +136,14 @@ Takedawn.app/Contents/
   window is the main executable, thinned to arm64, with a check that the Qt in
   the bundle is the one the window was linked with. About 23 MB of Qt.
   `--no-setup` builds the app without it.
-- **Signature.** No identity, no notarisation. The linker's ad hoc signature
+- Signature. No identity, no notarisation. The linker's ad hoc signature
   on each binary is what lets arm64 code start at all. On top of it the bundle
   is sealed ad hoc (`codesign --sign -`: no certificate, no Apple service):
   a bundle with only linker signatures does not verify ("code has no resources
   but signature indicates they must be present"), which macOS reports for a
   downloaded copy as "damaged" with no way round it. `TAKEDAWN_MACOS_SEAL=0`
   leaves the seal off.
-- **The disk image**: `hdiutil`, compressed, with the app, a link to
+- The disk image: `hdiutil`, compressed, with the app, a link to
   `/Applications` and `Read me first.txt`.
 
 `smoke-macos.sh` mounts the image read-only and, with `HOME` set to a scratch
@@ -149,7 +164,9 @@ build of the port has been ([windows.md](windows.md)).
 
 ```
 Takedawn\
-  Takedawn.exe         window program (no console), icon and version resource
+  Takedawn.exe         window program (no console), icon and version resource;
+                       the North America disc's, which starts the installed disc's
+  Takedawn-pal.exe, Takedawn-ensv.exe   the European discs' programs
   SDL2.dll             2.32.10
   takedawn-setup.exe   the setup window; the game starts it when its data is
                        missing (CreateProcess, and waits for it)
@@ -180,7 +197,7 @@ Run over an install it updates it (see Updating below). No zip. `windows/remote.
 `TAKEDAWN_WIN_DIR` only: `Takedawn.exe --version`, `--install <disc> --check`,
 the compile (Inno Setup is looked for in `<dir>\tools\innosetup` and fetched
 in its portable mode when missing: no registry entry, no Start menu entry),
-and a **payload test**: a variant of the setup without uninstaller, registry
+and a payload test: a variant of the setup without uninstaller, registry
 entry or shortcuts is installed into `<dir>\itest`, every file is compared
 with the program folder, the installed exe is run, the folder is removed.
 The real setup exe is not run by the script.
@@ -233,7 +250,8 @@ run containers with `--rm`.
 AppDir/
   AppRun                     LD_LIBRARY_PATH=usr/lib, exec usr/bin/takedawn
   takedawn.desktop, takedawn.png
-  usr/bin/takedawn           the game
+  usr/bin/takedawn           the game (North America; starts the installed disc's)
+  usr/bin/takedawn-pal, usr/bin/takedawn-ensv   the European discs' programs
   usr/bin/takedawn-setup     the setup window; the game becomes it (execv) when
   usr/bin/qt.conf            its data is missing and there is a display
   usr/lib/libSDL2-2.0.so.0   sdl2-compat 2.32.74 ...
@@ -250,19 +268,19 @@ Three things are built in the container, the first two once (kept in
 `<dir>/sdl-sniper` and `<dir>/qt-sniper` on the build machine, keyed by the
 source archive and the image):
 
-- **SDL** from the same pinned archives as the Mac's (`linux/build-sdl.sh`).
+- SDL from the same pinned archives as the Mac's (`linux/build-sdl.sh`).
   The image's own SDL is not carried: it is linked for the Steam Runtime and
   names libasound, libpulse, libdecor-0, libXss, libXtst and others outright,
   so it does not load where one of them is missing. Built here SDL opens its
   back ends at run time and needs only the C library to load; the script
   fails if that is not so.
-- **Qt** (`linux/build-qt.sh`): qtbase 6.10.3 from the pinned source archive,
+- Qt (`linux/build-qt.sh`): qtbase 6.10.3 from the pinned source archive,
   with the xcb, Wayland and offscreen plugins, no OpenGL, no ICU. The qt.io
   binaries of this version need glibc 2.34 and do not run in the image (or on
   the systems the game itself still runs on). About three minutes on 16
   cores. The window is compiled with g++ 10, as Qt is: the image's clang 11
   crashes on Qt 6.10's headers.
-- **the game and the window** (`linux/in-container.sh`), which also sorts
+- the game and the window (`linux/in-container.sh`), which also sorts
   every library they link three ways: what every system has and must supply
   itself (glibc, libstdc++, the Vulkan loader, X11, Wayland, libxkbcommon,
   FreeType, fontconfig, D-Bus), what a system may lack (carried, with its
@@ -276,7 +294,7 @@ source archive and the image):
 The AppDir is packed with `mksquashfs` and the pinned static AppImage runtime
 (no libfuse needed on the player's machine).
 
-**The Steam box.** On Linux the window offers "Add Takedawn to my Steam
+The Steam box. On Linux the window offers "Add Takedawn to my Steam
 library" (off unless ticked). It is `tools/install/gui/steam_shortcut.cpp`,
 the old installer's `steam.py` in C++ with its rules: existing entries are
 never changed (an entry with the same Exe counts as ours, whatever its name),
@@ -314,8 +332,12 @@ the main menu on the machine's Vulkan driver.
 ## Android
 
 `build-android.sh` (its own header says how) builds the unsigned APK on the
-Android build machine from the same stamped tree and `sign-android.sh` signs
+Android build machine from the same stamped trees and `sign-android.sh` signs
 it on this machine, where the key lives; the key is never copied or printed.
+One app, `io.github.xenophobentx.takedawn`, with the three programs as
+`libmain.so`, `libmain_pal.so` and `libmain_ensv.so` (three NDK builds, no
+LTO; each about 30 MB, 11 MB in the APK: 0.3.0's APK is 41 MB); the app loads the
+installed disc's ([pal.md](pal.md)).
 `release.sh` runs both when `TAKEDAWN_ANDROID_HOST` is set and lists only the
 signed APK in `SHA256SUMS`.
 
@@ -330,11 +352,11 @@ shader cache are in the user folders (Windows `%APPDATA%\Takedawn` and
 `~/.cache/takedawn`). Settings keys a build does not know are kept with a log
 line, so going back to the older version is safe. The same text is in each
 package's own README (`tools/release/{windows,linux}/README.txt`,
-`macos/READ-ME-FIRST.txt`). Settings > Advanced > Check for updates tells
+`macos/READ-ME-FIRST.txt`). Settings > System > Check for updates tells
 when a newer release exists (one request, only when pressed; nothing is
 downloaded); on Android there is no such row yet.
 
-- **Windows**: run the new setup over the old; it finds the install by its
+- Windows: run the new setup over the old; it finds the install by its
   uninstall entry and folder and calls it "Update Takedawn X to Y" (a
   downgrade or the same version says so too). It refuses, exit code 7 with
   `/VERYSILENT` and nothing changed, while `Takedawn.exe`,
@@ -348,12 +370,12 @@ downloaded); on Android there is no such row yet.
   folder is put back (`DeinitializeSetup`; exercised by `/TESTFAIL=1` in the
   payload-test variant). The folder, and so the Start menu entry, the desktop
   icon and a Steam shortcut to `Takedawn.exe`, stay the same.
-- **macOS**: quit Takedawn, open the new dmg, drag Takedawn onto Applications
+- macOS: quit Takedawn, open the new dmg, drag Takedawn onto Applications
   and choose Replace. The new copy is unsigned like the old: macOS blocks it
   again and "Open Anyway" in System Settings > Privacy & Security (or
   `xattr -dr com.apple.quarantine`) is needed once more. Saves, settings and
   cache are outside the app.
-- **Linux and the Steam Deck**: the AppImage is the whole program. Steam (and
+- Linux and the Steam Deck: the AppImage is the whole program. Steam (and
   a `.desktop` file) store the file's *path*, so the file must keep its path
   and name: the README tells the player to name it `Takedawn.AppImage` in a
   folder of their own and, for an update, to `mv` the new download over it
@@ -364,7 +386,7 @@ downloaded); on Android there is no such row yet.
   starting that file. The Steam box of the setup window stores the path the
   AppImage was started from (`APPIMAGE`), so it also follows the stable name.
 
-**Tests** (`tools/release/update-test/`; scratch profiles only, one game at a
+Tests (`tools/release/update-test/`; scratch profiles only, one game at a
 time, never while someone plays on that machine). `update-test.sh --old <app>
 --new <app> --disc <disc> --saves <ref saves> --work <scratch>` runs old, new,
 old again on macOS (a `Takedawn.app`), Linux (an AppImage; it also starts the
@@ -406,14 +428,14 @@ the first-start prompts below; controllers, sound, a full race.
 
 ## Unsigned: what the player sees
 
-- **macOS**: "Takedawn cannot be opened because Apple cannot check it" (or
+- macOS: "Takedawn cannot be opened because Apple cannot check it" (or
   "not verified"). System Settings > Privacy & Security > Open Anyway; on
   macOS 14 and earlier, right-click > Open. Or
   `xattr -dr com.apple.quarantine /Applications/Takedawn.app`. Once. The disk
   image carries these steps in `Read me first.txt`.
-- **Windows**: SmartScreen, "Windows protected your PC": More info > Run
+- Windows: SmartScreen, "Windows protected your PC": More info > Run
   anyway, for the setup exe (and possibly once for the program).
-- **Linux**: nothing; the file must be made executable.
+- Linux: nothing; the file must be made executable.
 
 ## Licences in the packages
 
@@ -432,7 +454,7 @@ The Android APK carries the same set as `assets/licenses/` (it has no
 folder beside the program), plus the texts of the parts only it has
 (`tools/android/licenses/`: libadrenotools, linkernsbypass, Mesa's Turnip
 driver, and the Mesa release and patch it was built from). The app shows them
-under **Licences** (the setup page; "Takedawn: graphics driver" in the
+under Licences (the setup page; "Takedawn: graphics driver" in the
 launcher). `build-android.sh` stages the set with `copy_licenses`, the build
 machine packs it (`tools/android/build-apk.sh`, `BO3_LICENSES_DIR`), and
 `build-android.sh` and `release.sh` fail when the unsigned or the signed APK

@@ -1,6 +1,6 @@
 # The marker over rivals: arrow or race position (`display.rival_marker`, BO-241)
 
-Overlay Display page, "Rival marker switch"; `settings.toml` `[display]
+Overlay Game page, "Rival marker switch"; `settings.toml` `[display]
 rival_marker = "original" | "farther"`; `RECOMP_GFX_RIVAL_MARKER`. Original
 by default on every platform.
 

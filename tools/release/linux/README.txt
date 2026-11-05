@@ -27,7 +27,10 @@ Game data
   Takedawn needs the game's data from your own disc: a disc image
   (.iso / .xiso) or an extracted disc folder of Burnout 3: Takedown,
   @DISC@. At the first start a setup window asks for it,
-  checks every file and copies them to ~/.local/share/takedawn/Game.
+  checks every file and copies them to ~/.local/share/takedawn/Game (a
+  European disc's to ~/.local/share/takedawn pal/Game), and the game starts
+  that disc from then on. Installing another disc later switches to it; the
+  other disc's data and saves stay where they are.
   From a terminal instead:
 
       ~/Applications/Takedawn.AppImage --install <image-or-folder>
@@ -41,6 +44,7 @@ Game data
 
 Where things are
   ~/.local/share/takedawn    game data, saves, settings, logs
+  ~/.local/share/takedawn pal  the same for a European disc
   ~/.cache/takedawn          shader cache
   An update is a new file in place of the old one; those folders stay.
 
@@ -60,7 +64,7 @@ How to update
   old one or edit the shortcut in Steam (Properties: Target, Start In) to the
   new name; on the Deck do this in Desktop Mode, where the file manager
   replaces the file the same way.
-  Takedawn says when a newer release exists: Settings > Advanced > Check for
+  Takedawn says when a newer release exists: Settings > System > Check for
   updates (only when you press it; nothing is downloaded).
 
 The licences of everything inside are in usr/share/licenses/takedawn

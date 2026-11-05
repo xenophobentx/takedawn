@@ -1,0 +1,22 @@
+{
+  "about": "Guest memory ordering on arm64 hosts (Mac, Android), applied by regen.sh (tools.recomp --mem-order, toolkit tools/recomp/mem_order.py). Each release store is a lock's flag written back to 0 by a plain mov after the owner's writes: on x86-64 those writes are visible first by the architecture, on arm64 only with a store-release. acquire_spin_exits puts an acquire fence after every busy-wait loop the spin-wait matcher recognises (build/xr/recomp/spin_waits.json lists them: DSOUND voice and APU polls, D3D push-buffer and NV2A polls, XPP), so what the loop guards is read after the flag. Audit 2026-11-03, 1-lifter-atomics F1.",
+  "release_stores": [
+    {
+      "va": "0x0021C981",
+      "note": "(NTSC-U 0x0021C671) DirtySock NetCrit release (sub_0021C650): the lock flag at +8 of the lock (global 0x41CE70 or the caller's) written 0 after the owner id and count, before RtlLeaveCriticalSection; taken with xchg at 0x0021C5FC/0x0021C610."
+    },
+    {
+      "va": "0x0021CB2D",
+      "note": "(NTSC-U 0x0021C81D) The second DirtySock lock (global 0x41CFA0, taken with xchg at 0x0021C767): flag written 0 on the last release before RtlLeaveCriticalSection 0x41CFA4."
+    },
+    {
+      "va": "0x0021CBC5",
+      "note": "(NTSC-U 0x0021C8B5) The same lock 0x41CFA0 released on the shutdown path, before the LeaveCriticalSection call through edi."
+    },
+    {
+      "va": "0x0021CC37",
+      "note": "(NTSC-U 0x0021C927) The same lock 0x41CFA0 cleared where the module is torn down (with 0x41CE78), no critical section after it."
+    }
+  ],
+  "acquire_spin_exits": true
+}

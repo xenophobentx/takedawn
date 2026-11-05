@@ -3,19 +3,23 @@
 `display.ultrawide` (`RECOMP_DISPLAY_ULTRAWIDE` = `off` | `21:9` | `32:9` |
 `window`; overlay: Display > Ultrawide; default off) draws the race's 3D for a
 picture wider than 16:9 and leaves the front end as it is. It needs the
-title's 16:9 mode (`display.aspect` 16:9); in 4:3 it does nothing. Like the
+title's 16:9 mode (`display.aspect` 16:9); in 4:3 and 16:10 it does nothing.
+The camera patches it uses are on whenever the title is in its widescreen
+mode: at 16:9 they give the title's own values, at 16:10 (BO-271) the aspect
+1.6 with 16:9's horizontal view (vert+; `fov_aspect` is the aspect, at least
+16/9). Like the
 widescreen HUD fix ([widescreen-hud.md](widescreen-hud.md)) it changes only
 the title's own values, through `config/patches.json`.
 
 ## What changes
 
-- **Camera.** The camera set-ups (`sub_0002F380`, one player; `sub_0002F480`,
+- Camera: the camera set-ups (`sub_0002F380`, one player; `sub_0002F480`,
   two) store a viewport aspect (16/9, `0x3B18EC`, its only use) and a
   field-of-view factor (1.2; 4:3 has 1.0). The patches give the picture's real
   aspect and scale the factor with it, so the vertical view stays 16:9's and
   the picture gains at the sides (hor+). PS2 counterpart: the three aspect
   globals of ThirteenAG's fix (`0x4E0C70`, `0x4E0C7C`, `0x4E0C80` = aspect * 2).
-- **Which frames are wide.** Marks (a patch kind that only tells the host the
+- Which frames are wide: marks (a patch kind that only tells the host the
   title got somewhere) at the stage set-ups, the stage renders and the five
   writers of `NV097_FLIP_STALL`: a frame is wide if a stage drew the world in
   it. `src/game/main.c` keeps the answer per flip number; the presenter
@@ -23,12 +27,12 @@ the title's own values, through `config/patches.json`.
   every other frame (menus, loading screens, videos, the garage) at 16:9 in the
   middle of the window. The mode switches per frame: the loading screen's last
   frame is 16:9, the race's first is wide (checked with every flip dumped).
-- **The front-end scene over a wide frame** (pause menu, race intro banner,
+- The front-end scene over a wide frame (pause menu, race intro banner,
   crash results) is squeezed about the centre to the size it has in 16:9.
   With the widescreen HUD fix on, its content is 4:3 and its decoration (the
   header, the bottom panel) spans the wide frame
   ([widescreen-hud.md](widescreen-hud.md), BO-222).
-- **The HUD** follows `aspect` (set by the widescreen HUD fix, which should be
+- The HUD follows `aspect` (set by the widescreen HUD fix, which should be
   on with this).
 - The setting is sampled when a stage is set up: a change shows from the next
   race or Restart.

@@ -4,6 +4,7 @@
  */
 #include "install.h"
 #include "fatal.h"
+#include "upscale.h"
 
 #include <signal.h>
 #include <stdarg.h>
@@ -28,6 +29,7 @@
 #endif
 
 #include "disc_install.h"
+#include "package.h"
 #include "platform/recomp_save_dir.h"
 #include "platform/recomp_exe_dir.h"
 #if !defined(__ANDROID__)
@@ -45,13 +47,6 @@
 
 #define GAME_DIR  "Burnout 3 Takedown"
 #define STEP      "disc"
-/* A whole install wants this much free: the 2.48 GB of the disc and room to
- * spare for the saves, the shader cache and the title's own cache files. */
-#if defined(BO3_REGION_PAL) && BO3_REGION_PAL
-#define FREE_NEEDED (3400ull * 1000 * 1000)     /* the PAL disc is 2.97 GB: not 34 MB of room */
-#else
-#define FREE_NEEDED (3000ull * 1000 * 1000)
-#endif
 
 /* ── the disc this program was made for ────────────────────────────── */
 
@@ -59,19 +54,299 @@ static const xr_manifest_file k_files[] = {
 #include "bo3_manifest.inc"
 };
 
+/* What each build's disc is called (the manifest's "# build" line). */
+#define BUILD_NAME_NTSC_U   "North America (NTSC-U) retail"
+#define BUILD_NAME_PAL      "Europe (PAL, Fr/De/It) retail"
+#define BUILD_NAME_PAL_ENSV "Europe/Australia (PAL, En/Es/Nl/Sv) retail"
+
 static const xr_manifest k_manifest = {
     BO3_MANIFEST_ID,
     "Burnout 3: Takedown",
-#if defined(BO3_REGION_PAL) && BO3_REGION_PAL
-    "Europe (PAL) retail",
+#if defined(BO3_REGION_PAL_ENSV) && BO3_REGION_PAL_ENSV
+    BUILD_NAME_PAL_ENSV,
+#elif defined(BO3_REGION_PAL) && BO3_REGION_PAL
+    BUILD_NAME_PAL,
 #else
-    "North America (NTSC-U) retail",
+    BUILD_NAME_NTSC_U,
 #endif
     BO3_MANIFEST_TITLE_ID,
     "default.xbe",
     k_files,
     sizeof k_files / sizeof k_files[0]
 };
+
+static int same_nocase(const char *a, const char *b)
+{
+    for (; *a && *b; a++, b++)
+        if ((*a >= 'A' && *a <= 'Z' ? *a + 32 : *a) != (*b >= 'A' && *b <= 'Z' ? *b + 32 : *b))
+            return 0;
+    return !*a && !*b;
+}
+
+const char *bo3_manifest_path(const char *path)
+{
+    unsigned i;
+
+    for (i = 0; i < k_manifest.count; i++)
+        if (same_nocase(k_files[i].path, path))
+            return k_files[i].path;
+    return NULL;
+}
+
+/* ── the package's other programs (package.h) ───────────────────────── */
+
+static int file_exists(const char *p);
+
+/* Every package carries a program for each supported disc (package.h): this
+ * one and, beside it, the others, each known here by its manifest
+ * (cmake/release_info.cmake, the builds of supported.json's package, in its
+ * order). When the disc given to --install, the data installed, or (at a
+ * start) the disc installed last is another build's, this program becomes
+ * that one, with the same arguments: the setup window, a shortcut and a Steam
+ * entry name the main program, whichever disc the player has. */
+typedef struct {
+    const char *id;                     /* supported.json: "pal-retail" */
+    const char *suffix;                 /* after the main program's name: "-pal" */
+    const char *user_dir;               /* its per-user folders' name (BO3_USER_DIR) */
+    const char *name;                   /* the disc: "Europe (PAL, Fr/De/It) retail" */
+    const char *manifest_id;
+    const xr_manifest_file *files;
+    unsigned count;
+} bo3_package_build;
+
+#include "bo3_package.inc"
+
+/* Build i's disc as the installer reads it (k_manifest for this one). */
+static xr_manifest pkg_manifest(int i)
+{
+    xr_manifest m = k_manifest;
+
+    if (i != BO3_PACKAGE_SELF) {
+        m.id = k_package[i].manifest_id;
+        m.build = k_package[i].name;
+        m.files = k_package[i].files;
+        m.count = k_package[i].count;
+    }
+    return m;
+}
+
+/* The package's build whose manifest has this id; -1 for none. */
+static int pkg_by_manifest(const char *id)
+{
+    int i;
+
+    for (i = 0; id && i < BO3_PACKAGE_COUNT; i++)
+        if (!strcmp(k_package[i].manifest_id, id))
+            return i;
+    return -1;
+}
+
+static int pkg_by_id(const char *id)
+{
+    int i;
+
+    for (i = 0; id && i < BO3_PACKAGE_COUNT; i++)
+        if (!strcmp(k_package[i].id, id))
+            return i;
+    return -1;
+}
+
+/* The room a whole install of build i wants: the disc and room to spare
+ * for the saves, the shader cache and the title's own cache files (the PAL
+ * discs are 2.97 and 2.84 GB: not 34 MB of room under 3 GB). */
+static uint64_t pkg_free_needed(int i)
+{
+    xr_manifest m = pkg_manifest(i);
+    return xr_manifest_bytes(&m) > 2600ull * 1000 * 1000 ? 3400ull * 1000 * 1000
+                                                          : 3000ull * 1000 * 1000;
+}
+/* this program's disc's: 3 GB for the 2.48 GB North America one */
+#define FREE_NEEDED pkg_free_needed(BO3_PACKAGE_SELF)
+
+static int s_argc;
+static char **s_argv;
+static int s_sibling_hop;               /* this process was started by another program of the package */
+
+void bo3_install_args(int argc, char **argv)
+{
+    const char *hop = getenv("TAKEDAWN_SIBLING_HOP");
+
+    s_argc = argc;
+    s_argv = argv;
+    /* Only for the one step from the other program: a setup window this
+     * process opens, and what that starts, may need to go across again. */
+    s_sibling_hop = hop && *hop;
+#if defined(_WIN32)
+    _putenv("TAKEDAWN_SIBLING_HOP=");
+#else
+    unsetenv("TAKEDAWN_SIBLING_HOP");
+#endif
+}
+
+/* Build i's program: beside this one, this one's name with its suffix in
+ * place of this one's (package.h). 0 when there is none: a build of one
+ * program alone, as a developer makes, or a package without it. */
+static int pkg_program(int i, char *out, unsigned n)
+{
+    if (i < 0 || i >= BO3_PACKAGE_COUNT || i == BO3_PACKAGE_SELF)
+        return 0;
+    if (!bo3_package_program(recomp_exe_path(), k_package[BO3_PACKAGE_SELF].suffix,
+                             k_package[i].suffix, out, n))
+        return 0;
+    return file_exists(out);
+}
+
+#if defined(_WIN32)
+/* One argument of a command line as CommandLineToArgvW reads it back. */
+static void win_quote(wchar_t *cmd, size_t cap, size_t *at, const char *arg)
+{
+    wchar_t w[2048];
+    int i, bs = 0, n = MultiByteToWideChar(CP_UTF8, 0, arg, -1, w, 2048);
+
+    if (n <= 0)
+        n = MultiByteToWideChar(CP_ACP, 0, arg, -1, w, 2048);
+    if (n <= 0)
+        w[0] = 0;
+#define PUT(c) do { if (*at + 1 < cap) cmd[(*at)++] = (c); } while (0)
+    if (*at)
+        PUT(L' ');
+    PUT(L'"');
+    for (i = 0; w[i]; i++) {
+        if (w[i] == L'\\') {
+            bs++;
+            continue;
+        }
+        while (bs) {
+            PUT(L'\\');
+            if (w[i] == L'"')
+                PUT(L'\\');
+            bs--;
+        }
+        if (w[i] == L'"')
+            PUT(L'\\');
+        PUT(w[i]);
+    }
+    while (bs--) {                      /* before the closing quote: doubled */
+        PUT(L'\\');
+        PUT(L'\\');
+    }
+    PUT(L'"');
+    cmd[*at] = 0;
+#undef PUT
+}
+#endif
+
+/* Become build i's program, with this one's arguments. Returns only when
+ * that is not possible (no such program beside this one, or this process was
+ * started by another program of the package: one step, never back and
+ * forth); `why` is for the log. */
+static void pkg_exec(int i, const char *why)
+{
+    char prog[1100];
+    int k;
+
+    if (!s_argv || s_sibling_hop || !pkg_program(i, prog, sizeof prog))
+        return;
+    fprintf(stderr, "[DATA] %s: the program for that disc, %s, takes over\n", why, prog);
+    fflush(stdout);
+    fflush(stderr);
+#if defined(_WIN32)
+    {
+        static wchar_t cmd[32768];
+        wchar_t wprog[1100];
+        size_t at = 0;
+        STARTUPINFOW si;
+        PROCESS_INFORMATION pi;
+        DWORD code = 1;
+        HANDLE h[3] = { GetStdHandle(STD_INPUT_HANDLE), GetStdHandle(STD_OUTPUT_HANDLE),
+                        GetStdHandle(STD_ERROR_HANDLE) };
+
+        if (MultiByteToWideChar(CP_UTF8, 0, prog, -1, wprog, 1100) <= 0)
+            return;
+        win_quote(cmd, sizeof cmd / sizeof cmd[0], &at, prog);
+        for (k = 1; k < s_argc; k++)
+            win_quote(cmd, sizeof cmd / sizeof cmd[0], &at, s_argv[k]);
+        memset(&si, 0, sizeof si);
+        si.cb = sizeof si;
+        for (k = 0; k < 3; k++)
+            if (h[k] && h[k] != INVALID_HANDLE_VALUE)
+                SetHandleInformation(h[k], HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+        si.dwFlags = STARTF_USESTDHANDLES;
+        si.hStdInput = h[0];
+        si.hStdOutput = h[1];
+        si.hStdError = h[2];
+        SetEnvironmentVariableW(L"TAKEDAWN_SIBLING_HOP", L"1");
+        if (!CreateProcessW(wprog, cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
+            SetEnvironmentVariableW(L"TAKEDAWN_SIBLING_HOP", NULL);
+            return;
+        }
+        /* The setup window waits for this process and reads its pipe: stay
+         * until the other one is done and give its status. */
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        GetExitCodeProcess(pi.hProcess, &code);
+        ExitProcess(code);
+    }
+#else
+    {
+        char **args = (char **)calloc((size_t)s_argc + 1, sizeof *args);
+        if (!args)
+            return;
+        args[0] = prog;
+        for (k = 1; k < s_argc; k++)
+            args[k] = s_argv[k];
+        setenv("TAKEDAWN_SIBLING_HOP", "1", 1);
+        execv(prog, args);
+        unsetenv("TAKEDAWN_SIBLING_HOP");
+        fprintf(stderr, "[DATA] %s: %s\n", prog, strerror(errno));
+        free(args);
+    }
+#endif
+}
+
+/* The package's build whose disc `base`'s source is (an image, a folder,
+ * a descriptor or an Android document tree), by its executable alone; this
+ * one's first. -1 when it is none of them (another game, region or
+ * revision, or not readable: the install itself then says which). */
+static int source_build_of(const xr_install_opts *base)
+{
+    xr_install_opts o = *base;
+    xr_install_result r;
+    xr_manifest m;
+    int i;
+
+    o.manifest = &k_manifest;
+    o.identify_only = 1;
+    o.free_needed = 0;
+    o.progress = NULL;
+    o.log = NULL;
+    if (xr_install(&o, &r) != XR_INSTALL_WRONG_VERSION)
+        return r.code == XR_INSTALL_OK ? BO3_PACKAGE_SELF : -1;
+    for (i = 0; i < BO3_PACKAGE_COUNT; i++) {
+        if (i == BO3_PACKAGE_SELF)
+            continue;
+        m = pkg_manifest(i);
+        o.manifest = &m;
+        if (xr_install(&o, &r) == XR_INSTALL_OK)
+            return i;
+    }
+    return -1;
+}
+
+/* --install: the same for a path. */
+static int source_build(const char *source)
+{
+    xr_install_opts o;
+
+    if (!source)
+        return -1;
+    memset(&o, 0, sizeof o);
+    o.source = source;
+    o.source_fd = -1;
+    o.dest = ".";
+    o.subdir = GAME_DIR;
+    o.version = BO3_VERSION;
+    return source_build_of(&o);
+}
 
 /* ── the version ───────────────────────────────────────────────────── */
 
@@ -157,6 +432,13 @@ static int dir_move(int i, char *from, unsigned from_n, char *to, unsigned to_n,
 #endif
     if (i < 0 || i >= (int)(sizeof k / sizeof k[0]))
         return 0;
+    {
+        /* Portable mode (portable.txt or a data folder beside Takedawn.exe)
+         * has one folder per kind and no earlier name to move from. */
+        char root[1024];
+        if (recomp_portable_root(root, sizeof root))
+            return 0;
+    }
     *what = k[i].what;
     *kind = k[i].kind;
     return recomp_user_dir(k[i].kind, k[i].old_name, from, from_n)
@@ -343,13 +625,14 @@ static int dir_exists(const char *p)
 }
 
 /* The saved folder; 0 when there is none (no file, an empty first line). */
-static int saved_root(char *out, unsigned n)
+/* The folder the first line of a data-folder.txt names. */
+static int location_read(const char *file, char *out, unsigned n)
 {
-    char file[1100], line[1100], *p;
+    char line[1100], *p;
     size_t len;
     FILE *f;
 
-    if (!location_file(file, sizeof file) || !(f = fopen(file, "rb")))
+    if (!(f = fopen(file, "rb")))
         return 0;
     len = fread(line, 1, sizeof line - 1, f);
     fclose(f);
@@ -365,6 +648,13 @@ static int saved_root(char *out, unsigned n)
         return 0;
     snprintf(out, n, "%s", p);
     return 1;
+}
+
+static int saved_root(char *out, unsigned n)
+{
+    char file[1100];
+
+    return location_file(file, sizeof file) && location_read(file, out, n);
 }
 
 static int make_dirs(const char *path)
@@ -558,7 +848,7 @@ static void setup_open(const char *root, int named)
 #endif
 }
 
-/* ── Add Steam library art (the overlay's Advanced page) ───────────── */
+/* ── Add Steam library art (the overlay's System page) ───────────── */
 
 #if defined(__linux__) && !defined(__ANDROID__)
 int bo3_steam_art_available(void)
@@ -693,6 +983,155 @@ static int setup_needed(const char *code, const char *why, const char *source, c
     return BO3_EXIT_NO_DATA;
 }
 
+/* ── which disc's program runs (package.h) ─────────────────────────── */
+
+/* Build i's data root where its program looks by itself (cases 4 and 5 of
+ * install.h): the folder chosen in its setup window, else its per-user
+ * Game folder; this program's own as data_state has it. */
+static int pkg_root(int i, char *root, unsigned n)
+{
+#if defined(__ANDROID__)
+    (void)i; (void)root; (void)n;
+    return 0;                           /* one app, one folder: the Java side picks */
+#else
+    char base[1024], file[1100];
+
+    if (i == BO3_PACKAGE_SELF) {
+        if (!saved_root(root, n))
+            default_root(root, n);
+        return 1;
+    }
+    if (!recomp_user_dir(RECOMP_DIR_LOCAL, k_package[i].user_dir, base, sizeof base))
+        return 0;
+    snprintf(file, sizeof file, "%s/" LOCATION_FILE, base);
+    if (!location_read(file, root, n))
+        snprintf(root, n, "%s/Game", base);
+    return 1;
+#endif
+}
+
+/* Build i's data is installed and whole there: its marker names its
+ * manifest and its executable is in place. */
+static int pkg_whole(int i, char *root, unsigned n)
+{
+    xr_install_marker mark;
+    char there[1200];
+
+    if (!pkg_root(i, root, n) || !xr_install_marker_read(root, &mark)
+        || strcmp(mark.manifest, k_package[i].manifest_id))
+        return 0;
+    snprintf(there, sizeof there, "%s/" GAME_DIR "/default.xbe", root);
+    return file_exists(there);
+}
+
+/* disc.txt, in the main program's per-user local folder. */
+static int pkg_record_file(char *out, unsigned n)
+{
+#if defined(__ANDROID__)
+    (void)out; (void)n;
+    return 0;
+#else
+    char base[1024];
+
+    if (!recomp_user_dir(RECOMP_DIR_LOCAL, k_package[0].user_dir, base, sizeof base))
+        return 0;
+    return snprintf(out, n, "%s/" BO3_PACKAGE_RECORD, base) < (int)n;
+#endif
+}
+
+/* The build disc.txt names; -1 when there is no such file, or it names no
+ * build of this package. `present`: the file is there at all. */
+static int pkg_recorded(int *present)
+{
+    char file[1100], text[600], id[64];
+    size_t len = 0;
+    FILE *f;
+
+    if (present)
+        *present = 0;
+    if (BO3_PACKAGE_COUNT < 2 || !pkg_record_file(file, sizeof file) || !(f = fopen(file, "rb")))
+        return -1;
+    len = fread(text, 1, sizeof text - 1, f);
+    fclose(f);
+    text[len] = 0;
+    if (present)
+        *present = 1;
+    return bo3_package_record_parse(text, id, sizeof id) ? pkg_by_id(id) : -1;
+}
+
+static int pkg_record(int i)
+{
+    char file[1100], text[600], dir[1100], *slash;
+    FILE *f;
+    int ok;
+
+    if (!pkg_record_file(file, sizeof file) || !bo3_package_record_format(k_package[i].id, text, sizeof text))
+        return 0;
+    snprintf(dir, sizeof dir, "%s", file);
+    slash = strrchr(dir, '/');
+    if (slash) {
+        *slash = 0;
+        recomp_fs_mkdir_p(dir);
+    }
+    if (!(f = fopen(file, "wb")))
+        return 0;
+    ok = fputs(text, f) >= 0;
+    ok = fclose(f) == 0 && ok;
+    return ok;
+}
+
+/* Which program a start of build `self`'s program runs, and what each
+ * disc's data is: whole[i] and its root in roots[i] (for the messages). */
+static int pkg_choose(int self, int *whole, char roots[][1024], int *recorded, int *record_present)
+{
+    int i;
+
+    *recorded = pkg_recorded(record_present);
+    for (i = 0; i < BO3_PACKAGE_COUNT; i++) {
+        roots[i][0] = 0;
+        whole[i] = pkg_whole(i, roots[i], sizeof roots[i]);
+    }
+    return bo3_package_pick(BO3_PACKAGE_COUNT, self, *recorded, whole);
+}
+
+void bo3_package_start(int argc, char **argv)
+{
+#if !defined(__ANDROID__)
+    int whole[BO3_PACKAGE_COUNT], i, recorded, present, pick;
+    char roots[BO3_PACKAGE_COUNT][1024], why[1300];
+    const char *env = getenv("TAKEDAWN_DATA");
+
+    /* One step only (the program that started this one chose it); and a
+     * start told where the data is (--data, TAKEDAWN_DATA, a default.xbe,
+     * a checkout) runs where it is told: the data's marker says whose it
+     * is (data_state). --install hands the disc to its program itself,
+     * --version is this program's own. */
+    if (BO3_PACKAGE_COUNT < 2 || s_sibling_hop || (env && *env))
+        return;
+    for (i = 1; i < argc; i++) {
+        const char *a = argv[i];
+        size_t len = strlen(a);
+        if (!strcmp(a, "--version") || !strcmp(a, "--install") || !strcmp(a, "--data")
+            || !strcmp(a, "--dest") || (len > 4 && same_nocase(a + len - 4, ".xbe")))
+            return;
+    }
+    if (file_exists(GAME_DIR "/default.xbe"))
+        return;
+    pick = pkg_choose(BO3_PACKAGE_SELF, whole, roots, &recorded, &present);
+    if (pick == BO3_PACKAGE_SELF)
+        return;
+    if (whole[pick])
+        snprintf(why, sizeof why, "the %s disc's data is installed (%s)%s", k_package[pick].name,
+                 roots[pick], pick == recorded ? ", the disc installed last" : "");
+    else
+        snprintf(why, sizeof why, "the %s disc was installed last (%s), and no disc's data is whole",
+                 k_package[pick].name, BO3_PACKAGE_RECORD);
+    pkg_exec(pick, why);
+#else
+    (void)argc; (void)argv;
+#endif
+}
+
 /* ── where the data is, and whether it is whole ────────────────────── */
 
 enum { DATA_OK, DATA_CHECKOUT, DATA_MISSING };
@@ -741,9 +1180,20 @@ static int data_state(const char *data_arg, char *root, unsigned root_n, int *na
     } else if (!xr_install_marker_read(root, mark)) {
         snprintf(why, why_n, "The game's data is not installed in %s.", root);
     } else if (strcmp(mark->manifest, BO3_MANIFEST_ID)) {
-        snprintf(why, why_n, "The data in %s was installed for another build of the game "
-                 "(manifest %s; this program needs %s). Install it again.", root, mark->manifest,
-                 BO3_MANIFEST_ID);
+        int other = pkg_by_manifest(mark->manifest);
+        if (other >= 0) {
+            char said[200];
+            snprintf(said, sizeof said, "the data in %s is the %s disc's", root, k_package[other].name);
+            pkg_exec(other, said);
+            snprintf(why, why_n, "The data in %s is the %s disc's, and this program is for the "
+                     "%s disc. The program for that disc is not beside this one: install %s "
+                     "again, or install your %s disc.", root, k_package[other].name, k_manifest.build,
+                     BO3_APP_NAME, k_manifest.build);
+        } else {
+            snprintf(why, why_n, "The data in %s was installed for another build of the game "
+                     "(manifest %s; this program needs %s). Install it again.", root, mark->manifest,
+                     BO3_MANIFEST_ID);
+        }
     } else if (!file_exists(there)) {
         snprintf(why, why_n, "The game's data in %s is not readable, or its default.xbe "
                  "is gone. Install it again.", root);
@@ -819,12 +1269,13 @@ int bo3_data_status_main(int argc, char **argv)
            "LOG data files %u\n"
            "LOG data bytes %llu\n"
            "LOG data free-needed %llu\n"
-           "LOG data version %s\n",
+           "LOG data version %s\n"
+           "LOG data build %s\n",
            root, state == DATA_CHECKOUT ? "checkout" : named == 1 ? "named"
                  : named == 2 ? "saved" : "default", def,
            k_manifest.title, k_manifest.build, k_manifest.count,
            (unsigned long long)xr_manifest_bytes(&k_manifest), (unsigned long long)FREE_NEEDED,
-           bo3_version_line());
+           bo3_version_line(), BO3_BUILD_ID);
     {
         /* Folders of the port's earlier name: reported, not moved. The game
          * start that has its data, and a real --install, move them. */
@@ -837,6 +1288,16 @@ int bo3_data_status_main(int argc, char **argv)
                 XR_OUT("LOG data pending-move %s\n", line);
             }
     }
+#if !defined(__ANDROID__)
+    {
+        /* The setup window's "Sharper menu pictures" box (BO-311): whether
+         * it is offered here, ticked or not, and at which quality. */
+        char q[16], why_up[96];
+        int offer = bo3_upscale_offer(q, sizeof q, why_up, sizeof why_up);
+        XR_OUT("LOG data upscale %s %s %s\n", offer == 2 ? "on" : offer == 1 ? "off" : "no", q, why_up);
+        XR_OUT("LOG data upscale-pack %s\n", bo3_upscale_pack_state());
+    }
+#endif
     if (state == DATA_MISSING) {
         XR_OUT("STEP data FAIL %s %s\nRESULT FAIL data %s\n", code, why, code);
         return BO3_EXIT_NO_DATA;
@@ -970,6 +1431,10 @@ int bo3_install_main(int argc, char **argv)
     xr_install_result r;
     time_t t0 = time(NULL);
     int i, check = 0, remember = 0;
+    int whole_before[BO3_PACKAGE_COUNT], before = -1, recorded = -1, record_present = 0;
+    const char *place;
+    char def[1024];
+    char roots_before[BO3_PACKAGE_COUNT][1024], switched[1600] = "";
 
     for (i = 0; i < argc; i++) {
         if (!strcmp(argv[i], "--dest") && i + 1 < argc)
@@ -992,6 +1457,16 @@ int bo3_install_main(int argc, char **argv)
     }
     if (!source)
         return install_usage();
+    /* Another disc of the package: its program does the install (and says so
+     * on the same pipe), before this one has said a word. */
+    {
+        int disc = source_build(source);
+        if (disc >= 0 && disc != BO3_PACKAGE_SELF) {
+            char said[200];
+            snprintf(said, sizeof said, "the disc is the %s disc", k_package[disc].name);
+            pkg_exec(disc, said);
+        }
+    }
     if (!check) {
         /* A real install: the folders of the port's earlier name move now,
          * so the data goes under the new one. A --dest that names the
@@ -1012,12 +1487,24 @@ int bo3_install_main(int argc, char **argv)
             source = moved_source;
         }
     }
+    place = "named";
     if (dest_arg)
         snprintf(dest, sizeof dest, "%s", dest_arg);
     else if (env && *env)
         snprintf(dest, sizeof dest, "%s", env);
-    else if (!saved_root(dest, sizeof dest))
+    else if (saved_root(dest, sizeof dest))
+        place = "saved";
+    else {
         default_root(dest, sizeof dest);
+        place = "default";
+    }
+    if (!check) {
+        /* Which disc's program a start ran before this install, for the
+         * message, and whether disc.txt is wanted (pkg_installed). */
+        before = pkg_choose(0, whole_before, roots_before, &recorded, &record_present);
+        if (!whole_before[before])
+            before = -1;
+    }
     snprintf(s_cancel_file, sizeof s_cancel_file, "%s/install.cancel", dest);
     remove(s_cancel_file);              /* one left by an earlier run */
     signal(SIGINT, on_signal);
@@ -1072,6 +1559,16 @@ int bo3_install_main(int argc, char **argv)
         return 1;
     }
     if (check) {
+        /* For the setup window: the disc's program (this one) and where it
+         * puts the data, which may not be where the window's first question
+         * was answered (another disc's program). */
+        default_root(def, sizeof def);
+        out("LOG " STEP " build %s", BO3_BUILD_ID);
+        out("LOG " STEP " root %s", dest);
+        out("LOG " STEP " place %s", place);
+        out("LOG " STEP " default %s", def);
+        out("LOG " STEP " bytes %llu", (unsigned long long)xr_manifest_bytes(&k_manifest));
+        out("LOG " STEP " free-needed %llu", (unsigned long long)FREE_NEEDED);
         if (r.image)
             out("STEP " STEP " OK %s, %s (a disc image, game partition at 0x%llX)",
                 k_manifest.title, k_manifest.build, (unsigned long long)r.image_base);
@@ -1081,14 +1578,48 @@ int bo3_install_main(int argc, char **argv)
         out("RESULT OK %s", source);
         return 0;
     }
+    {
+        /* The start takes this disc from now on. disc.txt only when it
+         * matters: another disc's data is whole too, or the file is there. */
+        int others = 0;
+        for (i = 0; i < BO3_PACKAGE_COUNT; i++)
+            others += i != BO3_PACKAGE_SELF && whole_before[i];
+        if ((others || record_present) && BO3_PACKAGE_COUNT > 1 && !pkg_record(BO3_PACKAGE_SELF))
+            out("LOG " STEP " could not write %s: the game may start another disc's data", BO3_PACKAGE_RECORD);
+        else if (others || record_present)
+            out("LOG " STEP " start %s (%s)", BO3_BUILD_ID, BO3_PACKAGE_RECORD);
+        if (before >= 0 && before != BO3_PACKAGE_SELF) {
+            int shared = !strcmp(k_package[before].user_dir, BO3_USER_DIR);
+            int over = same_path(roots_before[before], dest);
+            out("LOG " STEP " switched from %s, %s %s", k_package[before].id, over ? "replaced in" : "kept in",
+                roots_before[before]);
+            snprintf(switched, sizeof switched,
+                     ". Takedawn starts this disc (%s) from now on. %s %s disc's data %s %s; "
+                     "%s. Install that disc again to go back to it",
+                     k_manifest.build, over ? "It replaces the" : "The", k_package[before].name,
+                     over ? "in" : "stays in", roots_before[before],
+                     shared ? "the two European discs share their saves and settings"
+                            : "each disc keeps its own saves and settings");
+        }
+        /* Another disc's data in this very folder (the two European discs share
+         * one, so does a folder chosen for both): this install took its place. */
+        for (i = 0; i < BO3_PACKAGE_COUNT; i++) {
+            size_t at = strlen(switched);
+            if (i == BO3_PACKAGE_SELF || i == before || !whole_before[i] || !same_path(roots_before[i], dest))
+                continue;
+            out("LOG " STEP " replaced %s in %s", k_package[i].id, dest);
+            snprintf(switched + at, sizeof switched - at, ". It replaces the %s disc's data in %s",
+                     k_package[i].name, dest);
+        }
+    }
     if (r.already)
-        out("STEP " STEP " SKIP already installed (%u files, manifest %s)", k_manifest.count,
-            k_manifest.id);
+        out("STEP " STEP " SKIP already installed (%u files, manifest %s)%s", k_manifest.count,
+            k_manifest.id, switched);
     else
         out("STEP " STEP " OK %u files, %llu bytes; %u copied, %u checked in place, %u kept "
-            "from an earlier run; %ld s", k_manifest.count,
+            "from an earlier run; %ld s%s", k_manifest.count,
             (unsigned long long)xr_manifest_bytes(&k_manifest), r.copied, r.verified, r.kept,
-            (long)(time(NULL) - t0));
+            (long)(time(NULL) - t0), switched);
     out("RESULT OK %s", dest);
     return 0;
 }
@@ -1145,8 +1676,9 @@ static int jni_cancelled(void *ctx)
     return s_jni_cancel;
 }
 
-/* 0: nothing there. 1: a whole install for this program. 2: an install for
- * another build (another manifest). 3: game files without the marker. */
+/* 0: nothing there. 1: a whole install of a disc of the package (the app
+ * starts that disc's library). 2: an install for another build (another
+ * manifest). 3: game files without the marker. */
 JNIEXPORT jint JNICALL
 Java_io_github_xenophobentx_takedawn_SetupActivity_nativeState(JNIEnv *env, jclass cls,
                                                                jstring jroot)
@@ -1159,23 +1691,31 @@ Java_io_github_xenophobentx_takedawn_SetupActivity_nativeState(JNIEnv *env, jcla
     (void)cls;
     snprintf(there, sizeof there, "%s/" GAME_DIR "/default.xbe", root);
     if (xr_install_marker_read(root, &mark))
-        state = !strcmp(mark.manifest, BO3_MANIFEST_ID) && file_exists(there) ? 1 : 2;
+        state = pkg_by_manifest(mark.manifest) >= 0 && file_exists(there) ? 1 : 2;
     else if (file_exists(there))
         state = 3;
     (*env)->ReleaseStringUTFChars(env, jroot, root);
     return state;
 }
 
-/* "<title>\n<build>\n<files>\n<bytes>\n<bytes wanted free>\n<version line>" */
+/* "<title>\n<version line>" and, for each disc of the package, a line
+ * "<build id>\t<manifest id>\t<disc>\t<files>\t<bytes>\t<bytes wanted free>". */
 JNIEXPORT jstring JNICALL
 Java_io_github_xenophobentx_takedawn_SetupActivity_nativeAbout(JNIEnv *env, jclass cls)
 {
-    char t[600];
+    char t[1600];
+    size_t at;
+    int i;
 
     (void)cls;
-    snprintf(t, sizeof t, "%s\n%s\n%u\n%llu\n%llu\n%s", k_manifest.title, k_manifest.build,
-             k_manifest.count, (unsigned long long)xr_manifest_bytes(&k_manifest),
-             (unsigned long long)FREE_NEEDED, bo3_version_line());
+    at = (size_t)snprintf(t, sizeof t, "%s\n%s", k_manifest.title, bo3_version_line());
+    for (i = 0; i < BO3_PACKAGE_COUNT && at < sizeof t; i++) {
+        xr_manifest m = pkg_manifest(i);
+        at += (size_t)snprintf(t + at, sizeof t - at, "\n%s\t%s\t%s\t%u\t%llu\t%llu", k_package[i].id,
+                               k_package[i].manifest_id, k_package[i].name, m.count,
+                               (unsigned long long)xr_manifest_bytes(&m),
+                               (unsigned long long)pkg_free_needed(i));
+    }
     return (*env)->NewStringUTF(env, t);
 }
 
@@ -1208,9 +1748,11 @@ static int jni_source_open(void *ctx, const char *rel, uint64_t *size)
 }
 
 /* The install: from the descriptor of a disc image (fd >= 0), from a folder
- * by path, or (tree) from the document tree SetupActivity holds. Calls
- * this.onProgress(double, String) as it goes. Returns
- * "<code word>\n<sentence>\n<copied> <checked in place> <kept> <already>". */
+ * by path, or (tree) from the document tree SetupActivity holds; of any disc
+ * of the package, with that disc's manifest (the marker then names it, and
+ * the app starts its library). Calls this.onProgress(double, String) as it
+ * goes. Returns "<code word>\n<sentence>\n<copied> <checked in place>
+ * <kept> <already>\n<build id of the disc, or ->". */
 static jstring jni_install(JNIEnv *env, jobject self, jint fd, jstring jfolder, jstring jroot,
                            int tree)
 {
@@ -1247,11 +1789,20 @@ static jstring jni_install(JNIEnv *env, jobject self, jint fd, jstring jfolder, 
     o.progress = j.progress ? jni_progress : NULL;
     o.cancelled = jni_cancelled;
     if (tree && !o.source_open) {
-        snprintf(t, sizeof t, "internal\nThe setup page cannot read folders.\n0 0 0 0");
+        snprintf(t, sizeof t, "internal\nThe setup page cannot read folders.\n0 0 0 0\n-");
     } else {
+        int disc = source_build_of(&o);
+        xr_manifest m;
+        if (disc < 0)
+            disc = BO3_PACKAGE_SELF;    /* none of them: this one's install says what it is */
+        m = pkg_manifest(disc);
+        o.manifest = &m;
+        if (!folder)
+            o.free_needed = pkg_free_needed(disc);
         xr_install(&o, &r);
-        snprintf(t, sizeof t, "%s\n%s\n%u %u %u %d", xr_install_code_name(r.code), r.message,
-                 r.copied, r.verified, r.kept, r.already);
+        snprintf(t, sizeof t, "%s\n%s\n%u %u %u %d\n%s", xr_install_code_name(r.code), r.message,
+                 r.copied, r.verified, r.kept, r.already,
+                 r.code == XR_INSTALL_OK ? k_package[disc].id : "-");
     }
     if (folder)
         (*env)->ReleaseStringUTFChars(env, jfolder, folder);

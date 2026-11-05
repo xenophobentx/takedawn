@@ -34,8 +34,8 @@ class CTest(unittest.TestCase):
 
     def test_paired_and_comments_pass(self):
         self.assertEqual(self.run_c('/* 0x54F900 sub_00011000 */\n'
-                                    '#define A BO3_VA(0x0054F900u, 0x0054FC20u)  // 0x60EA00\n'
-                                    'extern void BO3_SUB(sub_001D2879, sub_001D2B99)(void);\n'
+                                    '#define A BO3_VA(0x0054F900u, 0x0054FC20u, 0x0054FCC0u)  // 0x60EA00\n'
+                                    'extern void BO3_SUB(sub_001D2879, sub_001D2B99, sub_001D2C39)(void);\n'
                                     'static const char *s = "0x4D5370";\n'
                                     '#define B 0x10000u\n'), [])
 
@@ -43,12 +43,48 @@ class CTest(unittest.TestCase):
         self.assertEqual(self.run_c('{ 0x5fe00, 128 }, /* region: not an address, an offset */\n'), [])
 
     def test_pairs_disagree(self):
-        self.assertEqual(len(self.run_c('#define A BO3_VA(0x54F900, 0x54FC20)\n'
-                                        '#define B BO3_VA(0x54F900, 0x54FC24)\n')), 1)
+        self.assertEqual(len(self.run_c('#define A BO3_VA(0x54F900, 0x54FC20, 0x54FCC0)\n'
+                                        '#define B BO3_VA(0x54F900, 0x54FC24, 0x54FCC0)\n')), 1)
+
+    def test_third_values_disagree(self):
+        self.assertEqual(len(self.run_c('#define A BO3_VA(0x54F900, 0x54FC20, 0x54FCC0)\n'
+                                        '#define B BO3_VA(0x54F900, 0x54FC20, 0x54FCC4)\n')), 1)
+
+    def test_two_values_are_not_enough(self):
+        self.assertEqual(len(self.run_c('#define A BO3_VA(0x54F900, 0x54FC20)\n')), 1)
+        self.assertEqual(len(self.run_c('extern void BO3_SUB(sub_001D2879, sub_001D2B99)(void);\n')), 1)
 
     def test_same_value_needs_saying(self):
-        self.assertEqual(len(self.run_c('#define A BO3_VA(0x54F900, 0x54F900)\n')), 1)
-        self.assertEqual(self.run_c('#define A BO3_VA(0x54F900, 0x54F900) /* region: same */\n'), [])
+        self.assertEqual(len(self.run_c('#define A BO3_VA(0x54F900, 0x54F900, 0x54FCC0)\n')), 1)
+        self.assertEqual(len(self.run_c('#define A BO3_VA(0x54F900, 0x54FC20, 0x54F900)\n')), 1)
+        self.assertEqual(self.run_c('#define A BO3_VA(0x54F900, 0x54F900, 0x54F900) /* region: same */\n'), [])
+
+
+class WrapTest(unittest.TestCase):
+    def test_each_pal_file_needs_every_twin(self):
+        with tempfile.TemporaryDirectory() as t:
+            ntsc = os.path.join(t, 'n.c'); pal = os.path.join(t, 'p.c')
+            with open(ntsc, 'w') as f:
+                f.write('void sub_00011000(void) { h(sub_00011000_gen); }\n'
+                        'void sub_00012000(void) { h(sub_00012000_gen); }\n')
+            with open(pal, 'w') as f:
+                f.write('void sub_000110A0(void) { h(sub_000110A0_gen); }   /* NTSC-U sub_00011000 */\n'
+                        'void sub_00017470(void) { g(sub_00017470_gen); }   /* region: PAL-ENSV only */\n')
+            orig = check.os.path.join
+            def join(*a):
+                if a[-1] == 'src/game/recomp/recomp_manual.c':
+                    return ntsc
+                if a[-1] == 'x/p.c':
+                    return pal
+                return orig(*a)
+            check.os.path.join = join
+            try:
+                problems = []
+                check.check_wraps_one(problems, 'x/p.c', 'PAL En/Es/Nl/Sv')
+            finally:
+                check.os.path.join = orig
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn('sub_00012000', problems[0])
 
 
 class ConfigTest(unittest.TestCase):
@@ -71,7 +107,7 @@ class ConfigTest(unittest.TestCase):
         real = check._load
         def fake(rel):
             d = real(rel)
-            if rel == 'config/pal/seed_functions.json':
+            if rel == 'config/pal-ensv/seed_functions.json':
                 d = [dict(e) for e in d]
                 d[0]['note'] = 'no address'
             return d

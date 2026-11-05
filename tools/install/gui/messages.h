@@ -41,7 +41,7 @@ bool LooksLikeArchive(const QString& path);
 // disc holds ...", "<file> is missing from ...", "<file> has N bytes in ..."), or empty.
 QString DamagedFile(const QString& message);
 
-// `--install` (and its `--check`) failed.
+// `--install` (and its `--check`) failed. The words name the discs every package takes.
 Explained ExplainInstall(const QString& code, const InstallFacts& facts = {});
 // The window's own failures: the game's program is missing, could not be started,
 // ended without an answer ("program-missing", "program-start", "program-crashed",
@@ -54,6 +54,8 @@ Explained ExplainProgram(const QString& code);
 QString ProgramFailedCode(int exit_code);
 // The optional shader build did not work: a warning, never a failed install.
 Explained ExplainShaders(const QString& code);
+// The optional menu picture upscale (BO-311): what went wrong, in plain words.
+Explained ExplainUpscale(const QString& code);
 // The graphics preparation (and so the game) found no graphics device it can use and runs
 // on the CPU: a warning, never a stop.
 Explained ExplainGpu();

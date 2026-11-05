@@ -102,11 +102,17 @@ grep -q "^RESULT OK" "$T/check.txt" || die "--install --check gave no RESULT OK"
 echo "OK   --install --check: $(grep -a '^STEP disc OK' "$T/check.txt" | head -1 | cut -c1-110)"
 ti=$(date +%s)
 run nice -n "$NICE" "$EXE" --install "$DISC" > "$T/install.txt" 2>&1 || { tail -5 "$T/install.txt" >&2; die "--install failed"; }
-ROOT="$T/home/Library/Application Support/Takedawn/Game"
+# The disc's own program installs it into its own folder (src/game/package.h:
+# a European disc's under "Takedawn PAL"): the root is the one it reports.
+ROOT="$(sed -n 's/^RESULT OK //p' "$T/install.txt" | tail -1)"
+case "$ROOT" in "$T/home/"*) ;; *) die "the install went to '$ROOT', not into the scratch HOME" ;; esac
 [ -f "$ROOT/.complete" ] || die "no .complete marker in $ROOT"
-grep -q "$(manifest_id)" "$ROOT/.complete" || die ".complete does not name manifest $(manifest_id)"
+got=""
+for r in $PKG_REGIONS; do use_region "$r"; grep -q "$(manifest_id)" "$ROOT/.complete" && got="$(manifest_id) ($BUILD_ID)"; done
+use_region "${PKG_REGIONS%% *}"
+[ -n "$got" ] || die ".complete names no manifest of the package"
 n="$(find "$ROOT/Burnout 3 Takedown" -type f | wc -l | tr -d ' ')"
-echo "OK   install into the scratch HOME: $n files, $(( $(date +%s) - ti )) s, .complete names manifest $(manifest_id)"
+echo "OK   install into the scratch HOME: $n files in ${ROOT#$T/home/}, $(( $(date +%s) - ti )) s, .complete names manifest $got"
 # The folders of the port's earlier name: queries move nothing; a real
 # install and a game start with its data move them (test-user-dirs.sh).
 bash "$REPO/tools/release/test-user-dirs.sh" "$EXE" "$T/dirs" "$ROOT" > "$T/dirs.txt" 2>&1 \
@@ -134,7 +140,7 @@ boot() {
 }
 # One game at a time on this Mac: wait for anybody else's to end.
 waited=0
-while pgrep -x takedawn >/dev/null || pgrep -x burnout3 >/dev/null; do
+while pgrep -x "Takedawn(-pal|-ensv)?" >/dev/null || pgrep -x takedawn >/dev/null || pgrep -x burnout3 >/dev/null; do
     if [ "$waited" -ge "${TAKEDAWN_SMOKE_WAIT:-900}" ]; then
         echo "NOT RUN boot to the menu: another game instance was running for ${waited}s"
         exit 0

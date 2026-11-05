@@ -8,7 +8,7 @@
 # the list widget, the marks' registers) is that disc's, so the test is for
 # the NTSC-U build. The PAL build's marks are checked against the generated
 # code of the PAL disc (cmake/modsmenu_marks.cmake) and by tools/region/check.py.
-if(BO3_REGION STREQUAL "PAL")
+if(BO3_REGION STREQUAL "PAL" OR BO3_REGION STREQUAL "PAL-ENSV")
     return()
 endif()
 add_executable(bo3_modsmenu_test test_main.c

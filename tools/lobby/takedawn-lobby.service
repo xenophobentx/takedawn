@@ -1,0 +1,49 @@
+# Takedawn online lobby (poll loop, usage statistics; branch bo3/lobby-stats).
+# Install: binary at /usr/local/bin/takedawn-lobby, this file at
+# /etc/systemd/system/takedawn-lobby.service, then
+#   systemctl daemon-reload && systemctl enable --now takedawn-lobby
+# Only TCP 21810 (the default port) has to be open; races go peer to peer.
+# --public may be an IPv4 address or a name (resolved at start and every 10 minutes).
+# Logs: journalctl -u takedawn-lobby
+# Usage totals (counts only): /var/lib/takedawn-lobby/daily.jsonl, current.json
+# Public page (stats.json, index.html): /run/takedawn-lobby, mode 0755, for a web server.
+# (Not under /var/lib: with DynamicUser that is /var/lib/private, root only.)
+# Countries and the owner's page (BO-367): put the DB-IP Lite country CSV and the
+# admin-token file in /home/takedawn-deploy/lobby-data (any folder the service
+# cannot otherwise see works); it is mounted read-only at /run/takedawn-lobby-data.
+# Missing folder or files: countries read ?? and there is no owner's page. With a
+# token the public folder is 0711 (it cannot be listed; the token names a folder in it).
+[Unit]
+Description=Takedawn online lobby
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/takedawn-lobby --public lobby.example.org --stats 300 --stats-dir /var/lib/takedawn-lobby --public-dir /run/takedawn-lobby --geoip /run/takedawn-lobby-data/dbip-country-lite.csv --admin-token-file /run/takedawn-lobby-data/admin-token
+DynamicUser=yes
+StateDirectory=takedawn-lobby
+RuntimeDirectory=takedawn-lobby
+RuntimeDirectoryMode=0711
+BindReadOnlyPaths=-/home/takedawn-deploy/lobby-data:/run/takedawn-lobby-data
+LimitNOFILE=8192
+MemoryMax=256M
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+SystemCallFilter=@system-service
+
+[Install]
+WantedBy=multi-user.target

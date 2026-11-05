@@ -1,14 +1,15 @@
 # Building from source
 
-For developers. Players do not need any of this: the downloads are ready to
-run (see the [README](../README.md)).
+This page is for developers. The downloads are ready to run (see the
+[README](../README.md)).
 
 The repository holds no game code and no game data. A build translates your
 own `default.xbe` into C and compiles that, so you need your own disc of the
 supported release (North America retail, `default.xbe` SHA-256
 `9f497acd82adb8edfb72cc31aeeb35010b45d32b13a3f1fc6540717ff24d13f9`, recorded
 in [`tools/install/supported.json`](../tools/install/supported.json)), or of
-the European release with `BO3_REGION=PAL` ([pal.md](pal.md)).
+one of the two European releases with `BO3_REGION=PAL` or `PAL-ENSV`
+([pal.md](pal.md); a release package carries all three programs).
 
 The generated C (`src/game/recomp/gen/`), the build output and the disc files
 are ignored by git. Never commit or share them.
@@ -91,8 +92,8 @@ python3 tools/install/install.py --source "<your image or folder>" --toolkit ../
 ```
 
 Its steps, options and line protocol are in [installer.md](installer.md), the
-window in [installer-gui.md](installer-gui.md). One thing to know: its
-`regen.py` does not pass the patch list yet, so a game built by it lacks the
+window in [installer-gui.md](installer-gui.md). Its `regen.py` does not pass
+the patch list yet, so a game built by it lacks the
 km/h, widescreen HUD, ultrawide, bloom and motion blur switches. Use
 `regen.sh` for a build with them.
 
@@ -108,7 +109,7 @@ tools/release/release.sh 0.1.0      # builds and smoke-runs; uploads nothing
 ```
 
 A release build (`-DBO3_RELEASE=ON`) names the program `takedawn`. A build
-without it is `bin/burnout3`, as before. The data installer inside the program
+without it is `bin/burnout3`. The data installer inside the program
 and the setup window are in [installer.md](installer.md).
 
 ## Tests

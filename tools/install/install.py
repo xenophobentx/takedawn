@@ -405,6 +405,7 @@ REGEN_STAGES = {"xbe_parser": 0.0, "disasm": 0.03, "func_id": 0.45, "abi_analysi
 
 
 def step_regen(ctx):
+    ctx.gen_dir = regen.gen_dir(ctx.work, region_of(ctx))
     py = getattr(ctx, "regen_python", None) or (ctx.python or sys.executable if ctx.win else python_for_regen(ctx))
     xbe_path = os.path.join(ctx.game_dir, "default.xbe")
     xbe_sha = xbe_mod.sha256_file(xbe_path)
@@ -412,7 +413,7 @@ def step_regen(ctx):
     gen_ok = os.path.isdir(ctx.gen_dir) and any(n.startswith("recomp_") for n in os.listdir(ctx.gen_dir))
     if gen_ok and ctx.done("regen", key):
         return "SKIP", "generated code is current (%s)" % ctx.gen_dir
-    out_dir = os.path.join(ctx.work, "build", "xr")
+    out_dir = os.path.join(ctx.work, "build", {"PAL": "xr-pal", "PAL-ENSV": "xr-pal-ensv"}.get(region_of(ctx), "xr"))
 
     def stage(name):
         ctx.out.progress("regen", REGEN_STAGES[name], name)
@@ -435,6 +436,7 @@ NINJA_PROGRESS = re.compile(r"^\[(\d+)/(\d+)\]")
 
 def step_build(ctx):
     ctx.region = region_of(ctx)         # -DBO3_REGION for the disc's build (docs/pal.md)
+    ctx.gen_dir = regen.gen_dir(ctx.work, ctx.region)
     if ctx.win:
         return build_win(ctx)
     if not ctx.mac:

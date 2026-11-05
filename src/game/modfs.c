@@ -6,11 +6,15 @@
  * named wins. ';' separates them on every system (a ':' is part of a path).
  * Each mirrors the disc: <folder>/Tracks/US/C3_V1/static.dat is read instead
  * of the disc's Tracks\US\C3_V1\static.dat. A file a folder does not have is
- * read from the disc as before. Unset (the default): nothing is installed and
- * no path changes. On Android, where there is no shell to set it from, unset
- * means <the app's files folder>/mods when that folder exists
- * (RECOMP_ANDROID_DIR, which GameActivity sets); a TAKEDAWN_MODS line in
- * env.txt still wins, and an empty one turns the folder off.
+ * read from the disc as before. After them, the default mods folder when it
+ * exists (BO-327: a pad player has no shell to set a variable from):
+ * bo3_modfs_default_dir, which the game sets to data/mods beside the program
+ * in portable mode, else to the mods folder in the per-user data folder
+ * (~/.local/share/takedawn/mods on Linux and the Steam Deck); on Android
+ * <the app's files folder>/mods (RECOMP_ANDROID_DIR, which GameActivity
+ * sets). TAKEDAWN_MODS set but empty turns the default folder off. With
+ * neither (and no folder of generated mods) nothing is installed and no path
+ * changes.
  *
  * How: xbox_PathRedirectHook (the toolkit's kernel.h), chained to the hook
  * already there (the soundtrack's). For a D:\ or \Device\CdRom0\ path whose
@@ -252,6 +256,29 @@ static int mod_file(const char *dir, const char *rel, char *out, size_t n, int *
     }
 }
 
+/* A folder path the toolkit can open, into out: on Windows the path is
+ * read back in the guest's code page (kernel_path.c), so one that is not
+ * plain ASCII (a user name with an accent in %LOCALAPPDATA%) is replaced by
+ * its short (8.3) form, which is. 0 when there is none (short names are off
+ * on that volume) or it is not ASCII either. Elsewhere the bytes are handed on
+ * as they are: any UTF-8 path but one with a control character or a '\'. */
+int bo3_modfs_host_path(const char *full, char *out, size_t n)
+{
+    wchar_t wide[MAX_PATH], shrt[MAX_PATH];
+    DWORD got;
+    if (printable_ascii(full))
+        return snprintf(out, n, "%s", full) < (int)n;
+    /* The process's ANSI code page: UTF-8 with Takedawn's manifest. */
+    if (!MultiByteToWideChar(CP_ACP, 0, full, -1, wide, MAX_PATH))
+        return 0;
+    got = GetShortPathNameW(wide, shrt, MAX_PATH);
+    if (!got || got >= MAX_PATH)
+        return 0;
+    if (!WideCharToMultiByte(CP_ACP, 0, shrt, -1, out, (int)n, NULL, NULL))
+        return 0;
+    return printable_ascii(out);
+}
+
 /* The folder tok names, as a full path without a trailing separator. Only a
  * folder on a drive letter (X:\...): the hook hands back "\\?\" + the path,
  * which names nothing for a network share (\\server\share, whose long form
@@ -274,8 +301,13 @@ static int mod_folder(const char *tok, char *full)
         return 0;
     }
     if (!printable_ascii(full)) {
-        XR_NOTICE("[MOD] ignored (the path is not plain ASCII): %s\n", tok);
-        return 0;
+        char shrt[MAX_PATH];
+        if (!bo3_modfs_host_path(full, shrt, sizeof shrt)) {
+            XR_NOTICE("[MOD] ignored (the path is not plain ASCII and has no short name): %s\n", tok);
+            return 0;
+        }
+        XR_NOTICE("[MOD] %s: by its short name %s (the path is not plain ASCII)\n", tok, shrt);
+        strcpy(full, shrt);
     }
     len = strlen(full);
     while (len > 3 && (full[len - 1] == '\\' || full[len - 1] == '/'))
@@ -376,6 +408,15 @@ static int mod_file(const char *dir, const char *rel, char *out, size_t n, int *
     return ok;
 }
 
+int bo3_modfs_host_path(const char *full, char *out, size_t n)
+{
+    const unsigned char *p;
+    for (p = (const unsigned char *)full; *p; p++)
+        if (*p < 0x20 || *p == 0x7F || *p == '\\')
+            return 0;
+    return snprintf(out, n, "%s", full) < (int)n;
+}
+
 /* The folder tok names, as a full path with every link in it resolved. */
 static int mod_folder(const char *tok, char *full)
 {
@@ -386,8 +427,8 @@ static int mod_folder(const char *tok, char *full)
         XR_NOTICE("[MOD] ignored (not a folder): %s\n", tok);
         return 0;
     }
-    if (!printable_ascii(real) || strchr(real, '\\')) {
-        XR_NOTICE("[MOD] ignored (the path is not plain ASCII, or has a '\\'): %s\n", tok);
+    if (!bo3_modfs_host_path(real, full, MAX_PATH)) {
+        XR_NOTICE("[MOD] ignored (the path has a control character or a '\\', or is too long): %s\n", tok);
         return 0;
     }
     if (strlen(real) >= MAX_PATH) {
@@ -1551,6 +1592,94 @@ static void find_conflicts(void)
     free(keys);
 }
 
+/* ── Texture packs: the textures/ folders (BO-312) ─────────────────────
+ * The folders PNG texture packs are read from, in lookup order: for each
+ * folder TAKEDAWN_MODS names, its own textures/ (loose), then the textures/ of
+ * each usable mod that is on, by id. The same order as files: the first pack
+ * with a texture wins. A folder named textures in any case (once), a real
+ * folder (not a link or junction). Made at the start. */
+#define MODFS_TEX_MAX (MODFS_MAX_DIRS + BO3_MODFS_MAX_MODS)
+static struct { char dir[MAX_PATH]; char name[BO3_MODFS_PATH_MAX]; int mod; } s_tex[MODFS_TEX_MAX];
+static int s_ntex;
+
+/* folder's textures subfolder (its own spelling) into out; 1 when exactly one
+ * entry is named textures in some case and is a plain folder. */
+static int textures_dir(const char *folder, char *out, size_t n)
+{
+    char found[MODFS_NAME_MAX + 1] = "";
+    int hits = 0, plain = 0;
+#if defined(_WIN32)
+    WIN32_FIND_DATAA fd;
+    char pat[MAX_PATH];
+    HANDLE h;
+    if (snprintf(pat, sizeof pat, "%s%s*", folder, ends_in_sep(folder) ? "" : "\\") >= (int)sizeof pat)
+        return 0;
+    h = FindFirstFileA(pat, &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return 0;
+    do {
+        if (same_nocase(fd.cFileName, "textures")) {
+            hits++;
+            snprintf(found, sizeof found, "%s", fd.cFileName);
+            plain = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                 && !(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT);
+        }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+#else
+    DIR *d = opendir(folder);
+    struct dirent *de;
+    if (!d)
+        return 0;
+    while ((de = readdir(d)) != NULL) {
+        if (same_nocase(de->d_name, "textures")) {
+            char full[MAX_PATH];
+            struct stat st;
+            hits++;
+            snprintf(found, sizeof found, "%s", de->d_name);
+            plain = snprintf(full, sizeof full, "%s/%s", folder, found) < (int)sizeof full
+                 && lstat(full, &st) == 0 && S_ISDIR(st.st_mode);
+        }
+    }
+    closedir(d);
+#endif
+    if (hits != 1 || !plain)
+        return 0;
+    return snprintf(out, n, "%s%s%s", folder, ends_in_sep(folder) ? "" : SEP_STR, found) < (int)n;
+}
+
+static void find_textures(void)
+{
+    s_ntex = 0;
+    for (int r = 0; r < s_ndirs; r++) {
+        if (s_dup[r])
+            continue;
+        if (textures_dir(s_dirs[r], s_tex[s_ntex].dir, sizeof s_tex[s_ntex].dir)) {
+            snprintf(s_tex[s_ntex].name, sizeof s_tex[s_ntex].name, "folder %d", r + 1);
+            s_tex[s_ntex++].mod = -1;
+        }
+        for (int i = 0; i < s_nmods; i++) {
+            if (s_mods[i].root != r || !s_mods[i].usable || !s_mods[i].enabled)
+                continue;
+            if (textures_dir(s_mods[i].folder, s_tex[s_ntex].dir, sizeof s_tex[s_ntex].dir)) {
+                snprintf(s_tex[s_ntex].name, sizeof s_tex[s_ntex].name, "%s", s_mods[i].manifest.id);
+                s_tex[s_ntex++].mod = i;
+                XR_NOTICE("[MOD] mod %s has texture packs: %s\n", s_mods[i].manifest.id,
+                          s_tex[s_ntex - 1].dir);
+            }
+        }
+    }
+}
+
+int bo3_modfs_texture_dir(int i, char *dir, size_t n, char *name, size_t nn)
+{
+    if (i < 0 || i >= s_ntex)
+        return 0;
+    snprintf(dir, n, "%s", s_tex[i].dir);
+    snprintf(name, nn, "%s", s_tex[i].name);
+    return 1;
+}
+
 int bo3_modfs_folder_count(void)
 {
     return s_ndirs;
@@ -1711,6 +1840,45 @@ static int same_as_earlier(int r)
     return 0;
 }
 
+/* The folder of mods made on this computer (BO-311's upscaled menu
+ * pictures): taken after the TAKEDAWN_MODS folders and the default one when it
+ * is there. */
+static char s_gen_dir[MAX_PATH];
+/* The default mods folder (BO-327): taken after the TAKEDAWN_MODS folders
+ * when it is there. */
+static char s_def_dir[MAX_PATH];
+
+void bo3_modfs_generated_dir(const char *dir)
+{
+    snprintf(s_gen_dir, sizeof s_gen_dir, "%s", dir ? dir : "");
+}
+
+void bo3_modfs_default_dir(const char *dir)
+{
+    snprintf(s_def_dir, sizeof s_def_dir, "%s", dir ? dir : "");
+}
+
+const char *bo3_modfs_default_dir_name(void)
+{
+    return s_def_dir;
+}
+
+static int dir_there(const char *d)
+{
+#if defined(_WIN32)
+    DWORD a = d[0] ? GetFileAttributesA(d) : INVALID_FILE_ATTRIBUTES;
+    return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
+#else
+    struct stat st;
+    return d[0] && stat(d, &st) == 0 && S_ISDIR(st.st_mode);
+#endif
+}
+
+static int gen_dir_there(void)
+{
+    return dir_there(s_gen_dir);
+}
+
 /* After xbox_path_init and the soundtrack's hook, before the title runs.
  * Called again (the unit test), it replaces the folder list; the hook is
  * installed once. */
@@ -1718,16 +1886,16 @@ void bo3_modfs_init(void)
 {
     const char *e = getenv("TAKEDAWN_MODS");
     char buf[MODFS_MAX_DIRS * MAX_PATH];
+    int def_on;
 #if defined(__ANDROID__)
-    char app_mods[MAX_PATH];
-    if (!e) {
+    if (!s_def_dir[0]) {
         const char *app = getenv("RECOMP_ANDROID_DIR");
-        struct stat st;
-        if (app && *app && snprintf(app_mods, sizeof app_mods, "%s/mods", app) < (int)sizeof app_mods
-                && stat(app_mods, &st) == 0 && S_ISDIR(st.st_mode))
-            e = app_mods;
+        if (app && *app && snprintf(s_def_dir, sizeof s_def_dir, "%s/mods", app) >= (int)sizeof s_def_dir)
+            s_def_dir[0] = 0;
     }
 #endif
+    /* An empty TAKEDAWN_MODS turns the default folder off. */
+    def_on = !(e && !*e) && dir_there(s_def_dir);
 
 #if defined(_WIN32)
     if (!s_lock_made) {
@@ -1743,13 +1911,14 @@ void bo3_modfs_init(void)
     s_nmods = 0;
     s_nsrc = 0;
     s_nconf = 0;
+    s_ntex = 0;
     s_noff = 0;            /* before the title runs: no other thread yet */
     s_state_read = 0;      /* the mod list: read below when there is a mod, else when asked */
     s_state_bad = 0;
     s_state_said = 0;
-    if (!e || !*e)
+    if ((!e || !*e) && !def_on && !gen_dir_there())
         return;
-    strncpy(buf, e, sizeof buf - 1);
+    strncpy(buf, e ? e : "", sizeof buf - 1);
     buf[sizeof buf - 1] = 0;
     /* Split at ';' by hand: strtok is not thread-safe, and bionic marks it
      * deprecated. Empty items (";;") are skipped. */
@@ -1770,6 +1939,16 @@ void bo3_modfs_init(void)
         s_ndirs++;
         XR_NOTICE("[MOD] folder %d: %s\n", s_ndirs, s_dirs[s_ndirs - 1]);
     }
+    if (def_on && s_ndirs < MODFS_MAX_DIRS && mod_folder(s_def_dir, s_dirs[s_ndirs])) {
+        s_dup[s_ndirs] = same_as_earlier(s_ndirs);
+        s_ndirs++;
+        XR_NOTICE("[MOD] folder %d: %s (the default mods folder)\n", s_ndirs, s_dirs[s_ndirs - 1]);
+    }
+    if (gen_dir_there() && s_ndirs < MODFS_MAX_DIRS && mod_folder(s_gen_dir, s_dirs[s_ndirs])) {
+        s_dup[s_ndirs] = same_as_earlier(s_ndirs);
+        s_ndirs++;
+        XR_NOTICE("[MOD] folder %d: %s (made on this computer)\n", s_ndirs, s_dirs[s_ndirs - 1]);
+    }
     for (int r = 0; r < s_ndirs; r++)
         find_mods(r);
     if (s_nmods) {          /* the mod list is read at the start only when there is a mod */
@@ -1779,6 +1958,7 @@ void bo3_modfs_init(void)
     }
     list_mods();
     find_conflicts();
+    find_textures();
     fflush(stderr);
     if (!s_ndirs || xbox_PathRedirectHook == redirect)
         return;

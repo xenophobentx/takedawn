@@ -22,22 +22,35 @@ JOBS="${JOBS:-4}"
 B=/out/build
 A=/out/AppDir
 
-cmake -S /src/game -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Release -DBO3_RELEASE=ON -DBO3_REGION="${BO3_REGION:-NTSC-U}" \
-    -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
-    -DXBOXRECOMP_DIR=/src/toolkit -DBO3_BIN_DIR="$B/bin" \
-    -DSDL2_DIR=/sdl/lib/cmake/SDL2 -DSDL3_DIR=/sdl/lib/cmake/SDL3 \
-    -DBO3_GLYPHS_ART_DIR=/stage/glyphs \
-    -DCMAKE_EXE_LINKER_FLAGS="-Wl,--as-needed" > /out/configure.log 2>&1 \
-    || { tail -20 /out/configure.log >&2; echo "configure failed" >&2; exit 1; }
-start=$(date +%s)
-nice -n "${NICE:-10}" cmake --build "$B" --target burnout3 -j"$JOBS" > /out/build.log 2>&1 \
-    || { tail -30 /out/build.log >&2; echo "build failed" >&2; exit 1; }
-echo "build took $(( $(date +%s) - start )) s"
+# Every program of the package (BO3_REGIONS: NTSC-U, the main one, then PAL
+# and PAL-ENSV, which go beside it as takedawn-pal and takedawn-ensv;
+# src/game/package.h): /out/build for the first, /out/build-<region> for the
+# others.
+REGIONS="${BO3_REGIONS:-${BO3_REGION:-NTSC-U}}"
+FIRST="${REGIONS%% *}"
+for R in $REGIONS; do
+    BR="$B"; [ "$R" = "$FIRST" ] || BR="$B-$R"
+    cmake -S /src/game -B "$BR" -G Ninja -DCMAKE_BUILD_TYPE=Release -DBO3_RELEASE=ON -DBO3_REGION="$R" \
+        -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+        -DXBOXRECOMP_DIR=/src/toolkit -DBO3_BIN_DIR="$BR/bin" \
+        -DSDL2_DIR=/sdl/lib/cmake/SDL2 -DSDL3_DIR=/sdl/lib/cmake/SDL3 \
+        -DBO3_GLYPHS_ART_DIR=/stage/glyphs \
+        -DCMAKE_EXE_LINKER_FLAGS="-Wl,--as-needed" > /out/configure-$R.log 2>&1 \
+        || { tail -20 /out/configure-$R.log >&2; echo "$R: configure failed" >&2; exit 1; }
+    start=$(date +%s)
+    nice -n "${NICE:-10}" cmake --build "$BR" --target burnout3 -j"$JOBS" > /out/build-$R.log 2>&1 \
+        || { tail -30 /out/build-$R.log >&2; echo "$R: build failed" >&2; exit 1; }
+    echo "build took $(( $(date +%s) - start )) s ($R)"
+    # -ffp-contract=off held: no fused multiply-add anywhere (BO-282.2).
+    bash /src/game/tools/release/check-fp.sh objdump "$BR/bin/takedawn" || { echo "$R: fused multiply-add in the program" >&2; exit 1; }
+done
 
 rm -rf "$A"
 mkdir -p "$A/usr/bin" "$A/usr/lib" "$A/usr/share/applications" \
          "$A/usr/share/icons/hicolor/256x256/apps" "$A/usr/share/licenses/takedawn"
 cp "$B/bin/takedawn" "$A/usr/bin/takedawn"
+[ ! -x "$B-PAL/bin/takedawn" ] || cp "$B-PAL/bin/takedawn" "$A/usr/bin/takedawn-pal"
+[ ! -x "$B-PAL-ENSV/bin/takedawn" ] || cp "$B-PAL-ENSV/bin/takedawn" "$A/usr/bin/takedawn-ensv"
 # BO-245: graphics.texture_upscale's shader files (LGPL-3.0-or-later, loaded
 # at runtime from usr/share/takedawn/shaders/upscale; their NOTICE.md says
 # where they come from and how to replace them).
@@ -98,6 +111,8 @@ closure() {
 }
 ldd "$B/bin/takedawn" > /out/ldd.txt
 closure "$B/bin/takedawn"
+[ ! -x "$A/usr/bin/takedawn-pal" ] || closure "$A/usr/bin/takedawn-pal"
+[ ! -x "$A/usr/bin/takedawn-ensv" ] || closure "$A/usr/bin/takedawn-ensv"
 # sdl2-compat opens SDL3 by name at run time; ldd does not show it.
 carry /sdl/lib/libSDL3.so.0; closure /sdl/lib/libSDL3.so.0
 [ -f "$A/usr/lib/libSDL2-2.0.so.0" ] || { echo "takedawn does not link the SDL2 built for it" >&2; exit 1; }
@@ -173,6 +188,8 @@ cp /stage/takedawn-256.png "$A/.DirIcon"
 cp /stage/takedawn-256.png "$A/usr/share/icons/hicolor/256x256/apps/takedawn.png"
 cp /stage/licenses/* "$A/usr/share/licenses/takedawn/"
 cp /stage/README.txt "$A/README.txt"
+# The menu pictures' upscaler (BO-311): usr/bin/upscaler beside takedawn.
+[ -d /stage/upscaler ] && cp -R /stage/upscaler "$A/usr/bin/upscaler"
 chmod -R u+rwX,go+rX "$A"
 echo "glibc needed: $(objdump -T "$B/bin/takedawn" | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -1)"
 echo "carried: $(cut -d' ' -f1 /out/carried.txt | tr '\n' ' ')"

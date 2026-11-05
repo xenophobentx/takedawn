@@ -624,7 +624,36 @@ class RegionTest(unittest.TestCase):
 
     def test_every_build_names_its_region(self):
         regions = {b["id"]: b["bo3_region"] for b in disc.load_supported()}
-        self.assertEqual(regions, {"ntsc-u-retail": "NTSC-U", "pal-retail": "PAL"})
+        self.assertEqual(regions, {"ntsc-u-retail": "NTSC-U", "pal-retail": "PAL",
+                                   "pal-ensv-retail": "PAL-ENSV"})
+
+    def test_one_package_has_every_disc(self):
+        # BO-341: one package per platform with the three programs (src/game/package.h), the
+        # North America one first (the main program); each keeps the folders its own
+        # package had (the two PAL programs share theirs).
+        builds = disc.load_supported()
+        self.assertEqual([b["id"] for b in builds], ["ntsc-u-retail", "pal-retail", "pal-ensv-retail"])
+        self.assertEqual({b["id"]: b.get("package") for b in builds},
+                         {"ntsc-u-retail": "takedawn", "pal-retail": "takedawn", "pal-ensv-retail": "takedawn"})
+        self.assertEqual({b["id"]: b.get("program_suffix") for b in builds},
+                         {"ntsc-u-retail": "", "pal-retail": "-pal", "pal-ensv-retail": "-ensv"})
+        self.assertEqual({b["id"]: b.get("user_dir") for b in builds},
+                         {"ntsc-u-retail": "Takedawn", "pal-retail": "Takedawn PAL", "pal-ensv-retail": "Takedawn PAL"})
+        shas = [b["xbe"]["sha256"] for b in builds]
+        self.assertEqual(len(set(shas)), 3)
+
+    def test_the_second_pal_disc(self):
+        import regen
+        root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..")
+        seeds, spin, manual = regen.inputs("/w", "PAL-ENSV")
+        self.assertEqual(manual, os.path.join("/w", "src", "game", "recomp", "recomp_manual_pal_ensv.c"))
+        self.assertEqual(seeds, os.path.join("/w", "config", "pal-ensv", "seed_functions.json"))
+        for p in regen.inputs(root, "PAL-ENSV"):
+            self.assertTrue(os.path.isfile(p), p)
+        self.assertEqual(regen.gen_dir("/w", "PAL-ENSV"), os.path.join("/w", "src", "game", "recomp", "gen.pal-ensv"))
+        self.assertEqual(regen.gen_dir("/w", "PAL"), os.path.join("/w", "src", "game", "recomp", "gen.pal"))
+        self.assertEqual(regen.gen_dir("/w", "NTSC-U"), os.path.join("/w", "src", "game", "recomp", "gen"))
+        self.assertTrue(os.path.isfile(os.path.join(root, "config", "disc", "pal-ensv-retail.manifest")))
 
     def test_regen_inputs(self):
         import regen

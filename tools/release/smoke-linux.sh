@@ -26,6 +26,13 @@ export RECOMP_LOG_DIAG=1
 APP=""; KEEP=0
 for a in "$@"; do case "$a" in --keep) KEEP=1 ;; *) APP="$a" ;; esac; done
 NAME="Takedawn-$VERSION-linux-x86_64.AppImage"
+# the package's discs (any of them may be the one given to the install)
+package_manifest_ids() {
+    local r ids=""
+    for r in $PKG_REGIONS; do use_region "$r"; ids="$ids${ids:+,}$(manifest_id)"; done
+    use_region "${PKG_REGIONS%% *}"
+    printf '%s' "$ids"
+}
 APP="${APP:-$DIST/$NAME}"
 [ -f "$APP" ] || die "no AppImage at $APP"
 HOST="${TAKEDAWN_LINUX_HOST:?TAKEDAWN_LINUX_HOST: the Linux machine}"
@@ -46,7 +53,7 @@ if [ -n "$SAVES_REF" ]; then
     rsync -a --delete --include 'UDATA/***' --include 'TDATA/***' --exclude '*' "$SAVES_REF/" "$HOST:$LDIR/smoke-in/saves/"
     saves_arg="\$PWD/$LDIR/smoke-in/saves"
 fi
-cmd="cd ~ && export RECOMP_LOG_DIAG=1 && bash $LDIR/smoke-in/smoke-remote.sh $LDIR/smoke-in/$NAME $LDIR/smoke $(manifest_id) \$PWD/$LDIR/smoke-in/src '${TAKEDAWN_LINUX_DISC:-}' \"$saves_arg\"; st=\$?; [ $KEEP = 1 ] || rm -rf $LDIR/smoke; exit \$st"
+cmd="cd ~ && export RECOMP_LOG_DIAG=1 && bash $LDIR/smoke-in/smoke-remote.sh $LDIR/smoke-in/$NAME $LDIR/smoke $(package_manifest_ids) \$PWD/$LDIR/smoke-in/src '${TAKEDAWN_LINUX_DISC:-}' \"$saves_arg\"; st=\$?; [ $KEEP = 1 ] || rm -rf $LDIR/smoke; exit \$st"
 if [ -n "${TESTHOST_LOCK:-}" ] && [ -x "$TESTHOST_LOCK" ]; then
     "$TESTHOST_LOCK" run "$HOST" burnout3/release "release smoke run (Linux AppImage)" 900 -- ssh "$HOST" "$cmd" \
         | grep -v "^acquired\|^released"

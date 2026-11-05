@@ -44,6 +44,8 @@ class WindowTest : public QObject {
   // Most tests are about the data step: the "Prepare graphics" box starts unticked for them
   // (the window's own default is ticked, shadersAreOnByDefault checks that one).
   bool shaders_ = false;
+  // What the fake game offers for the menu picture upscale ("": an older game that says nothing).
+  QByteArray upscale_;
 
   // A fresh window over a data root of its own; `prepare` puts things there first.
   InstallerWindow* Make(const std::function<void(const QString&)>& prepare = {}, const QString& dest = QString()) {
@@ -53,6 +55,8 @@ class WindowTest : public QObject {
     qputenv("TAKEDAWN_FAKE_ROOT", root_.toUtf8());
     qputenv("TAKEDAWN_FAKE_PACE", "0");
     qputenv("TAKEDAWN_FAKE_SHADERS", "ok");
+    qputenv("TAKEDAWN_FAKE_UPSCALE", upscale_);
+    qputenv("TAKEDAWN_FAKE_UPSCALE_RUN", "ok");
     if (prepare) prepare(dest.isEmpty() ? root_ : dest);
     LaunchConfig config;
     config.program = QCoreApplication::applicationDirPath() + "/fake_installer";
@@ -110,6 +114,25 @@ class WindowTest : public QObject {
     QVERIFY(!w->note_->isVisible());
     w->play_->click();
     QCOMPARE(w->play_count_, 1);
+  }
+
+  // BO-341: one package, a program per disc. A European disc's check is answered by its own
+  // program, which keeps the data in its own folder and is another size: "Installs to" and
+  // the space line follow it; a North America disc again goes back to the first answer's.
+  void anotherDiscsProgramHasItsOwnFolder() {
+    InstallerWindow* w = Make();
+    QTRY_COMPARE(w->phase_, PH::Idle);
+    QCOMPARE(w->data_build_, QString("ntsc-u-retail"));
+    const QString first = w->data_root_;
+    Choose(w, "europe-frdeit.iso", DS::Valid);
+    QCOMPARE(w->data_build_, QString("pal-retail"));
+    QCOMPARE(w->data_root_, QDir::cleanPath(root_ + " PAL"));
+    QCOMPARE(w->free_needed_, 3400000000ll);
+    QCOMPARE(w->data_bytes_, 2966033036ll);
+    QVERIFY(w->dest_label_->FullText().contains(QDir::toNativeSeparators(root_ + " PAL")));
+    Choose(w, "Burnout 3 - Takedown (USA).iso", DS::Valid);
+    QCOMPARE(w->data_build_, QString("ntsc-u-retail"));
+    QCOMPARE(w->data_root_, first);
   }
 
   // Each failure code, as the check gives it (the disc card says it) or as the copy
@@ -923,6 +946,161 @@ class WindowTest : public QObject {
     QCOMPARE(theme::kEntry, QColor(0xac, 0xd4, 0xfc));
     QCOMPARE(theme::kDim, QColor(0x82, 0x96, 0xab));
     QCOMPARE(theme::kAccent, theme::kCrimson);
+  }
+
+  // BO-311: "Sharper menu pictures". Not shown by a game that does not offer it.
+  void upscaleHiddenWithoutOffer() {
+    upscale_ = "";
+    InstallerWindow* w = Make();
+    QTRY_COMPARE(w->phase_, PH::Idle);
+    QVERIFY(!w->upscale_box_->isVisible());
+    upscale_ = "no";
+    w = Make();
+    QTRY_COMPARE(w->phase_, PH::Idle);
+    QVERIFY(!w->upscale_box_->isVisible());
+    upscale_ = "";
+  }
+
+  // Offered "on": ticked; its own row runs after the data, with the suggested quality.
+  void upscaleTickedRunsAfterTheData() {
+    upscale_ = "on";
+    InstallerWindow* w = Make();
+    QTRY_COMPARE(w->phase_, PH::Idle);
+    QVERIFY(w->upscale_box_->isVisible());
+    QVERIFY(w->upscale_box_->isChecked());
+    QVERIFY(w->upscale_cost_->text().contains("no internet"));
+    Choose(w, "good.iso", DS::Valid);
+    w->primary_->click();
+    QTRY_COMPARE_WITH_TIMEOUT(w->phase_, PH::Done, 20000);
+    QCOMPARE(w->Row("disc")->status, RS::Ok);
+    QCOMPARE(w->Row("upscale")->status, RS::Ok);
+    QCOMPARE(w->Row("upscale")->info->FullText(), QString("The menu pictures are upscaled."));
+    QVERIFY(w->last_command_.contains("--upscale-art"));
+    QVERIFY(w->last_command_.contains("best"));
+    QVERIFY(!w->upscale_box_->isVisible());
+    QVERIFY(QFileInfo::exists(root_ + "/fake-upscale-made"));
+    upscale_ = "";
+  }
+
+  // With the shader build too: shaders first, then the pictures.
+  void upscaleAfterShaders() {
+    upscale_ = "on";
+    shaders_ = true;
+    InstallerWindow* w = Make();
+    QTRY_COMPARE(w->phase_, PH::Idle);
+    Choose(w, "good.iso", DS::Valid);
+    w->primary_->click();
+    QTRY_COMPARE_WITH_TIMEOUT(w->phase_, PH::Done, 20000);
+    QCOMPARE(w->Row("shaders")->status, RS::Ok);
+    QCOMPARE(w->Row("upscale")->status, RS::Ok);
+    QCOMPARE(w->rows_.size(), 3);
+    QCOMPARE(w->rows_[1].id, QString("shaders"));
+    QCOMPARE(w->rows_[2].id, QString("upscale"));
+    shaders_ = false;
+    upscale_ = "";
+  }
+
+  // Offered "off" (a handheld, built-in graphics): shown, not ticked; installed without it,
+  // the offer is turned down so the window does not ask again.
+  void upscaleUntickedIsDeclined() {
+    upscale_ = "off";
+    InstallerWindow* w = Make();
+    QTRY_COMPARE(w->phase_, PH::Idle);
+    QVERIFY(w->upscale_box_->isVisible());
+    QVERIFY(!w->upscale_box_->isChecked());
+    QVERIFY(w->upscale_cost_->text().contains("Not ticked on this computer"));
+    Choose(w, "good.iso", DS::Valid);
+    w->primary_->click();
+    QTRY_COMPARE_WITH_TIMEOUT(w->phase_, PH::Done, 20000);
+    QVERIFY(!w->Row("upscale"));
+    QVERIFY(QFileInfo::exists(root_ + "/fake-upscale-declined"));
+    upscale_ = "";
+  }
+
+  // A failure or a stop is a warning: the game is installed, Play is offered.
+  void upscaleFailureIsAWarning() {
+    upscale_ = "on";
+    InstallerWindow* w = Make();
+    QTRY_COMPARE(w->phase_, PH::Idle);
+    Choose(w, "good.iso", DS::Valid);
+    qputenv("TAKEDAWN_FAKE_UPSCALE_RUN", "fail");
+    w->primary_->click();
+    QTRY_COMPARE_WITH_TIMEOUT(w->phase_, PH::Done, 20000);
+    QCOMPARE(w->Row("disc")->status, RS::Ok);
+    QCOMPARE(w->Row("upscale")->status, RS::Warning);
+    QVERIFY(w->Row("upscale")->info->FullText().contains("graphics card stopped"));
+    QVERIFY(w->note_->isVisible());
+    QVERIFY(w->play_->isVisible());
+
+    w = Make();
+    QTRY_COMPARE(w->phase_, PH::Idle);
+    Choose(w, "good.iso", DS::Valid);
+    qputenv("TAKEDAWN_FAKE_UPSCALE_RUN", "hold");
+    w->primary_->click();
+    QTRY_VERIFY_WITH_TIMEOUT(w->Row("upscale") && w->Row("upscale")->status == RS::Running &&
+                             w->Row("upscale")->fraction >= 0.5, 20000);
+    QVERIFY(!w->upscale_work_.isEmpty());
+    w->Cancel();
+    QTRY_COMPARE_WITH_TIMEOUT(w->phase_, PH::Done, 20000);
+    QCOMPARE(w->Row("upscale")->status, RS::Warning);
+    QVERIFY(w->Row("upscale")->info->FullText().contains("stopped"));
+    QVERIFY(w->play_->isVisible());
+    upscale_ = "";
+  }
+
+  // An update over an install without the pack: offered once, unticked, with its own button.
+  void upscaleOfferedOnceOnAnUpdate() {
+    upscale_ = "on";
+    auto installed = [](const QString& root) {
+      OldInstall(root);
+      QFile f(root + "/.complete");
+      QVERIFY(f.open(QIODevice::WriteOnly));
+    };
+    InstallerWindow* w = Make(installed);
+    QTRY_COMPARE(w->phase_, PH::Done);
+    QVERIFY(w->upscale_box_->isVisible());
+    QVERIFY(!w->upscale_box_->isChecked());
+    QVERIFY(!w->primary_->isVisible());
+    QVERIFY(w->play_->isVisible());
+    w->upscale_box_->setChecked(true);
+    QVERIFY(w->primary_->isVisible());
+    QCOMPARE(w->primary_->text(), QString("Upscale menu pictures"));
+    w->primary_->click();
+    QTRY_COMPARE_WITH_TIMEOUT(w->phase_, PH::Done, 20000);
+    QTRY_VERIFY(w->Row("upscale") && w->Row("upscale")->status == RS::Ok);
+    QCOMPARE(w->Row("disc")->status, RS::Skipped);
+    QVERIFY(!w->upscale_box_->isVisible());
+    QVERIFY(!w->primary_->isVisible());
+    QVERIFY(w->play_->isVisible());
+
+    // Made: not offered again.
+    const QString root = root_;
+    w = Make([&](const QString& r) { installed(r); QFile f(r + "/fake-upscale-made"); QVERIFY(f.open(QIODevice::WriteOnly)); });
+    QTRY_COMPARE(w->phase_, PH::Done);
+    QVERIFY(!w->upscale_box_->isVisible());
+
+    // Seen and Play pressed without it: declined, and the next window does not show it.
+    w = Make(installed);
+    QTRY_COMPARE(w->phase_, PH::Done);
+    QVERIFY(w->upscale_box_->isVisible());
+    w->Play();
+    QVERIFY(QFileInfo::exists(root_ + "/fake-upscale-declined"));
+    const QString declined_root = root_;
+    w_.reset();
+    {
+      // the same data root again
+      qputenv("TAKEDAWN_FAKE_ROOT", declined_root.toUtf8());
+      LaunchConfig config;
+      config.program = QCoreApplication::applicationDirPath() + "/fake_installer";
+      config.test = true;
+      w_ = std::make_unique<InstallerWindow>(config);
+      w_->setAttribute(Qt::WA_DontShowOnScreen);
+      w_->show();
+      QTRY_COMPARE(w_->phase_, PH::Done);
+      QVERIFY(!w_->upscale_box_->isVisible());
+    }
+    Q_UNUSED(root);
+    upscale_ = "";
   }
 
   void cleanup() { w_.reset(); }

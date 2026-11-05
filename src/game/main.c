@@ -55,7 +55,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>                /* strcasecmp: bo3_languages_init */
+#include <strings.h>                /* strcasecmp: bo3_lang_installed */
 #include <dirent.h>
 #include <math.h>
 #include <time.h>
@@ -72,10 +72,16 @@ extern void xbox_InputPanicStop(int wait_ms);
 #include "region.h"                   /* BO3_VA: NTSC-U or PAL addresses */
 #include "controls.h"                 /* input.control_scheme (BO-106) */
 #include "install.h"                  /* the data root, --install, --version (BO-103) */
+#include "languages.h"                /* the Language row's languages */
 #include "fatal.h"                    /* a start-up failure the player sees */
 #include "glyphs.h"                   /* the button prompts for the pad in use (BO-107) */
 #include "soundtrack.h"               /* custom music (BO-108) */
 #include "mixer.h"                    /* the host mixer (BO-114) */
+#include "online.h"                   /* online play (BO-134) */
+#include "onlinebot.h"                /* the online test navigator (BO-134) */
+#include "react.h"                    /* the quick reactions (BO-352) */
+#include "onlinenav.h"                /* the player's online navigator (BO-352) */
+#include "xboxlive.h"                 /* Takedawn Online: the online page (bo3_xboxlive_flip) */
 #include "dsound_notify.h"            /* the DirectSound done-list guard (BO-173) */
 #include "gp_image.h"                 /* the GP effects image (BO-119) */
 #include "nv2a_texrep.h"              /* the LED sign decals' depth offset (BO-176) */
@@ -107,6 +113,10 @@ extern void xbox_InputPanicStop(int wait_ms);
 #define BO3_HAVE_SHADERBUILD 1
 #include "shaderbuild.h"
 #endif
+/* Sharper menu pictures (BO-311, upscale.h): every build; on Android the
+ * model runs in the game's process (BO-326). */
+#define BO3_HAVE_UPSCALE 1
+#include "upscale.h"
 
 /* RECOMP_TLS is required: the runtime defines these thread-local, and a plain
  * extern resolves to the image's TLS template rather than this thread's copy,
@@ -153,6 +163,7 @@ int recomp_dispatch_init(void);
 #include "platform/recomp_env.h"
 #include "platform/recomp_patch.h"
 #include "platform/recomp_save_dir.h"
+#include "platform/recomp_exe_dir.h"       /* portable mode: the default mods folder (BO-327) */
 #include "platform/recomp_instance.h"     /* one copy per save root (BO-129) */
 #include "kernel_saveguard.h"             /* saves replaced whole (BO-129) */
 #include "kernel_save_import.h"           /* --import-save: an original Xbox save (BO-209) */
@@ -171,6 +182,7 @@ static void save_guard_init(void);
 #if __has_include("xbox_report.h")
 #define BO3_HAVE_BUG_REPORT 1
 #include "xbox_report.h"
+#include "xnet_hle.h"
 #if defined(BO3_HAVE_BUILD_ID)
 #include "bo3_build_id.h"       /* BO3_BUILD_COMMIT, made at build time */
 #endif
@@ -414,6 +426,32 @@ static void env_default(const char *name, const char *value)
 #endif
 }
 
+/* BO-271: the main display is a 16:10 one (or close: a MacBook's 1.54),
+ * for the default aspect: 16:10 there, 16:9 elsewhere. The desktop mode of
+ * display 0, before the window exists (SDL's video is started for the
+ * question and stopped again). */
+static int host_display_1610(void)
+{
+#if (!defined(_WIN32) || defined(XBOXRECOMP_WIN_VULKAN)) && !defined(__ANDROID__)
+    SDL_DisplayMode m;
+    int started = 0;
+    double a = 0.0;
+
+    if (!SDL_WasInit(SDL_INIT_VIDEO)) {
+        if (SDL_InitSubSystem(SDL_INIT_VIDEO) != 0)
+            return 0;
+        started = 1;
+    }
+    if (SDL_GetDesktopDisplayMode(0, &m) == 0 && m.h > 0)
+        a = (double)m.w / (double)m.h;
+    if (started)
+        SDL_QuitSubSystem(SDL_INIT_VIDEO);
+    return a >= 1.45 && a < 1.69;       /* nearer 16:10 (1.6) than 16:9 (1.78) */
+#else
+    return 0;
+#endif
+}
+
 static BOOL load_xbe(const char *path, void **out_data, size_t *out_size)
 {
     FILE *f = fopen(path, "rb");
@@ -498,7 +536,7 @@ static int bo3_voice_tag(uint32_t *out, int max)
         if ((a & 0xFFFu) == 0 && i && a >= 0x04000000u)
             break;
         v = *(const uint32_t *)(mem + a);
-        if (v < 0x00011010u || v >= BO3_VA(0x002CC200u, 0x002CC500u))  /* region: not an address, a code range for a stack scan */
+        if (v < 0x00011010u || v >= BO3_VA(0x002CC200u, 0x002CC500u, 0x002CC5A0u))  /* region: not an address, a code range for a stack scan */
             continue;
         /* call rel32, or an indirect call (FF /2) of 2, 3 or 6 bytes. */
         if (mem[v - 5] == 0xE8 ||
@@ -681,7 +719,7 @@ static int hm_ok(uint32_t p)
 
 static void hud_mon_flip(uint32_t flip)
 {
-    static const uint32_t scenes[4] = { BO3_VA(0x54F914, 0x54FC34), BO3_VA(0x54F984, 0x54FCA4), BO3_VA(0x557A20, 0x557D40), BO3_VA(0x45BAD0, 0x45BDF0) };
+    static const uint32_t scenes[4] = { BO3_VA(0x54F914, 0x54FC34, 0x54FCD4), BO3_VA(0x54F984, 0x54FCA4, 0x54FD44), BO3_VA(0x557A20, 0x557D40, 0x557DE0), BO3_VA(0x45BAD0, 0x45BDF0, 0x45BE90) };
     static double last_x0 = -1.0, last_x1 = -1.0, last_aspect = -1.0;
     static int last_fix = -1;
     const double eps = 0.5;
@@ -779,7 +817,7 @@ static void hud_mon_flip(uint32_t flip)
  * connected pad: the port, wButtons and the eight analog bytes (A B X Y
  * Black White, LT, RT). tools/headless/reverse_scene.sh asserts on it. Off
  * unless set. */
-#define DL_PADS   BO3_VA(0x004AE20Cu, 0x004AE52Cu)           /* the pad manager (sub_00021A50's edi) */
+#define DL_PADS   BO3_VA(0x004AE20Cu, 0x004AE52Cu, 0x004AE5CCu)           /* the pad manager (sub_00021A50's edi) */
 static FILE *s_dl_f;
 static volatile uint32_t s_uw_flips;    /* the title's flips (uw_flip, below) */
 
@@ -869,17 +907,17 @@ static void pace_log(uint32_t flip)
 
     if (!s_pl_f || !m)
         return;
-    stage = HD_M32(BO3_VA(0x4D5370, 0x4D5690));
+    stage = HD_M32(BO3_VA(0x4D5370, 0x4D5690, 0x4D5730));
     fprintf(s_pl_f, "P %u t %.3f req %u cur %u mode %u/%u steps %d gs %u"
             " wt %u slow %u run %u crash %u%u st %u obj %08X gt %u ft %.5f"
             " pl %u mu %u/%u\n",
-            flip, pace_ms(), m[BO3_VA(0x4D538D, 0x4D56AD)], m[BO3_VA(0x4D538E, 0x4D56AE)], HD_M32(BO3_VA(0x4D5390, 0x4D56B0)),
-            HD_M32(BO3_VA(0x4D5394, 0x4D56B4)), (int)HD_M32(BO3_VA(0x4D53AC, 0x4D56CC)), HD_M32(BO3_VA(0x4A1EB4, 0x4A21D4)),
-            HD_M32(BO3_VA(0x60EA0C, 0x60ED1C)), HD_M32(BO3_VA(0x60EA18, 0x60ED28)), m[BO3_VA(0x60EA28, 0x60ED38)],
-            m[BO3_VA(0x73BACA, 0x73BDDA)], m[BO3_VA(0x73BACA, 0x73BDDA) + 0x27E0], HD_M32(BO3_VA(0x4D53B4, 0x4D56D4)),
+            flip, pace_ms(), m[BO3_VA(0x4D538D, 0x4D56AD, 0x4D574D)], m[BO3_VA(0x4D538E, 0x4D56AE, 0x4D574E)], HD_M32(BO3_VA(0x4D5390, 0x4D56B0, 0x4D5750)),
+            HD_M32(BO3_VA(0x4D5394, 0x4D56B4, 0x4D5754)), (int)HD_M32(BO3_VA(0x4D53AC, 0x4D56CC, 0x4D576C)), HD_M32(BO3_VA(0x4A1EB4, 0x4A21D4, 0x4A2274)),
+            HD_M32(BO3_VA(0x60EA0C, 0x60ED1C, 0x60EDBC)), HD_M32(BO3_VA(0x60EA18, 0x60ED28, 0x60EDC8)), m[BO3_VA(0x60EA28, 0x60ED38, 0x60EDD8)],
+            m[BO3_VA(0x73BACA, 0x73BDDA, 0x73BE7A)], m[BO3_VA(0x73BACA, 0x73BDDA, 0x73BE7A) + 0x27E0], HD_M32(BO3_VA(0x4D53B4, 0x4D56D4, 0x4D5774)),
             (stage >= 0x10000u && stage < 0x08000000u) ? HD_M32(stage + 0x1B8) : 0,
-            HD_M32(BO3_VA(0x4AE1EC, 0x4AE50C)), HD_MF(BO3_VA(0x4D53B0, 0x4D56D0)),
-            HD_M32(BO3_VA(0x73A1C0, 0x73A4D0)), HD_M32(BO3_VA(0x4115E8, 0x411918) + 0x5F4), HD_M32(BO3_VA(0x4115E8, 0x411918) + 0x5F8));
+            HD_M32(BO3_VA(0x4AE1EC, 0x4AE50C, 0x4AE5AC)), HD_MF(BO3_VA(0x4D53B0, 0x4D56D0, 0x4D5770)),
+            HD_M32(BO3_VA(0x73A1C0, 0x73A4D0, 0x73A570)), HD_M32(BO3_VA(0x4115E8, 0x411918, 0x4119B8) + 0x5F4), HD_M32(BO3_VA(0x4115E8, 0x411918, 0x4119B8) + 0x5F8));
 }
 
 static void pace_log_start(void)
@@ -1005,7 +1043,7 @@ static double rival_switch(int which)
         if (e && sscanf(e, "%lf,%lf", &n, &f) == 2 && n > 0.0 && f >= n) {
             fprintf(stderr, "[RIVAL] switch at %.1f / %.1f (BO3_RIVAL_SWITCH); the marker"
                     " hidden past %.1f (%.1f with 0x5A3759 = %u)\n", n, f,
-                    HD_MF(BO3_VA(0x60E560, 0x60E870)), HD_MF(BO3_VA(0x60E540, 0x60E850)), (unsigned)(HD_M32(BO3_VA(0x5A3758, 0x5A3A68)) >> 8 & 0xFFu));
+                    HD_MF(BO3_VA(0x60E560, 0x60E870, 0x60E910)), HD_MF(BO3_VA(0x60E540, 0x60E850, 0x60E8F0)), (unsigned)(HD_M32(BO3_VA(0x5A3758, 0x5A3A68, 0x5A3B08)) >> 8 & 0xFFu));
         } else {
             n = RIVAL_NEAR;
             f = RIVAL_FAR;
@@ -1027,7 +1065,7 @@ static void scenery_props_dump(void)
     uint32_t trk, tab;
     int n, i;
 
-    if (!g_xbox_mem_offset || !(trk = HD_M32(BO3_VA(0x7397B4, 0x739AC4))))
+    if (!g_xbox_mem_offset || !(trk = HD_M32(BO3_VA(0x7397B4, 0x739AC4, 0x739B64))))
         return;
     n = *(const int16_t *)((uintptr_t)g_xbox_mem_offset + trk + 0x34);
     tab = HD_M32(trk + 0x38);
@@ -1105,11 +1143,11 @@ static void fx_at_flip(uint32_t flip)
             fprintf(stderr, "BO3_FX_AT: flip %u, graphics.vehicle_detail = %s"
                     " (x%.0f; title's distances %.0f %.0f %.0f / %.0f %.0f)\n",
                     flip, k[v], vehicle_lod_scale(),
-                    g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D61D8, 0x4D64F8)) : 0.0f,
-                    g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D61DC, 0x4D64FC)) : 0.0f,
-                    g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D61E0, 0x4D6500)) : 0.0f,
-                    g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D61E4, 0x4D6504)) : 0.0f,
-                    g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D61E8, 0x4D6508)) : 0.0f);
+                    g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D61D8, 0x4D64F8, 0x4D6598)) : 0.0f,
+                    g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D61DC, 0x4D64FC, 0x4D659C)) : 0.0f,
+                    g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D61E0, 0x4D6500, 0x4D65A0)) : 0.0f,
+                    g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D61E4, 0x4D6504, 0x4D65A4)) : 0.0f,
+                    g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D61E8, 0x4D6508, 0x4D65A8)) : 0.0f);
             continue;
         }
         if (!strcmp(what, "sdetail")) {
@@ -1138,7 +1176,7 @@ static void fx_at_flip(uint32_t flip)
              * distance, in a paused scene). */
             static float saved[64];
             static unsigned char have[64];
-            uint32_t trk = g_xbox_mem_offset ? HD_M32(BO3_VA(0x7397B4, 0x739AC4)) : 0;
+            uint32_t trk = g_xbox_mem_offset ? HD_M32(BO3_VA(0x7397B4, 0x739AC4, 0x739B64)) : 0;
             int t = atoi(what + 5);
 
             if (trk && t >= 0 && t < 64
@@ -1174,9 +1212,9 @@ static void fx_at_flip(uint32_t flip)
         fprintf(stderr, "BO3_FX_AT: flip %u, %s = %g (bloom threshold %.3f"
                 " intensity %.3f, blur strength %.3f)\n", flip,
                 blur ? "graphics.motion_blur" : "graphics.bloom", dv,
-                g_xbox_mem_offset ? HD_MF(BO3_VA(0x7397C0, 0x739AD0)) : 0.0f,
-                g_xbox_mem_offset ? HD_MF(BO3_VA(0x7397C4, 0x739AD4)) : 0.0f,
-                g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D6340, 0x4D6660) + 0x58) : 0.0f);
+                g_xbox_mem_offset ? HD_MF(BO3_VA(0x7397C0, 0x739AD0, 0x739B70)) : 0.0f,
+                g_xbox_mem_offset ? HD_MF(BO3_VA(0x7397C4, 0x739AD4, 0x739B74)) : 0.0f,
+                g_xbox_mem_offset ? HD_MF(BO3_VA(0x4D6340, 0x4D6660, 0x4D6700) + 0x58) : 0.0f);
     }
     fclose(f);
 }
@@ -1224,13 +1262,13 @@ static void hud_dump_frames(FILE *f, uint32_t fr, int depth)
 
 static void hud_dump_scenes(FILE *f)
 {
-    static const uint32_t scenes[4] = { BO3_VA(0x54F914, 0x54FC34), BO3_VA(0x54F984, 0x54FCA4), BO3_VA(0x557A20, 0x557D40), BO3_VA(0x45BAD0, 0x45BDF0) };
+    static const uint32_t scenes[4] = { BO3_VA(0x54F914, 0x54FC34, 0x54FCD4), BO3_VA(0x54F984, 0x54FCA4, 0x54FD44), BO3_VA(0x557A20, 0x557D40, 0x557DE0), BO3_VA(0x45BAD0, 0x45BDF0, 0x45BE90) };
     int s;
 
     fprintf(f, "rect0 %.2f %.2f %.2f %.2f rect1 %.2f %.2f %.2f %.2f nplayers %u\n",
-            HD_MF(BO3_VA(0x54F948, 0x54FC68)), HD_MF(BO3_VA(0x54F94C, 0x54FC6C)), HD_MF(BO3_VA(0x54F950, 0x54FC70)), HD_MF(BO3_VA(0x54F954, 0x54FC74)),
-            HD_MF(BO3_VA(0x54F9B8, 0x54FCD8)), HD_MF(BO3_VA(0x54F9BC, 0x54FCDC)), HD_MF(BO3_VA(0x54F9C0, 0x54FCE0)), HD_MF(BO3_VA(0x54F9C4, 0x54FCE4)),
-            HD_M32(BO3_VA(0x54FA70, 0x54FD90)));
+            HD_MF(BO3_VA(0x54F948, 0x54FC68, 0x54FD08)), HD_MF(BO3_VA(0x54F94C, 0x54FC6C, 0x54FD0C)), HD_MF(BO3_VA(0x54F950, 0x54FC70, 0x54FD10)), HD_MF(BO3_VA(0x54F954, 0x54FC74, 0x54FD14)),
+            HD_MF(BO3_VA(0x54F9B8, 0x54FCD8, 0x54FD78)), HD_MF(BO3_VA(0x54F9BC, 0x54FCDC, 0x54FD7C)), HD_MF(BO3_VA(0x54F9C0, 0x54FCE0, 0x54FD80)), HD_MF(BO3_VA(0x54F9C4, 0x54FCE4, 0x54FD84)),
+            HD_M32(BO3_VA(0x54FA70, 0x54FD90, 0x54FE30)));
     for (s = 0; s < 4; s++) {
         uint32_t sc = scenes[s], root = HD_M32(sc + 0x14), nl = HD_M32(sc + 0x30);
         uint32_t la = HD_M32(sc + 0x2C), l;
@@ -2004,9 +2042,9 @@ static int host_main(void)
      * Nothing unless audio.custom_music_dir (--music-dir) names one. */
     bo3_soundtrack_init();
     /* Mod folders: disc files replaced by files in the folders TAKEDAWN_MODS
-     * names (modfs.c, docs/mod-folders.md). Nothing unless it is set (on
-     * Android: or the app's mods folder exists). After the soundtrack, whose
-     * path hook it chains to. */
+     * names and in the default mods folder when it exists (BO-327; modfs.c,
+     * docs/mod-folders.md). After the soundtrack, whose path hook it chains
+     * to. */
     {
         /* Which mods are off: TAKEDAWN_MOD_LIST names the file ("": none),
          * else mod-list.toml beside settings.toml (else in the save folder),
@@ -2027,8 +2065,42 @@ static int host_main(void)
             snprintf(path, sizeof(path), "%.*s/mod-list.toml", (int)(sl - set), set);
         else
             snprintf(path, sizeof(path), "%s/mod-list.toml", s_save_dir);
+        extern void bo3_modtex_init(void);
+        extern void bo3_modfs_generated_dir(const char *dir);
         bo3_modfs_state_file(path);
+#if !defined(__ANDROID__) && defined(BO3_HAVE_REPORTS)
+        {
+            /* The default mods folder (BO-327): data/mods beside the program
+             * in portable mode, else mods in the per-user data folder (the
+             * Mods tab names the same one). Android: the app's own, in
+             * modfs. */
+            extern void bo3_modfs_default_dir(const char *dir);
+            char root[1024], mods[1100];
+            if (recomp_portable_root(root, sizeof root)
+                || recomp_user_dir(RECOMP_DIR_DATA, BO3_USER_DIR, root, sizeof root))
+                snprintf(mods, sizeof mods, "%s/mods", root);
+            else
+                mods[0] = 0;
+            bo3_modfs_default_dir(mods);
+        }
+#endif
+#ifdef BO3_HAVE_UPSCALE
+        {
+            /* The pack made on this computer turns on and off at once on the
+             * MODS page: it is textures only (modtex.c, bo3_modtex_live). */
+            extern void bo3_modsmenu_set_live(int (*fn)(const char *id, int on));
+            bo3_modsmenu_set_live(bo3_upscale_mods_live);
+        }
+        {
+            /* The mods made on this computer (the upscaled menu pictures,
+             * BO-311): a mod folder of their own, after TAKEDAWN_MODS's. */
+            char gen[1024];
+            bo3_upscale_retire_packs();
+            bo3_modfs_generated_dir(bo3_generated_mods_dir(gen, sizeof gen) ? gen : NULL);
+        }
+#endif
         bo3_modfs_init();
+        bo3_modtex_init();   /* BO-312: the mods' textures/ folders, in mod order */
     }
     /* BO-114: the host mixer's buses, wave table and preset file. Names
      * only unless audio.mixer (RECOMP_AUDIO_MIXER) is on. */
@@ -2037,6 +2109,16 @@ static int host_main(void)
         bo3_mixer_init(BO3_GAME_DIR, xbox_SettingsPath(), s_save_dir);
     }
     bo3_dsound_notify_init();           /* BO-173: the done-list guard */
+    /* BO-134: online.mode = lan finds or starts the lobby for the local
+     * network. Nothing unless online play is on. */
+    bo3_online_init();
+    /* BO-134: RECOMP_DEBUG=onlinebot=host|guest, the online test navigator
+     * (onlinebot.c): nothing unless set. */
+    bo3_onlinebot_start();
+    /* BO-352: TAKEDAWN_ONLINENAV=quick|create|join, the player's online
+     * navigator (onlinenav.c): nothing unless set (step 3 starts it from the
+     * menus). */
+    bo3_onlinenav_start();
     xbox_kernel_bridge_init();
 
     g_esp = XBOX_STACK_TOP;
@@ -2053,7 +2135,7 @@ static int host_main(void)
      * fence as an honest acknowledgement of everything submitted; the chain
      * is re-read and bounds-checked on every poll, so registering before the
      * device exists is harmless. */
-    xbox_Nv2aMirrorFence(BO3_VA(0x0035FB48u, 0x0035FE48u), 0x2Cu, 0x30u);
+    xbox_Nv2aMirrorFence(BO3_VA(0x0035FB48u, 0x0035FE48u, 0x0035FEE8u), 0x2Cu, 0x30u);
 
     /* The vblank count the XMV player paces on. sub_0034E0A0 hands back
      * [device+0x1DE8], which only D3D's vblank handler (sub_00356DA0, inc at
@@ -2067,7 +2149,7 @@ static int host_main(void)
      * it run at 60 + flips per second, so it is registered only where no
      * vblank is delivered. */
 #if !defined(BO3_FORK_RUNTIME)
-    xbox_Nv2aFrameCounter(BO3_VA(0x0035FB48u, 0x0035FE48u), 0x1DE8u);
+    xbox_Nv2aFrameCounter(BO3_VA(0x0035FB48u, 0x0035FE48u, 0x0035FEE8u), 0x1DE8u);
 #endif
 
 #if defined(BO3_HAVE_REPORTS)
@@ -2179,7 +2261,7 @@ void nv2a_present_window_aspect(double aspect);
 double nv2a_present_output_aspect(void);
 
 #define UW_RING 64                      /* flips the presenter may lag by */
-static double s_base_aspect = 4.0 / 3.0;    /* the title's: 4:3 or 16:9 */
+static double s_base_aspect = 4.0 / 3.0;    /* the title's: 4:3, 16:9, or 16:10 (BO-271) */
 static volatile double s_uw_stage;      /* the set-up stage's wide aspect, or 0 */
 static volatile double s_uw_frame;      /* of the frame being drawn, or 0 */
 static volatile uint32_t s_uw_flips;    /* flips the title emitted */
@@ -2193,7 +2275,7 @@ static double uw_setting(void)
     const char *v = recomp_env(RENV_DISPLAY_ULTRAWIDE);
     double a = 0.0;
 
-    if (!v || s_base_aspect < 1.5)
+    if (!v || s_base_aspect < 1.7)      /* 16:9 only: not 4:3, not 16:10 */
         return 0.0;
     if (!strcmp(v, "21:9"))
         a = 64.0 / 27.0;                /* 2560x1080, 3440x1440 */
@@ -2246,7 +2328,7 @@ static void hdr_mark(uint32_t tag)
      * switch marked, so the setting alone never gave the scene its light. */
     if (!nv2a_host_hdr())
         return;
-    dev = HD_M32(BO3_VA(0x35FB48, 0x35FE48));
+    dev = HD_M32(BO3_VA(0x35FB48, 0x35FE48, 0x35FEE8));
     if (!dev)
         return;
     put = HD_M32(dev);
@@ -2284,10 +2366,10 @@ static void texup_loading_flip(void)
 
     if (!g_xbox_mem_offset)
         return;
-    state = HD_M32(BO3_VA(0x4D53B4, 0x4D56D4));
-    stage = HD_M32(BO3_VA(0x4D5370, 0x4D5690));
+    state = HD_M32(BO3_VA(0x4D53B4, 0x4D56D4, 0x4D5774));
+    stage = HD_M32(BO3_VA(0x4D5370, 0x4D5690, 0x4D5730));
     pre = state == 5 && stage >= 0x10000u && stage < 0x08000000u && HD_M32(stage + 0x1B8u)
-       && HD_M32(BO3_VA(0x73A1D0u, 0x73A4E0u) + 0x134Cu) < 2;
+       && HD_M32(BO3_VA(0x73A1D0u, 0x73A4E0u, 0x73A580u) + 0x134Cu) < 2;
     if (state != 5 && state != 0) {
         how = 2;
     } else if (pre) {
@@ -2301,11 +2383,11 @@ static void texup_loading_flip(void)
     {   /* RECOMP_DEBUG=texup_log: what it read, at each change */
         static uint32_t last = 0xFFFFFFFFu;
         uint32_t mode = stage >= 0x10000u && stage < 0x08000000u ? HD_M32(stage + 0x1B8u) : 0;
-        uint32_t key = (state & 0xFF) | (mode ? 0x100u : 0) | (HD_M32(BO3_VA(0x73A1D0u, 0x73A4E0u) + 0x134Cu) & 0xFF) << 12
+        uint32_t key = (state & 0xFF) | (mode ? 0x100u : 0) | (HD_M32(BO3_VA(0x73A1D0u, 0x73A4E0u, 0x73A580u) + 0x134Cu) & 0xFF) << 12
                      | (uint32_t)how << 24;
         if (key != last && recomp_env(RENV_TEXUP_LOG))
             fprintf(stderr, "[TEXUP] title state %u, stage %s, car phase %u: %s (flip %u)\n",
-                    state, mode ? "on" : "none", HD_M32(BO3_VA(0x73A1D0u, 0x73A4E0u) + 0x134Cu),
+                    state, mode ? "on" : "none", HD_M32(BO3_VA(0x73A1D0u, 0x73A4E0u, 0x73A580u) + 0x134Cu),
                     how == 2 ? "loading" : how == 1 ? "prestart" : "play", s_uw_flips);
         last = key;
     }
@@ -2332,12 +2414,16 @@ static void uw_flip(void)
     s_uw_flips = n;
     texup_loading_flip();
     bo3_score_board_flip();
+    bo3_onlinebot_flip(n);              /* nothing unless switched on */
+    bo3_onlinenav_flip(n);              /* nothing unless started */
+    bo3_xboxlive_flip();                /* Takedawn Online's code entry and description line */
+    bo3_online_flip();                  /* links, kick line, reactions: main thread only */
     pace_log(n);
     /* The simulation steps this frame ran (the stepper's count, +0x2E20C:
      * see BO3_PACE_LOG), for the overlay's frame-time graph: a frame of two
      * steps moves the world twice as far (present_cadence.h, BO-115). */
     if (g_xbox_mem_offset)
-        xbox_PresentCadenceSteps(n, (int)HD_M32(BO3_VA(0x4D53AC, 0x4D56CC)));
+        xbox_PresentCadenceSteps(n, (int)HD_M32(BO3_VA(0x4D53AC, 0x4D56CC, 0x4D576C)));
     s_uw_frame = 0.0;
     s_stage_drew = 0;
 }
@@ -2361,6 +2447,15 @@ static double hud_aspect(void)
     return a > 0.0 ? a : s_base_aspect;
 }
 
+/* "fov_aspect": the aspect the camera's field-of-view factor follows, at
+ * least 16:9's: wider (display.ultrawide) gains at the sides, 16:10 keeps
+ * 16:9's horizontal view and gains above and below (BO-271). */
+static double cam_fov_aspect(void)
+{
+    double a = hud_aspect();
+    return a > 16.0 / 9.0 ? a : 16.0 / 9.0;
+}
+
 static double hud_frame_aspect(void)
 {
     double a = s_uw_frame;
@@ -2379,7 +2474,7 @@ static double hud_frame_aspect(void)
 static int uw_fe_owns_picture(void)
 {
     const uint8_t *m = (const uint8_t *)(uintptr_t)g_xbox_mem_offset;
-    uint32_t layers = *(const uint32_t *)(m + BO3_VA(0x557A20u, 0x557D40u) + 0x2Cu);
+    uint32_t layers = *(const uint32_t *)(m + BO3_VA(0x557A20u, 0x557D40u, 0x557DE0u) + 0x2Cu);
     return layers && *(const uint32_t *)(m + layers + 8u) != 0;
 }
 
@@ -2474,6 +2569,7 @@ static uint32_t s_map_frame;            /* the map's frame; 0: not the map scree
 static int s_map_n;                     /* the shields: drawn centre, title-column shift */
 static double s_map_cx[MAP_ICONS], s_map_cy[MAP_ICONS], s_map_d[MAP_ICONS];
 static double s_map_box_d;              /* the info box's shift */
+static double s_map_x0, s_map_x1, s_map_y0, s_map_y1;  /* the tiles' drawn box */
 
 /* An object of the root frame that is part of the info box: one of its
  * callbacks, above the bottom panel (y < 416 in the root's 480 rows),
@@ -2481,7 +2577,7 @@ static double s_map_box_d;              /* the info box's shift */
 static int map_info_obj(uint32_t obj, double lo, double hi)
 {
     uint32_t cb = HD_M32(obj + 0x44);
-    if (cb != BO3_VA(0x000F9CE0u, 0x000FA040u) && cb != BO3_VA(0x001C51A0u, 0x001C54C0u) && cb != BO3_VA(0x001C1A60u, 0x001C1D80u) && cb != BO3_VA(0x001C5330u, 0x001C5650u))
+    if (cb != BO3_VA(0x000F9CE0u, 0x000FA040u, 0x000FA0E0u) && cb != BO3_VA(0x001C51A0u, 0x001C54C0u, 0x001C5560u) && cb != BO3_VA(0x001C1A60u, 0x001C1D80u, 0x001C1E20u) && cb != BO3_VA(0x001C5330u, 0x001C5650u, 0x001C56F0u))
         return 0;
     return HD_MF(obj + 12) < 416.0f && lo > 0.5 && hi < 639.5 && hi - lo < 400.0;
 }
@@ -2490,19 +2586,20 @@ static int map_info_obj(uint32_t obj, double lo, double hi)
  * drawn object, when its frames are synced) and where its shields go. */
 static void map_walk(uint32_t root, double rwx, double rsx, double rlx, double rlsx)
 {
-    uint32_t sc = BO3_VA(0x557A20u, 0x557D40u), la = HD_M32(sc + 0x2C), nl = HD_M32(sc + 0x30), l, n, fr;
+    uint32_t sc = BO3_VA(0x557A20u, 0x557D40u, 0x557DE0u), la = HD_M32(sc + 0x2C), nl = HD_M32(sc + 0x30), l, n, fr;
     int guard, i, j, sel = -1, nbox = 0;
     double bx0 = 1e9, bx1 = -1e9, by0 = 1e9, by1 = -1e9;
     double px[MAP_ICONS], py[MAP_ICONS];
 
     s_map_frame = 0, s_map_n = 0, s_map_box_d = 0.0;
+    s_map_x0 = s_map_y0 = 1e9, s_map_x1 = s_map_y1 = -1e9;
     if (!fe_ok(la) || !nl || nl > 256)
         return;
     for (l = 0; l < nl && !s_map_frame; l++) {
         if (HD_M32(la + l * 16) & 1u)           /* a hidden layer */
             continue;
         for (n = HD_M32(la + l * 16 + 8), guard = 0; fe_ok(n) && guard < 500; n = HD_M32(n), guard++)
-            if (HD_M32(n + 0x44) == BO3_VA(0x001C0790u, 0x001C0AB0u) && fe_ok(HD_M32(n + 0x40))) {
+            if (HD_M32(n + 0x44) == BO3_VA(0x001C0790u, 0x001C0AB0u, 0x001C0B50u) && fe_ok(HD_M32(n + 0x40))) {
                 s_map_frame = HD_M32(n + 0x40);
                 break;
             }
@@ -2523,7 +2620,11 @@ static void map_walk(uint32_t root, double rwx, double rsx, double rlx, double r
             sx = HD_MF(fr + 0x28), sy = HD_MF(fr + 0x2C);
             x = HD_MF(n + 8), y = HD_MF(n + 12), w = HD_MF(n + 0x10), h = HD_MF(n + 0x14);
             a = HD_MF(fr + 0x20) + (double)sx * x, b = a + (double)sx * w;
-            if (fr == s_map_frame && cb == BO3_VA(0x000D77A0u, 0x000D7B00u) && s_map_n < MAP_ICONS) {
+            if (fr == s_map_frame && cb == BO3_VA(0x001C1A60u, 0x001C1D80u, 0x001C1E20u)) {
+                double ya = HD_MF(fr + 0x24) + (double)sy * y, yb = ya + (double)sy * h;
+                s_map_x0 = fmin(s_map_x0, fmin(a, b)), s_map_x1 = fmax(s_map_x1, fmax(a, b));
+                s_map_y0 = fmin(s_map_y0, fmin(ya, yb)), s_map_y1 = fmax(s_map_y1, fmax(ya, yb));
+            } else if (fr == s_map_frame && cb == BO3_VA(0x000D77A0u, 0x000D7B00u, 0x000D7BA0u) && s_map_n < MAP_ICONS) {
                 double c = (a + b) / 2.0;
                 s_map_cx[s_map_n] = c;
                 s_map_cy[s_map_n] = HD_MF(fr + 0x24) + (double)sy * (y + h / 2.0f);
@@ -2574,6 +2675,160 @@ static double map_near_d(double cx, double cy)
     return d;
 }
 
+/* A picture of Crash Nav's zoom (BO-314): from the globe to the region and
+ * from the region to the city, the title draws the zoom on four pictures of
+ * the root frame (render callback 0x1C1A60, layers 7-10, each 640x416 from
+ * the top left), drawn on exactly the map's box, and the map's tiles fade
+ * in over the last one. The route object is on the screen from the zoom's
+ * first frame, so the map screen is already known; such a picture is told
+ * by its drawn box being the tiles' box. It takes the map's shape: without
+ * this it met the decoration rule (both 4:3 edges) and was drawn across the
+ * picture while the map under it was 4:3 (native), and the zoom jumped to
+ * 4:3 as it landed on Select Location. */
+static int map_zoom_obj(uint32_t obj, uint32_t fr, double xa, double xb)
+{
+    float sy = HD_MF(fr + 0x2C);
+    double ya = HD_MF(fr + 0x24) + (double)sy * HD_MF(obj + 12);
+    double yb = ya + (double)sy * HD_MF(obj + 0x14);
+
+    if (HD_M32(obj + 0x44) != BO3_VA(0x001C1A60u, 0x001C1D80u, 0x001C1E20u) || s_map_x1 <= s_map_x0)
+        return 0;
+    return fabs(fmin(xa, xb) - s_map_x0) < 1.0 && fabs(fmax(xa, xb) - s_map_x1) < 1.0 &&
+           fabs(fmin(ya, yb) - s_map_y0) < 1.0 && fabs(fmax(ya, yb) - s_map_y1) < 1.0;
+}
+
+/* ---- display.pictures: the title's 4:3 pictures with hud_fix (BO-315) ----
+ *
+ * The front end draws a few pictures across the whole 640 columns: the
+ * loading screen's picture (render callback 0x1C1A60, 640x384, layer 0),
+ * the films behind the menus (0x1C59A0, 640x352: the attract film behind
+ * the main menu, a junction's film, Crash Training's) and Crash Nav's zoom
+ * and map (0x1C1A60, 640x416, above). They are 4:3 pictures, and the
+ * decoration rule draws them across the 16:9 picture like the borders
+ * around them, stretched by a third. The setting:
+ *
+ *   stretch  as shipped: across the picture.
+ *   blur     (default, the owner's choice of 2026-10-30; an unset
+ *            RECOMP_DISPLAY_PICTURES reads as blur) 4:3 with the menu, and
+ *            beside it the same picture across the
+ *            picture again, darkened and blurred: drawn PIC_TAPS times,
+ *            each at an offset on a disc, at 1/(k+1) of its opacity (the
+ *            k-th draw), which averages them.
+ *   black    4:3, the same picture across the picture drawn once in black
+ *            under it.
+ *
+ * At blur or black the Crash Nav map and its zoom are 4:3 too, whatever
+ * display.crashnav_map says (its row is hidden then). The fills are drawn
+ * by the picture's own callback (sub_001C1A60 / sub_001C59A0, wrapped in
+ * recomp_manual.c) before the picture, with the rectangle it is given
+ * changed and put back: no texture or backend work, and the decoration
+ * drawn after the picture (the strips, the header, the grid) lies over the
+ * fill as it lies over the stretched picture. */
+static int pic_mode(void)
+{
+    const char *v;
+
+    if (!recomp_patch_enabled("display.pictures"))
+        return 0;
+    v = recomp_env(RENV_DISPLAY_PICTURES);
+    if (!v || !*v || !strcmp(v, "blur"))
+        return 1;
+    return !strcmp(v, "black") ? 2 : 0;
+}
+
+/* The object's drawn box in the title's columns (the root's squeeze undone),
+ * as fe_decor computes it; 0 if the front end is not squeezed. */
+static int fe_title_box(uint32_t obj, double *xa, double *xb, double *ta, double *tb)
+{
+    uint32_t fr = HD_M32(obj + 0x40), root = HD_M32(BO3_VA(0x00557A20u, 0x00557D40u, 0x00557DE0u) + 0x14u);
+    double rwx, rsx, rlx, rlsx;
+    float sx, x, w;
+
+    if (!fe_ok(fr) || !fe_ok(root))
+        return 0;
+    rwx = HD_MF(root + 0x20), rsx = HD_MF(root + 0x28);
+    rlx = HD_MF(root), rlsx = HD_MF(root + 8);
+    if (!(fabs(rsx) > 1e-6) || rsx == rlsx)
+        return 0;
+    sx = HD_MF(fr + 0x28);
+    x = HD_MF(obj + 8) * sx;
+    x = x + HD_MF(fr + 0x20);
+    w = HD_MF(obj + 0x10) * sx;
+    *xa = x, *xb = (double)x + w;
+    *ta = (*xa - rwx) / rsx * rlsx + rlx;
+    *tb = (*xb - rwx) / rsx * rlsx + rlx;
+    return *ta == *ta && *tb == *tb;
+}
+
+/* A 4:3 picture of the front end: a film, or a 0x1C1A60 picture of the
+ * loading screen's or the zoom's size, across both 4:3 edges. Not the map's
+ * tiles (their frame is the map's) nor the decoration (bars 64 rows high,
+ * the 640x288 band, the 656x496 grid). */
+static int fe_picture(uint32_t obj, double ta, double tb)
+{
+    uint32_t cb = HD_M32(obj + 0x44);
+    float w = HD_MF(obj + 0x10), h = HD_MF(obj + 0x14);
+
+    if (fmin(ta, tb) > 0.5 || fmax(ta, tb) < 639.5)
+        return 0;
+    if (cb == BO3_VA(0x001C59A0u, 0x001C5CC0u, 0x001C5D60u))
+        return 1;
+    return cb == BO3_VA(0x001C1A60u, 0x001C1D80u, 0x001C1E20u) && w == 640.0f && h >= 300.0f && h <= 420.0f &&
+           HD_M32(obj + 0x40) != s_map_frame;
+}
+
+#define PIC_TAPS 16
+#define PIC_RADIUS 18.0                 /* title columns */
+#define PIC_DARK 0.45f
+
+#define PW32(va) (*(uint32_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
+#define PWF(va)  (*(float *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
+
+/* The wrapped render callbacks (recomp_manual.c): fn(rect, obj + 0x28),
+ * cdecl, rect = x, y, w, h, then the colour r, g, b, a. A picture gets its
+ * fill first (above); everything else, and every picture at stretch, is
+ * drawn as the title draws it. */
+void bo3_fe_picture_draw(void (*fn)(void), uint32_t va)
+{
+    uint32_t esp0 = g_esp, rect, obj;
+    double xa, xb, ta, tb;
+    uint32_t keep[8];
+    int mode = pic_mode(), k, n;
+
+    if (!mode || s_fe_scene != BO3_VA(0x00557A20u, 0x00557D40u, 0x00557DE0u) || !g_xbox_mem_offset) {
+        fn();
+        return;
+    }
+    rect = HD_M32(esp0 + 4), obj = HD_M32(esp0 + 8) - 0x28u;
+    if (!fe_ok(rect) || !fe_ok(obj) || HD_M32(obj + 0x44) != va ||
+        !fe_title_box(obj, &xa, &xb, &ta, &tb) || !fe_picture(obj, ta, tb)) {
+        fn();
+        return;
+    }
+    for (k = 0; k < 8; k++)
+        keep[k] = HD_M32(rect + 4u * k);
+    n = mode == 1 ? PIC_TAPS : 1;
+    for (k = 0; k < n; k++) {
+        /* Taps on a disc (golden angle), the first at the centre. */
+        double r = mode == 1 ? PIC_RADIUS * sqrt((double)k / (n - 1)) : 0.0;
+        double t = k * 2.39996323, ox = r * cos(t), oy = r * sin(t);
+        double lo = fmin(ta, tb), hi = fmax(ta, tb), pad = mode == 1 ? PIC_RADIUS : 0.0;
+        float c = mode == 1 ? PIC_DARK : 0.0f;
+
+        PWF(rect) = (float)(lo - pad + ox);
+        PWF(rect + 4) = HD_MF(rect + 4) + (float)oy;
+        PWF(rect + 8) = (float)(hi - lo + 2.0 * pad);
+        PWF(rect + 16) *= c, PWF(rect + 20) *= c, PWF(rect + 24) *= c;
+        PWF(rect + 28) *= 1.0f / (float)(k + 1);
+        g_esp = esp0;
+        fn();
+        for (int i = 0; i < 8; i++)
+            PW32(rect + 4u * i) = keep[i];
+    }
+    g_esp = esp0;
+    fn();
+}
+
 /* What to add to the drawn x (*dx) and width (*dw) of the object being
  * drawn; 0 and 0 for one the squeeze is right for. */
 static void fe_decor(double *dx, double *dw)
@@ -2584,15 +2839,15 @@ static void fe_decor(double *dx, double *dw)
     int left, right, a_lo;
 
     *dx = *dw = 0.0;
-    if (s_fe_scene != BO3_VA(0x557A20u, 0x557D40u) || !g_xbox_mem_offset || !fe_ok(obj))
+    if (s_fe_scene != BO3_VA(0x557A20u, 0x557D40u, 0x557DE0u) || !g_xbox_mem_offset || !fe_ok(obj))
         return;
     cb = HD_M32(obj + 0x44);
     /* A box across the frame that is not decoration: the selected menu
      * line's brackets (sub_000FB900) sit beside its text, inside the box. */
-    if (cb == BO3_VA(0x000FB900u, 0x000FBC60u))
+    if (cb == BO3_VA(0x000FB900u, 0x000FBC60u, 0x000FBD00u))
         return;
     fr = HD_M32(obj + 0x40);
-    root = HD_M32(BO3_VA(0x557A20u, 0x557D40u) + 0x14u);
+    root = HD_M32(BO3_VA(0x557A20u, 0x557D40u, 0x557DE0u) + 0x14u);
     if (!fe_ok(fr) || !fe_ok(root))
         return;
     rwx = HD_MF(root + 0x20), rsx = HD_MF(root + 0x28);
@@ -2617,7 +2872,7 @@ static void fe_decor(double *dx, double *dw)
     if (!(lo == lo) || !(hi == hi))             /* NaN */
         return;
     if (s_map_frame) {
-        int stretched = !recomp_patch_on("display.crashnav_map", "native", 0);
+        int stretched = !recomp_patch_on("display.crashnav_map", "native", 0) && !pic_mode();
 
         if (hi <= 0.0 || lo >= 640.0) {         /* off the screen in 4:3: kept off */
             *dx = ta - xa;
@@ -2627,7 +2882,7 @@ static void fe_decor(double *dx, double *dw)
         if (fr == s_map_frame) {
             if (!stretched)
                 return;
-            if (cb == BO3_VA(0x000D77A0u, 0x000D7B00u) || cb == BO3_VA(0x0005AC20u, 0x0005ADD0u)) {
+            if (cb == BO3_VA(0x000D77A0u, 0x000D7B00u, 0x000D7BA0u) || cb == BO3_VA(0x0005AC20u, 0x0005ADD0u, 0x0005AE20u)) {
                 /* A shield, or a label beside one: its place, its shape. */
                 float sy = HD_MF(fr + 0x2C);
                 double cy = HD_MF(fr + 0x24) + (double)sy * (HD_MF(obj + 12) + HD_MF(obj + 0x14) / 2.0f);
@@ -2638,12 +2893,23 @@ static void fe_decor(double *dx, double *dw)
             *dw = (tb - ta) - (xb - xa);
             return;
         }
+        if (fr != s_map_frame && map_zoom_obj(obj, fr, xa, xb)) {
+            /* A picture of the zoom onto the map: the map's own shape. */
+            if (!stretched)
+                return;
+            *dx = ta - xa;
+            *dw = (tb - ta) - (xb - xa);
+            return;
+        }
         if (fr == root && map_info_obj(obj, lo, hi)) {
             if (stretched)
                 *dx = s_map_box_d;
             return;
         }
     }
+    /* A 4:3 picture keeps its shape at blur and black (BO-315). */
+    if (pic_mode() && fe_picture(obj, ta, tb))
+        return;
     left = lo <= 0.5, right = hi >= 639.5;
     if (!(left && right) && !((left || right) && hi - lo >= 400.0))
         return;
@@ -2665,6 +2931,7 @@ static void uw_init(void)
 
     s_uw_log = getenv("BO3_UW_LOG") != NULL;
     recomp_patch_set_var_fn("aspect", hud_aspect);
+    recomp_patch_set_var_fn("fov_aspect", cam_fov_aspect);
     recomp_patch_set_var_fn("frame_aspect", hud_frame_aspect);
     recomp_patch_set_var_fn("fe_squeeze", uw_fe_squeeze);
     recomp_patch_set_var_fn("base_aspect", fe_base_aspect);
@@ -2702,8 +2969,14 @@ static void host_enhance_init(void)
     xbox_enhance_init(bo3_enhance_root(), NULL);
     /* The picture's shape, as the title gets it at device setup, for the
      * float patches of config/patches.json (display.hud_fix, BO-89). */
-    s_hud_wide = enhance_cfg_bool("display.widescreen", 0);
-    s_base_aspect = s_hud_wide ? 16.0 / 9.0 : 4.0 / 3.0;
+    {
+        int w1610;
+        s_hud_wide = enhance_widescreen(&w1610);
+        /* BO-271: 16:10 is the title's 16:9 mode laid out for 1.6: the
+         * camera (config/patches.json, display.widescreen), the HUD and the
+         * front end all take this one number. */
+        s_base_aspect = w1610 ? 1.6 : s_hud_wide ? 16.0 / 9.0 : 4.0 / 3.0;
+    }
     uw_init();
     enhance_cfg_report_unused();
     fflush(stderr);
@@ -2766,6 +3039,19 @@ static void report_game_data(xbox_report_buf *b)
     xbox_report_dir_summary(b, "game data", BO3_GAME_DIR);
 }
 
+/* BO-340: the lobby's ids for this run: the session id and the last game's id
+ * find the server's log lines (grep sid=... in the journal). The "[NET]" lines
+ * of the run's log, which are on whatever the logging switch says, carry them
+ * too. */
+static void report_online(xbox_report_buf *b)
+{
+    char sid[32], gid[32];
+
+    xnet_hle_ids(sid, sizeof sid, gid, sizeof gid);
+    xbox_report_printf(b, "lobby session id (sid): %s\nlast game id (gid): %s\n",
+                       sid[0] ? sid : "none (not online in this process, or the server sent none)", gid[0] ? gid : "none (no game yet, or the server sent none)");
+}
+
 /* standalone: nothing else runs in this process, so the listing may start
  * SDL's video and controllers itself and ask the graphics API. */
 static void host_report_init(int standalone)
@@ -2787,6 +3073,7 @@ static void host_report_init(int standalone)
 #endif
 #endif
     xbox_report_section("system.txt", "game data (names and sizes only)", report_game_data);
+    xbox_report_section("system.txt", "online (ids of the lobby's log lines)", report_online);
     xbox_report_attach("logs/xbox_kernel.log", report_kernel_log, 8192, 24576);
 #if defined(__ANDROID__)
     xbox_report_attach("env.txt", report_env_txt, 16384, 0);
@@ -2856,16 +3143,21 @@ static void save_import_at_start(int argc, char **argv)
 /* BO-209: --import-save <folder or .zip>: a Burnout 3 save from an original
  * Xbox or xemu is signed again for the port and put in place, with the save in
  * use backed up first. A program of its own, like --version: no game starts.
+ * BO-323: a Burnout 3 save from the PS2 too (a memory card image, a .psu,
+ * .max, .cbs, .xps, .sps or .psv file, a save folder, or a folder or .zip
+ * holding one); --ps2-slot <1..3> picks the profile when it holds several.
  * 0 imported, 1 not. */
-static int import_save_cli(const char *path)
+static int import_save_cli(const char *path, int ps2_slot)
 {
 #if defined(BO3_HAVE_REPORTS)
     char root[1024], out[1024], info[400], err[1400], report[2600], backup[1024];
     const char *ov = getenv("RECOMP_SAVE_DIR");
+    xbox_ps2_choice choice;
     int r;
 
     if (!path || !*path) {
-        fprintf(stderr, "usage: --import-save <save folder, a folder that holds it, or a .zip>\n");
+        fprintf(stderr, "usage: --import-save <save folder, a folder that holds it, a .zip, or a PS2 save file or"
+                        " memory card image> [--ps2-slot <1-3>]\n");
         return 1;
     }
     if (!(ov && *ov))
@@ -2881,9 +3173,17 @@ static int import_save_cli(const char *path)
         fprintf(stderr, "Import failed: Takedawn is running with this save folder. Close it first.\n");
         return 1;
     }
-    if (!xbox_SaveImportPrepare(path, BO3_TITLE_ID, root, root, out, sizeof out, info, sizeof info,
-                                err, sizeof err)) {
-        fprintf(stderr, "Import failed: %s\n", err);
+    if (!xbox_SaveImportPrepareSlot(path, BO3_TITLE_ID, root, root, ps2_slot, &choice, out, sizeof out, info,
+                                    sizeof info, err, sizeof err)) {
+        if (!ps2_slot && choice.count > 1) {
+            int k;
+            fprintf(stderr, "This PS2 save holds %d profiles. Run the import again with the one you want:\n",
+                    choice.count);
+            for (k = 0; k < choice.count; k++)
+                fprintf(stderr, "  --ps2-slot %d   %s\n", choice.slot[k], choice.line[k]);
+        } else {
+            fprintf(stderr, "Import failed: %s\n", err);
+        }
         return 1;
     }
     if (!recomp_save_import_stage(root, out, BO3_TITLE_ID, err, sizeof err)) {
@@ -2905,6 +3205,7 @@ static int import_save_cli(const char *path)
     return 0;
 #else
     (void)path;
+    (void)ps2_slot;
     fprintf(stderr, "--import-save is not in this build.\n");
     return 1;
 #endif
@@ -2965,6 +3266,12 @@ static void host_saves_init(int argc, char **argv)
     int n = 0, i, keep;
 
     s_save_dir = recomp_save_dir(BO3_USER_DIR);
+    {
+        char portable[1024];
+        if (recomp_portable_root(portable, sizeof portable))
+            fprintf(stderr, "[SAVE] portable mode: saves, settings and game data are in %s\n",
+                    portable);
+    }
     /* BO-129: one running copy per save root. A second one on the same save
      * would hold the profile in memory too and write over the first one's
      * progress when it saves. */
@@ -3106,41 +3413,76 @@ static void set_quit_after(const char *seconds)
 #endif
 
 /* game.language (the toolkit's kernel answers XC_LANGUAGE with it): the
- * languages this disc has, by the title's own text files, which it names
- * from XC_LANGUAGE (Data/Global<xx>.bin; the US disc has English only, the
- * European one French, German and Italian). The overlay offers those. A
- * language the disc lacks is not passed on: the kernel answers English, as
- * before, and the title falls back as it would on such a console. */
+ * languages this disc has, by the title's own text files
+ * (Data/Global<xx>.bin) that are both in the disc's manifest and installed
+ * (languages.c: the US disc has English only, the Europe Fr/De/It one
+ * French, German and Italian, the Europe/Australia one English, Spanish,
+ * Dutch and Swedish). The overlay offers those. A language the disc lacks
+ * is not passed on: the kernel answers English, and the title falls back as
+ * it would on such a console. Unset on a disc without English, the row shows
+ * the language the title falls back to (the Fr/De/It disc: French).
+ *
+ * Dutch and Swedish are no dashboard's: the kernel reports English for them
+ * and the En/Es/Nl/Sv program sets the title's language itself
+ * (recomp/recomp_manual_pal_ensv.c). */
+#if defined(BO3_REGION_PAL_ENSV) && BO3_REGION_PAL_ENSV
+#define BO3_LANG_TITLE_SET 1            /* recomp/recomp_manual_pal_ensv.c sets Dutch and Swedish */
+#else
+#define BO3_LANG_TITLE_SET 0
+#endif
+
+static int bo3_lang_installed(const char *path, void *ctx)
+{
+    const char *spelt = bo3_manifest_path(path), *name;
+    char p[512];
+    struct dirent *e;
+    DIR *d;
+    FILE *f;
+    int found = 0;
+
+    (void)ctx;
+    if (!spelt)
+        return 0;                       /* not on this program's disc */
+    snprintf(p, sizeof p, BO3_GAME_DIR "/%s", spelt);
+    if ((f = fopen(p, "rb")) != NULL) {
+        fclose(f);
+        return 1;
+    }
+    /* A folder of other case (a checkout's extracted disc): look by name. */
+    name = strrchr(spelt, '/') ? strrchr(spelt, '/') + 1 : spelt;
+    if ((d = opendir(BO3_GAME_DIR "/Data")) != NULL) {
+        while (!found && (e = readdir(d)) != NULL)
+            found = !strcasecmp(e->d_name, name);
+        closedir(d);
+    }
+    return found;
+}
+
 static void bo3_languages_init(void)
 {
-    /* XC_LANGUAGE - 1: English, Japanese, German, French, Spanish, Italian
-     * (Korean, Chinese and Portuguese have no files in this title). The
-     * English text is GlobalUs on the NTSC-U disc, GlobalEn on others. */
-    static const char *const k_text[][2] = {
-        { "globalus.bin", "globalen.bin" }, { "globalja.bin", NULL },
-        { "globalge.bin", NULL }, { "globalfr.bin", NULL },
-        { "globalsp.bin", NULL }, { "globalit.bin", NULL },
-    };
-    unsigned mask = 0, want = (unsigned)xbox_GetLanguage() - 1;
-    struct dirent *e;
-    DIR *d = opendir(BO3_GAME_DIR "/Data");
+    unsigned mask = bo3_language_mask(bo3_lang_installed, NULL, BO3_LANG_TITLE_SET);
+    int want = bo3_language_index(recomp_env(RENV_GAME_LANGUAGE));
 
-    for (; d && (e = readdir(d)) != NULL; )
-        for (unsigned i = 0; i < sizeof k_text / sizeof k_text[0]; i++)
-            for (unsigned j = 0; j < 2; j++)
-                if (k_text[i][j] && !strcasecmp(e->d_name, k_text[i][j]))
-                    mask |= 1u << i;
-    if (d)
-        closedir(d);
-    if (want != 0 && !(mask & (1u << want))) {
+    if (want >= 0 && !(mask & (1u << want))) {
         XR_NOTICE("[BOOT] game.language=%s: not on this disc; the kernel reports English\n",
-                  xbox_language_names[want]);
+                  bo3_language_name(want));
         recomp_env_set(RENV_GAME_LANGUAGE, NULL);
+        want = -1;
+    }
+    if (want < 0 && mask && !(mask & (1u << BO3_LANG_ENGLISH))) {
+        /* No English on this disc: the title takes its first language. */
+        int first = 0;
+        while (!(mask & (1u << first)))
+            first++;
+        if (mask & (1u << 3))
+            first = 3;                  /* the Fr/De/It disc falls back to French */
+        recomp_env_set(RENV_GAME_LANGUAGE, bo3_language_name(first));
     }
 #ifdef XBOXRECOMP_HAVE_OVERLAY
     xbox_SettingsSetLanguages(mask);
 #endif
-    XR_NOTICE("[BOOT] languages on the disc: 0x%X, reported: %s\n", mask,
+    XR_NOTICE("[BOOT] languages on the disc: 0x%X, game.language: %s, reported: %s\n", mask,
+              recomp_env(RENV_GAME_LANGUAGE) ? recomp_env(RENV_GAME_LANGUAGE) : "(unset)",
               xbox_language_names[xbox_GetLanguage() - 1]);
 }
 
@@ -3150,6 +3492,7 @@ int main(int argc, char **argv)
     unsigned seconds = 0;
     char seconds_text[16] = "0";
     int headless = 0, i, sb_build = 0, bug_report = 0, xbe_named = 0, no_setup = 0;
+    int up_build = 0;                   /* --upscale-art: the index after it */
 
 #if defined(_WIN32)
     /* A release build is a window program (no console of its own): started
@@ -3172,6 +3515,11 @@ int main(int argc, char **argv)
      * attached: its code page is set with it. */
     s_utf8_args = recomp_win_utf8_args(&argc, &argv);
 #endif
+    /* The package's programs, one for each disc, hand the whole line to
+     * each other (install.c, package.h): the one whose disc is installed
+     * runs. */
+    bo3_install_args(argc, argv);
+    bo3_package_start(argc, argv);
 #if defined(BO3_HAVE_RESTART)
     /* BO-124: the arguments, directory and environment as given, for the
      * overlay's "Restart game"; its exit handler is registered here, before
@@ -3186,8 +3534,18 @@ int main(int argc, char **argv)
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--version"))
             return bo3_version_main();
-        if (!strcmp(argv[i], "--import-save"))
-            return import_save_cli(i + 1 < argc ? argv[i + 1] : NULL);
+        if (!strcmp(argv[i], "--import-save")) {
+            int k, slot = 0;
+            for (k = 1; k + 1 < argc; k++)
+                if (!strcmp(argv[k], "--ps2-slot")) {
+                    slot = atoi(argv[k + 1]);
+                    if (slot < 1 || slot > 3) {
+                        fprintf(stderr, "--ps2-slot takes 1, 2 or 3.\n");
+                        return 1;
+                    }
+                }
+            return import_save_cli(i + 1 < argc ? argv[i + 1] : NULL, slot);
+        }
 #if !defined(__ANDROID__)
         /* --install and --data-status take the whole line but their own
          * word, so that --data (or --dest) may stand before or after them:
@@ -3203,15 +3561,15 @@ int main(int argc, char **argv)
             return install ? bo3_install_main(n, rest) : bo3_data_status_main(n, rest);
         }
 #endif
-        if (!strcmp(argv[i], "--build-shaders"))
-            break;                      /* the rest of the line is the pre-build's */
+        if (!strcmp(argv[i], "--build-shaders") || !strcmp(argv[i], "--upscale-art"))
+            break;                      /* the rest of the line is the pre-build's (the upscale's) */
     }
     for (i = 1; i < argc; i++)
         if (!strcmp(argv[i], "--bug-report"))
             bug_report = 1;
     /* The print gate (the toolkit's xr_log.h, BO-125): a release build says
      * only errors and the few notices a player or a report needs, unless
-     * diagnostic logging is on (Advanced > Diagnostic logging,
+     * diagnostic logging is on (System > Diagnostic logging,
      * RECOMP_LOG_DIAG=1) or a developer switch asks for the log. Here: after
      * the stand-alone programs above (--version, --install, --data-status,
      * whose output is theirs), before the first line of the game's own and
@@ -3271,6 +3629,18 @@ int main(int argc, char **argv)
             headless = 1;
         }
 #endif
+#ifdef BO3_HAVE_UPSCALE
+        /* --upscale-art [options]: the menu pictures upscaled into a texture
+         * pack (upscale.h), which takes the rest of the line. */
+        else if (!strcmp(argv[i], "--upscale-art")) {
+            int k;
+            up_build = i + 1;
+            for (k = i + 1; k + 1 < argc; k++)
+                if (!strcmp(argv[k], "--data"))
+                    data_arg = argv[k + 1];
+            break;
+        }
+#endif
         else if (!strcmp(argv[i], "--data") && i + 1 < argc)
             data_arg = argv[++i];
         else if (!strcmp(argv[i], "--no-setup"))
@@ -3302,10 +3672,11 @@ int main(int argc, char **argv)
                             "       %s --data-status [--data <dir>]\n"
                             "       %s --build-shaders [--cache-dir <dir>] [--scenes a,b]"
                             " [--force] [--status]\n"
+                            "       %s --upscale-art [--quality best|fast] [--force] [--check|--status|--remove]\n"
                             "       %s --bug-report [--out <dir>]\n"
-                            "       %s --import-save <Xbox save folder or .zip>\n"
+                            "       %s --import-save <Xbox save folder or .zip, or a PS2 save or memory card> [--ps2-slot N]\n"
                             "       %s --version\n",
-                    self, self, self, self, self, self, self);
+                    self, self, self, self, self, self, self, self);
             return 2;
         } else {
             s_xbe_path = argv[i];
@@ -3320,6 +3691,14 @@ int main(int argc, char **argv)
      * name are moved (in bo3_data_enter): a start that runs no title, and
      * the bug report, move nothing. */
     bo3_user_dirs_names();
+#ifdef BO3_HAVE_UPSCALE
+    /* What the upscale can say without the game's data: whether this
+     * computer is offered it, whether the pack is made, removing it. */
+    for (i = up_build; up_build && i < argc; i++)
+        if (!strcmp(argv[i], "--check") || !strcmp(argv[i], "--status") || !strcmp(argv[i], "--remove")
+                || !strcmp(argv[i], "--dismiss"))
+            return bo3_upscale_main(argc - up_build, argv + up_build, "");
+#endif
     {
         int rc, status_only = 0;
 #ifdef BO3_HAVE_SHADERBUILD
@@ -3333,7 +3712,7 @@ int main(int argc, char **argv)
         rc = bo3_data_enter(data_arg, xbe_named,
                                 (bug_report ? BO3_DATA_QUIET : 0)
                                 | (status_only ? BO3_DATA_NO_MOVE : 0)
-                                | (no_setup || headless || sb_build || sb_scene
+                                | (no_setup || headless || sb_build || sb_scene || up_build
                                    ? BO3_DATA_NO_SETUP : 0));
         if (rc)
             return rc;
@@ -3352,6 +3731,12 @@ int main(int argc, char **argv)
         return 2;
 #else
     (void)sb_build; (void)sb_scene;
+#endif
+#ifdef BO3_HAVE_UPSCALE
+    if (up_build)
+        return bo3_upscale_main(argc - up_build, argv + up_build, s_xbe_path);
+#else
+    (void)up_build;
 #endif
 
     /* RECOMP_STDIO_LOG=<path>: stdout and stderr to a file, truncated, before
@@ -3508,7 +3893,7 @@ int main(int argc, char **argv)
         cues[XBOX_OVERLAY_SND_PAGE] = vertical;
         xbox_OverlaySetMenuSounds(cues, "UI/HUD");      /* the mixer's bus (mixer.c) */
     }
-    /* The Advanced page's "Check for updates" (BO-100): the one request to
+    /* The System page's "Check for updates" (BO-100): the one request to
      * GitHub's latest-release record is made only when that row is pressed.
      * TAKEDAWN_UPDATE_REPO points it at another repository, for the tests of
      * the "a newer version is out" answer. Not on Android: no row there. */
@@ -3567,7 +3952,14 @@ int main(int argc, char **argv)
     /* BO-222: the Crash Nav map's shape under display.hud_fix (fe_decor):
      * stretched (default) or native, display.crashnav_map. */
     recomp_patch_enable("display.crashnav_map", RENV_DISPLAY_CRASHNAV_MAP);
+    /* BO-315: the 4:3 pictures under display.hud_fix (fe_decor and the
+     * wrapped picture callbacks): blur (default), black, stretch. */
+    recomp_patch_enable("display.pictures", RENV_DISPLAY_PICTURES);
     recomp_patch_enable("display.ultrawide", RENV_DISPLAY_ULTRAWIDE);
+    /* BO-271: the widescreen camera's aspect and field of view, whenever the
+     * title is in its widescreen mode (16:9: the title's own values; 16:10:
+     * vert+; ultrawide: hor+). */
+    recomp_patch_enable("display.widescreen", RENV_DISPLAY_WIDESCREEN);
     /* BO-101: the title's own bloom and blur (radial while boosting,
      * directional in the crash and takedown cameras), on as shipped. At
      * graphics.bloom / graphics.motion_blur = false (RECOMP_GFX_BLOOM=0,
@@ -3649,6 +4041,8 @@ int main(int argc, char **argv)
     pace_log_start();
     /* BO-106: input.control_scheme (controls.c). */
     bo3_controls_start(bo3_flips);
+    /* BO-352: the quick reactions (react.c). */
+    bo3_react_start();
     /* BO-130: RECOMP_DEBUG=autopilot=1 (autopilot.c). */
     bo3_autopilot_start(bo3_flips);
     /* graphics.softbody (softbody.c). */
@@ -3659,6 +4053,27 @@ int main(int argc, char **argv)
     {
         extern void bo3_modsmenu_start(void);
         bo3_modsmenu_start();
+    }
+    /* BO-316: the Mods tab of the settings overlay (modstab.c). */
+    {
+        extern void bo3_modstab_start(void);
+        bo3_modstab_start();
+    }
+    /* BO-301: a QUIT line in the main menu (mainquit.c). */
+    {
+        extern void bo3_mainquit_start(void);
+        bo3_mainquit_start();
+    }
+    /* No way out to the Xbox Dashboard: SELECT GAMERTAG lists the gamertags
+     * only, and the dashboard questions' YES stays in the game (nodash.c). */
+    {
+        extern void bo3_nodash_start(void);
+        bo3_nodash_start();
+    }
+    /* BO-352: CREATE GAME and JOIN WITH CODE in the Xbox Live menu (xboxlive.c). */
+    {
+        extern void bo3_xboxlive_start(void);
+        bo3_xboxlive_start();
     }
     /* A or START leaves a training film (tutorial.c). */
     bo3_tutorial_start();
@@ -3677,6 +4092,10 @@ int main(int argc, char **argv)
      * data, observed as ebx+0x810 in the DirectSound spin at 0x002F8029.
      * Set either variable yourself to override. */
     env_default("RECOMP_AC97_READY", "1");
+    /* Online play: Internet (the community server) unless the player saved
+     * another choice in Settings > System > Online play. Nothing is opened
+     * or looked up until the player goes online (xnet_hle_started). */
+    env_default("RECOMP_ONLINE", "internet");
 #if defined(BO3_FORK_RUNTIME)
     env_default("RECOMP_APU_DSP_ACK", "auto");
     env_default("RECOMP_VBLANK", "1");
@@ -3731,7 +4150,10 @@ int main(int argc, char **argv)
     if (!headless) {
         if (host_is_steam_deck() || host_is_gamescope()) {
             env_default("RECOMP_PRESENT_FULLSCREEN", "1");
-            env_default("RECOMP_DISPLAY_WIDESCREEN", "1");
+            /* The Deck's panel is 1280x800: 16:10 (BO-271); another
+             * gamescope screen by its shape. */
+            env_default("RECOMP_DISPLAY_WIDESCREEN",
+                        host_is_steam_deck() || host_display_1610() ? "16:10" : "1");
             env_default("RECOMP_GFX_HUD_FIX", "1");
             env_default("RECOMP_PRESENT_FIT", "letterbox");
             env_default("RECOMP_PRESENT_FILTER", "linear");
@@ -3746,7 +4168,7 @@ int main(int argc, char **argv)
 #if defined(BO3_RELEASE_BUILD)
         else {
             env_default("RECOMP_PRESENT_FULLSCREEN", "1");
-            env_default("RECOMP_DISPLAY_WIDESCREEN", "1");
+            env_default("RECOMP_DISPLAY_WIDESCREEN", host_display_1610() ? "16:10" : "1");
             env_default("RECOMP_GFX_HUD_FIX", "1");
             env_default("RECOMP_PRESENT_FILTER", "linear");
             env_default("RECOMP_RENDER_SCALE", "3");
@@ -3895,6 +4317,11 @@ int main(int argc, char **argv)
         bo3_shaderbuild_scene_start(s_xbe_path);
     else
         bo3_shaderbuild_host_init(headless);
+#endif
+#if defined(BO3_HAVE_UPSCALE)
+    /* The "Upscale menu pictures" rows (BO-311), on the overlay's Mods page (BO-327). */
+    if (!sb_scene)
+        bo3_upscale_host_init(s_xbe_path);
 #endif
 
 #if defined(_WIN32)

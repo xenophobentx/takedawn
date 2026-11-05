@@ -17,6 +17,9 @@ QString Gb(qint64 bytes) {
   if (text.endsWith(".0")) text.chop(2);
   return text;
 }
+
+// Every package takes the three retail discs (src/game/package.h).
+QString DiscName() { return T("Burnout 3: Takedown disc"); }
 }  // namespace
 
 bool LooksLikeArchive(const QString& path) {
@@ -35,6 +38,7 @@ QString StepTitle(const QString& step) {
   if (step == "disc") return T("Game data");
   if (step == "verify") return T("Checking the installed data");
   if (step == "shaders") return T("Graphics preparation (optional)");
+  if (step == "upscale") return T("Sharper menu pictures (optional)");
   if (step == "steam") return T("Steam library");
   return step;
 }
@@ -78,7 +82,7 @@ Explained ExplainInstall(const QString& code, const InstallFacts& facts) {
   }
   if (code == "xbox360-disc") {
     return {T("This is an Xbox 360 disc."),
-            T("Takedawn runs the original Xbox game. Use the Burnout 3: Takedown (NTSC-U) disc for the original Xbox.")};
+            T("Takedawn runs the original Xbox game. Use the %1 for the original Xbox.").arg(DiscName())};
   }
   if (code == "no-xbe") {
     return {T("There is no Xbox game here."),
@@ -87,12 +91,13 @@ Explained ExplainInstall(const QString& code, const InstallFacts& facts) {
   }
   if (code == "wrong-game") {
     return {T("This is the disc of another game."),
-            T("Takedawn needs the Burnout 3: Takedown (NTSC-U) disc for the original Xbox.")};
+            T("Takedawn needs the %1 for the original Xbox.").arg(DiscName())};
   }
   if (code == "wrong-version") {
     return {T("This is Burnout 3: Takedown, but not the version Takedawn supports."),
-            T("Only the North America (NTSC-U) retail disc works. Discs of other regions (PAL, Japan) and patched or "
-              "modified copies hold different code and cannot be used.")};
+            T("Three retail discs work: the North America (NTSC-U) one, and the two European (PAL) ones, French, "
+              "German and Italian, and English, Spanish, Dutch and Swedish. The Japanese disc and patched or modified "
+              "copies hold different code and cannot be used.")};
   }
   if (code == "truncated-image") {
     return {T("The disc image is incomplete."),
@@ -223,6 +228,32 @@ Explained ExplainShaders(const QString& code) {
   return {T("Preparing the graphics did not finish."),
           T("The game works without it; it prepares what it needs while you play, so the first races can stutter a "
             "little. You can try again with \"Build shaders now\" in the game's settings (Graphics).")};
+}
+
+Explained ExplainUpscale(const QString& code) {
+  const QString later = T("You can try again with \"Upscale menu pictures with AI\" in the game's settings (Mods).");
+  if (code == "cancelled") {
+    return {T("Upscaling the menu pictures was stopped."),
+            T("What it finished is kept. You can do the rest later with \"Upscale menu pictures with AI\" in the "
+              "game's settings (Mods).")};
+  }
+  if (code == "no-engine") {
+    return {T("This copy of Takedawn has no upscaler."), T("The release packages carry it; a build of your own needs it "
+                                                          "beside the program (docs/upscale-art.md).")};
+  }
+  if (code == "gpu-lost") {
+    return {T("The graphics card stopped while upscaling (it may be too busy or too small for the model)."),
+            T("The game is not affected; its menu pictures stay as they are. ") + later};
+  }
+  if (code == "no-gpu") {
+    return {T("The upscaler found no graphics card it can use (it needs Vulkan, or Metal on a Mac)."),
+            T("The game is not affected; its menu pictures stay as they are.")};
+  }
+  if (code == "disk") {
+    return {T("The upscaled pictures could not be written (is the disk full?)."), later};
+  }
+  return {T("Upscaling the menu pictures did not finish."),
+          T("The game works without it; its menu pictures stay as they are. ") + later};
 }
 
 }  // namespace messages

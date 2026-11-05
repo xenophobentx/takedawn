@@ -113,6 +113,19 @@ one big button.
   asks nothing at its first start. `--no-shaders` starts the window with it unticked (tests); the step is a
   normal row with progress. If it fails the row turns amber with a plain reason, the install is still
   complete (Play is offered) and Update tries again. The choice is not remembered between runs.
+- **Sharper menu pictures (BO-311, [upscale-art.md](upscale-art.md)).** A second optional box under
+  it: *Sharper menu pictures: upscale the loading screens and menu art with AI*, with how long it takes and
+  the disk it uses (the upscaler comes with the package, nothing is downloaded). The game
+  says whether it is offered and ticked (`--data-status`: `LOG data upscale on|off|no <quality>`): ticked on
+  Apple silicon and with a graphics card of its own, shown but not ticked on a Steam Deck or built-in graphics
+  (with the quicker model), not shown on Android or by an older game. It runs after the shader pre-build as its
+  own row (`--upscale-art --quality <q>`); Cancel writes its `cancel` file (`LOG upscale work <dir>`). A failure
+  or a stop turns the row amber with a plain reason (`messages::ExplainUpscale`), the install is still complete.
+  `--upscale` / `--no-upscale` start the window with it ticked or not (tests). The box is only shown while
+  no pack is made and the offer was not turned down (`LOG data upscale-pack made|none|declined`). Over an
+  install that is already whole (an update) it is offered once, unticked, with its own *Upscale menu
+  pictures* button (only that step runs). Seen and not used (Install without it, Play, or closing the
+  window) the window runs `--upscale-art --dismiss` and does not show it again; Settings, Graphics keeps it.
 - **An installed copy** (`<root>/Game/Burnout 3 Takedown/default.xbe` and
   `install/state.json`) turns *Install* into *Update*: no disc needed, the driver
   skips what is still current.

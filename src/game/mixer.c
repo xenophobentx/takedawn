@@ -315,17 +315,17 @@ static int all_zero(const uint8_t *p)
 
 /* The title's code that turns a stream voice on (return addresses of the
  * NTSC-U build, docs/mixer.md). */
-#define RA_MUSIC   BO3_VA(0x00152FB2u, 0x00153252u)          /* the music manager: EA GAMES TRAX */
-#define RA_CUSTOM  BO3_VA(0x00155AE3u, 0x00155D83u)          /* its custom-soundtrack player (sub_00155900): the
+#define RA_MUSIC   BO3_VA(0x00152FB2u, 0x00153252u, 0x001532F2u)          /* the music manager: EA GAMES TRAX */
+#define RA_CUSTOM  BO3_VA(0x00155AE3u, 0x00155D83u, 0x00155E23u)          /* its custom-soundtrack player (sub_00155900): the
                                          * user's own music (BO-108) starts its stream here */
 /* The music manager's code: a stream started from anywhere in it that is
  * not the DJ's path is music (a call site this table does not name yet). */
-#define MUSIC_LO   BO3_VA(0x00152E00u, 0x001530A0u)
-#define MUSIC_HI   BO3_VA(0x00156000u, 0x001562A0u)
-#define RA_DJ      BO3_VA(0x001546BAu, 0x0015495Au)          /* its speech path: the DJ */
-#define RA_FILM_A  BO3_VA(0x0001507Du, 0x0001513Du)          /* the film player */
-#define RA_FILM_B  BO3_VA(0x0008731Bu, 0x0008756Bu)
-#define RA_RWS     BO3_VA(0x0020BD49u, 0x0020C059u)          /* RenderWare's stream player */
+#define MUSIC_LO   BO3_VA(0x00152E00u, 0x001530A0u, 0x00153140u)
+#define MUSIC_HI   BO3_VA(0x00156000u, 0x001562A0u, 0x00156340u)
+#define RA_DJ      BO3_VA(0x001546BAu, 0x0015495Au, 0x001549FAu)          /* its speech path: the DJ */
+#define RA_FILM_A  BO3_VA(0x0001507Du, 0x0001513Du, 0x0001513Du)          /* the film player */
+#define RA_FILM_B  BO3_VA(0x0008731Bu, 0x0008756Bu, 0x0008760Bu)
+#define RA_RWS     BO3_VA(0x0020BD49u, 0x0020C059u, 0x0020C0F9u)          /* RenderWare's stream player */
 
 int bo3_mixer_classify(const apu_bus_voice *v)
 {

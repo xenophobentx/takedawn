@@ -10,8 +10,13 @@
 #
 #   Takedawn.app/Contents/
 #     Info.plist
-#     MacOS/Takedawn           the game (CFBundleExecutable). Installs the
-#                              data itself: Takedawn --install <image|folder>
+#     MacOS/Takedawn           the game (CFBundleExecutable): the North
+#                              America disc's program, which starts the
+#                              program of the disc that is installed. Installs
+#                              the data itself: Takedawn --install <image|folder>
+#     MacOS/Takedawn-pal       the Europe Fr/De/It disc's program
+#     MacOS/Takedawn-ensv      the Europe/Australia En/Es/Nl/Sv disc's
+#                              (src/game/package.h)
 #     MacOS/takedawn-setup     the setup window (Qt), which the game opens
 #                              when its data is not installed
 #     Frameworks/              libSDL2-2.0.0.dylib (sdl2-compat) and
@@ -48,7 +53,7 @@ source "$REPO/tools/release/pins.env"
 MAKE_DMG=1; WITH_SETUP="${TAKEDAWN_SETUP:-1}"
 for a in "$@"; do case "$a" in --no-dmg) MAKE_DMG=0 ;; --no-setup) WITH_SETUP=0 ;; *) die "unknown option $a" ;; esac; done
 
-assert_gen
+assert_gen_all
 B="$WORK/macos"
 P="$DEPS/macos-arm64-$MACOS_DEPLOYMENT_TARGET"      # the libraries' prefix
 export MACOSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET"
@@ -89,30 +94,46 @@ if [ "$(cat "$P/.stamp" 2>/dev/null)" != "$dep_stamp" ]; then
 fi
 
 # ── the game ─────────────────────────────────────────────────────────
-say "configuring (arm64, macOS $MACOS_DEPLOYMENT_TARGET+, Metal only)"
-mkdir -p "$B"
-# Metal is the Mac's backend: the Vulkan one (a MoltenVK test bed) is left
-# out, and with it glslang, SPIRV-Tools and the Vulkan loader.
-cmake -S "$REPO" -B "$B/build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DBO3_RELEASE=ON -DBO3_REGION="$BO3_REGION" \
-    -DXBOXRECOMP_DIR="$TOOLKIT" -DBO3_BIN_DIR="$B/bin" \
-    -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET" \
-    -DXBOXRECOMP_VULKAN=OFF -DSDL2_DIR="$P/lib/cmake/SDL2" -DSDL3_DIR="$P/lib/cmake/SDL3" \
-    -DCMAKE_EXE_LINKER_FLAGS="-Wl,-dead_strip_dylibs" > "$B/configure.log" 2>&1 \
-    || { tail -20 "$B/configure.log" >&2; die "configure failed ($B/configure.log)"; }
-say "building (-j$JOBS, nice $NICE)"
-tb=$(date +%s)
-nice -n "$NICE" cmake --build "$B/build" --target burnout3 -j"$JOBS" > "$B/build.log" 2>&1 \
-    || { tail -30 "$B/build.log" >&2; die "build failed ($B/build.log)"; }
-say "build took $(( $(date +%s) - tb )) s"
-if grep -q "Wunguarded-availability" "$B/build.log"; then
-    grep -c "Wunguarded-availability" "$B/build.log" | sed 's/^/!! API-availability warnings: /' >&2
-    die "the build uses APIs newer than macOS $MACOS_DEPLOYMENT_TARGET without a guard ($B/build.log)"
-fi
+# Each program of the package (common.sh, PKG_REGIONS) in its own build tree:
+# build/, bin/ for the main one, build<suffix>/, bin<suffix>/ for the others.
+build_program() {  # <region>
+    use_region "$1"
+    local bd="$B/build$PROG_SUFFIX" bin="$B/bin$PROG_SUFFIX" log="$B/build$PROG_SUFFIX.log"
+    say "$PROG_REGION: configuring (arm64, macOS $MACOS_DEPLOYMENT_TARGET+, Metal only)"
+    mkdir -p "$B"
+    # Metal is the Mac's backend: the Vulkan one (a MoltenVK test bed) is left
+    # out, and with it glslang, SPIRV-Tools and the Vulkan loader.
+    cmake -S "$REPO" -B "$bd" -G Ninja -DCMAKE_BUILD_TYPE=Release -DBO3_RELEASE=ON -DBO3_REGION="$PROG_REGION" \
+        -DXBOXRECOMP_DIR="$TOOLKIT" -DBO3_BIN_DIR="$bin" \
+        -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOS_DEPLOYMENT_TARGET" \
+        -DXBOXRECOMP_VULKAN=OFF -DSDL2_DIR="$P/lib/cmake/SDL2" -DSDL3_DIR="$P/lib/cmake/SDL3" \
+        -DCMAKE_EXE_LINKER_FLAGS="-Wl,-dead_strip_dylibs" > "$B/configure$PROG_SUFFIX.log" 2>&1 \
+        || { tail -20 "$B/configure$PROG_SUFFIX.log" >&2; die "configure failed ($B/configure$PROG_SUFFIX.log)"; }
+    say "$PROG_REGION: building (-j$JOBS, nice $NICE)"
+    tb=$(date +%s)
+    nice -n "$NICE" cmake --build "$bd" --target burnout3 -j"$JOBS" > "$log" 2>&1 \
+        || { tail -30 "$log" >&2; die "build failed ($log)"; }
+    say "$PROG_REGION: build took $(( $(date +%s) - tb )) s"
+    if grep -q "Wunguarded-availability" "$log"; then
+        grep -c "Wunguarded-availability" "$log" | sed 's/^/!! API-availability warnings: /' >&2
+        die "the build uses APIs newer than macOS $MACOS_DEPLOYMENT_TARGET without a guard ($log)"
+    fi
+    # -ffp-contract=off held: no fused multiply-add anywhere (BO-282.2).
+    "$REPO/tools/release/check-fp.sh" "$(xcrun -f objdump 2>/dev/null || echo objdump)" "$bin/takedawn" \
+        || die "$PROG_REGION: fused multiply-add in the program (tools/release/check-fp.sh)"
+}
+for r in $PKG_REGIONS; do build_program "$r"; done
+use_region "${PKG_REGIONS%% *}"
 
 # ── the bundle ───────────────────────────────────────────────────────
 APP="$B/$APP_TITLE.app"; C="$APP/Contents"
 rm -rf "$APP"; mkdir -p "$C/MacOS" "$C/Frameworks" "$C/Resources"
 cp "$B/bin/takedawn" "$C/MacOS/Takedawn"
+for r in $PKG_REGIONS; do
+    use_region "$r"
+    [ -z "$PROG_SUFFIX" ] || cp "$B/bin$PROG_SUFFIX/takedawn" "$C/MacOS/Takedawn$PROG_SUFFIX"
+done
+use_region "${PKG_REGIONS%% *}"
 # Real files, not links: sdl2-compat opens SDL3 by the name libSDL3.dylib
 # beside itself, the SDL2 link is by its install name.
 cp "$P/lib/libSDL2-2.0.0.dylib" "$C/Frameworks/libSDL2-2.0.0.dylib"
@@ -146,6 +167,12 @@ done
 iconutil -c icns "$ICONSET" -o "$C/Resources/Takedawn.icns"
 
 if [ "$HAVE_SETUP" = yes ]; then copy_licenses "$C/Resources/licenses" qt; else copy_licenses "$C/Resources/licenses"; fi
+# The menu pictures' upscaler (BO-311): the program beside Takedawn in
+# Contents/MacOS (arm64 only, as the audit below asks; sealed with the bundle),
+# its models in Contents/Resources/upscaler/models.
+stage_upscaler macos "$C/MacOS" "$C/Resources/upscaler/models"
+lipo -thin arm64 "$C/MacOS/realesrgan-ncnn-vulkan" -output "$C/MacOS/realesrgan-ncnn-vulkan.arm64" \
+    && mv "$C/MacOS/realesrgan-ncnn-vulkan.arm64" "$C/MacOS/realesrgan-ncnn-vulkan" || die "the upscaler cannot be thinned to arm64"
 # BO-245: graphics.texture_upscale's shader files (LGPL-3.0-or-later, loaded
 # at runtime from Resources/shaders/upscale; their NOTICE.md says where they
 # come from and how to replace them). Separate files, not in the program.
@@ -170,7 +197,12 @@ while IFS= read -r f; do
     [ "$(printf '%s\n%s\n' "$minos" "$MACOS_DEPLOYMENT_TARGET" | sort -V | tail -1)" = "$MACOS_DEPLOYMENT_TARGET" ] \
         || die "$(basename "$f") needs macOS $minos, the target is $MACOS_DEPLOYMENT_TARGET"
 done < <(find "$C/MacOS" "$C/Frameworks" "$C/PlugIns" -type f 2>/dev/null)
-otool -L "$C/MacOS/Takedawn" | grep -q "@rpath/libSDL2-2.0.0.dylib" || die "Takedawn does not link the bundled SDL2"
+for r in $PKG_REGIONS; do
+    use_region "$r"
+    otool -L "$C/MacOS/Takedawn$PROG_SUFFIX" | grep -q "@rpath/libSDL2-2.0.0.dylib" \
+        || die "Takedawn$PROG_SUFFIX does not link the bundled SDL2"
+done
+use_region "${PKG_REGIONS%% *}"
 if [ "${TAKEDAWN_MACOS_SEAL:-1}" = 1 ]; then
     codesign --force --deep --sign - "$APP" > "$B/codesign.log" 2>&1 || die "ad hoc seal failed ($B/codesign.log)"
     codesign --verify --deep --strict "$APP" || die "the sealed bundle does not verify"
@@ -180,8 +212,13 @@ else
 fi
 codesign -dv "$C/MacOS/Takedawn" 2>&1 | grep -q "^Authority=" && die "takedawn carries an identity's signature"
 
-scratch_run "$B/scratch-home" "$C/MacOS/Takedawn" --version > "$B/version.txt" || die "the bundled takedawn does not start"
-check_version "$B/version.txt" "$APP_TITLE.app"
+for r in $PKG_REGIONS; do
+    use_region "$r"; assert_gen
+    scratch_run "$B/scratch-home" "$C/MacOS/Takedawn$PROG_SUFFIX" --version > "$B/version$PROG_SUFFIX.txt" \
+        || die "the bundled Takedawn$PROG_SUFFIX does not start"
+    check_version "$B/version$PROG_SUFFIX.txt" "$APP_TITLE.app (Takedawn$PROG_SUFFIX)"
+done
+use_region "${PKG_REGIONS%% *}"; assert_gen
 
 # ── the disk image ───────────────────────────────────────────────────
 if [ "$MAKE_DMG" = 1 ]; then

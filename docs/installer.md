@@ -64,17 +64,40 @@ burnout3 --version
 ```
 
 It reads the same images as `xdvdfs.py` (the same partition offsets) or an
-extracted folder, refuses anything whose `default.xbe` is not the supported
-build, wants 3 GB free, copies each file through `<name>.part` while hashing
+extracted folder, refuses anything whose `default.xbe` is not a supported
+build (one of the three discs below: the package's program for that disc
+does the install), wants 3 GB free (3.4 GB for a European disc), copies each file through `<name>.part` while hashing
 it, compares it with the manifest and renames it, and keeps a journal
 (`<dest>/install.journal`), so a run that was killed or cancelled goes on where
 it stopped. `<dest>/.complete` (manifest id, program version) is written last.
 Files the manifest does not list are not copied. A folder that already is the
 destination is checked where it lies. `--check` only says what the disc is.
 
-The manifest is `config/disc/ntsc-u-retail.manifest` (SHA-256, size, path;
-716 files, 2,476,107,072 bytes), made from a disc image by
-`tools/release/make_manifest.py`. A folder the game has run in holds two more
+The manifests are `config/disc/ntsc-u-retail.manifest` (SHA-256, size, path;
+716 files, 2,476,107,072 bytes), `pal-retail.manifest` (786 files) and
+`pal-ensv-retail.manifest` (761 files), made from disc images by
+`tools/release/make_manifest.py`.
+
+One package, three programs (BO-341). Every package has a program for
+each disc: the North America one under the package's name (`Takedawn`,
+`takedawn`, `Takedawn.exe`), `-pal` (Europe, French, German, Italian) and
+`-ensv` (Europe and Australia, English, Spanish, Dutch, Swedish) beside it
+([pal.md](pal.md), "Packages"; `src/game/package.h`). Each has all three
+manifests compiled in. `--install <disc>` (and `--check`) given to any of them
+reads the disc's `default.xbe`, and the program for that disc does the work,
+on the same pipe and with the same arguments. A real install writes
+`disc.txt` (the build id) in the main program's per-user local folder when
+another disc's data is installed too, and its last line says which disc
+Takedawn starts from then on and where the other disc's data stays. A start
+of the main program becomes the program of the disc installed last (or the
+one whose data is whole) before anything else; so does `--data-status`, and
+with it the setup window. Each program keeps the folders its package had
+before: the European discs `Takedawn PAL` (`takedawn pal` on Linux) beside
+the table's `Takedawn`, so no save, setting or install moves. `--install
+--check` adds `LOG disc build <id>`, `LOG disc root <dir>`, `LOG disc place
+saved|default|named`, `LOG disc default <dir>`, `LOG disc bytes <n>` and `LOG
+disc free-needed <n>`: where that disc's program would put it; `--data-status`
+adds `LOG data build <id>`. A folder the game has run in holds two more
 files, `CACHE/LocalCache*.bin`, which the title writes itself.
 
 stdout is the protocol below with the one step `disc`; `RESULT OK <dest>`.
@@ -85,13 +108,13 @@ Failure codes: `no-source`, `source-unreadable`, `not-xbox-image`,
 process (SIGINT and SIGTERM are answered with `cancelled`) or create
 `<dest>/install.cancel`.
 
-**Where the game looks for its data** (`src/game/install.h`), first match wins:
+Where the game looks for its data (`src/game/install.h`), first match wins:
 
 1. a `default.xbe` named on the command line;
 2. `--data <dir>`;
 3. `TAKEDAWN_DATA`;
 4. the working directory when it holds `Burnout 3 Takedown/default.xbe` (a
-   checkout, as before; no marker is asked for);
+   checkout; no marker is asked for);
 5. the folder chosen in the setup window (BO-197): the first line of
    `data-folder.txt` in the per-user local folder, which is
    `%LOCALAPPDATA%\Takedawn` on Windows and the save folder (the middle column
@@ -110,6 +133,9 @@ roots:
 | macOS | `~/Library/Application Support/Takedawn/Game` | `~/Library/Application Support/Takedawn` | `~/Library/Caches/Takedawn` |
 | Linux | `$XDG_DATA_HOME/takedawn/Game` (`~/.local/share/takedawn/Game`) | `$XDG_DATA_HOME/takedawn` | `$XDG_CACHE_HOME/takedawn` (`~/.cache/takedawn`) |
 | Windows | `%LOCALAPPDATA%\Takedawn\Game` | `%APPDATA%\Takedawn` | `%LOCALAPPDATA%\Takedawn\cache` |
+
+The European discs' programs: the same with `Takedawn PAL` (`takedawn pal`
+on Linux, where the shader cache stays `takedawn` for all three).
 
 Without a whole install there the title is not started: exit status 3 and
 `STEP data FAIL not-installed <text>` / `RESULT FAIL data not-installed` on
@@ -142,11 +168,11 @@ it), `LOG data default <dir>` (case 6), `LOG data files|bytes|free-needed <n>`, 
 then `STEP data OK ...` / `RESULT OK <root>` (status 0) or `STEP data FAIL
 not-installed|unverified <text>` / `RESULT FAIL data <code>` (status 3).
 
-**`enhance.toml`** is read from the per-user settings folder (the middle column
+`enhance.toml` is read from the per-user settings folder (the middle column
 above, or `RECOMP_SAVE_DIR`) when there is one, else from beside the executable
 (a checkout's `bin/`, a portable copy). A release's program folder is read-only
 (a macOS bundle, Program Files, an AppImage), so the player's file is the first.
-`RECOMP_ENHANCE_CONFIG` still names another, as before.
+`RECOMP_ENHANCE_CONFIG` names another.
 
 ## The setup window (BO-103)
 
@@ -173,7 +199,7 @@ own sentence is the tooltip and is in "Show details" and "Copy details". A
 disc that cannot be used is said on the disc card; a failure of the copy is
 said in a note above the progress row.
 
-**Where the data goes (BO-197).** "Installs to" has Change... and, when the
+Where the data goes (BO-197). "Installs to" has Change... and, when the
 folder is not the default, Default. Change... is the system's folder dialog,
 or on Linux and with a controller the built-in list in its folder mode
 ("Install here" on top, no disc images). A folder with other files in it gets
@@ -186,28 +212,27 @@ is made and removed where the data folder would be made). Asked first: a
 network drive (Windows `DRIVE_REMOTE`; nfs, smb, afp, webdav, sshfs) and a
 removable or external one (Windows `DRIVE_REMOVABLE`; macOS `/Volumes/...`;
 Linux `/media`, `/run/media`, `/mnt`). The free space line and the Install
-button follow the chosen disk as before. With `--data` or `TAKEDAWN_DATA`
+button follow the chosen disk. With `--data` or `TAKEDAWN_DATA`
 (the window got `--dest`) there is no Change...: the game would not look
 anywhere else. Nothing moves the files: to move an install, move its folder
 and pick it with Change....
 
-**How the game opens it.** A person who starts the game without a whole install
+How the game opens it. A person who starts the game without a whole install
 gets the window instead of a silent exit: `bo3_data_enter` (`src/game/install.c`)
 looks for `takedawn-setup` in the executable's own folder (`TAKEDAWN_SETUP`
 names another) and becomes it (`execv`, so a launcher keeps one process to
 watch) with `--program <the game> [--dest <root>]`. Not with `--no-setup`,
 `--headless`, `RECOMP_HEADLESS` or `TAKEDAWN_NO_SETUP`, not on Linux without a
 display, and not on Windows or Android, where the window is not built yet:
-there the `RESULT FAIL data ...` line and exit status 3 are the answer, as
-before. The window finds the game the other way round: `--program`, else
+there the `RESULT FAIL data ...` line and exit status 3 are the answer. The window finds the game the other way round: `--program`, else
 `Takedawn` / `takedawn` / `burnout3` beside itself, else `bin/` of the checkout
 it was built in.
 
-**Without a mouse: controller, touch, gamescope.** A Steam Deck in Game Mode
+Without a mouse: controller, touch, gamescope. A Steam Deck in Game Mode
 has a controller and a touch screen and nothing else, and a person who starts
 Takedawn there without data must be able to finish the install.
 
-- *Controller* (`pad_input.cpp`, `pad_nav.cpp`): the window reads every
+- Controller (`pad_input.cpp`, `pad_nav.cpp`): the window reads every
   controller with SDL's game controller API, the SDL the game carries (Linux
   builds; `-DTAKEDAWN_SETUP_GAMEPAD=ON` elsewhere, off by default so the macOS
   and Windows packages carry what they did). D-pad or left stick: the focus
@@ -215,12 +240,12 @@ Takedawn there without data must be able to finish the install.
   rolled out, and follows the focus). A: press, tick, open. B: back in the disc
   browser, close a box. Start: the main button (Install, Stop, Resume, Play).
   Shoulder buttons: scroll the list, the log or a licence. The focus is drawn
-  by a mark of its own in the steel blue (`padFocus` in `theme.cpp`), not left
-  to which window the system thinks is active, and the foot of the window says
+  by a mark of its own in the steel blue (`padFocus` in `theme.cpp`) and does
+  not depend on which window the system thinks is active, and the foot of the window says
   what the buttons do ("A Select", "B Back", "Start Install"); it appears with
   the first controller and is always there under gamescope. Only the window in
   front is driven. `--no-pad` reads no controller.
-- *The disc browser* (`disc_browser.cpp`), Linux: "Choose disc..." opens a page
+- The disc browser (`disc_browser.cpp`), Linux: "Choose disc..." opens a page
   of the window itself instead of Qt's file dialog: Home, Downloads, every
   mounted card and drive (`/run/media/<user>/<label>`, `/run/media/<label>`,
   `/media`, `/mnt`), and the Xbox folders of EmuDeck and RetroDECK
@@ -229,7 +254,7 @@ Takedawn there without data must be able to finish the install.
   `default.xbe`: "disc files: choose"; inside one, "Use this folder"), in rows
   48 px high. "System file chooser..." is still there for a mouse (not under
   gamescope). macOS and Windows keep their own dialogs.
-- *The disc found by itself*: at the start, when nothing is installed and no
+- The disc found by itself: at the start, when nothing is installed and no
   disc was named, the same places are searched a few levels deep (breadth
   first, at most 6000 directory entries, hidden folders and Steam's own left
   out, links to folders followed once) for extracted discs and for images of
@@ -238,12 +263,12 @@ Takedawn there without data must be able to finish the install.
   "Found Burnout 3: Takedown / <path> / Use it?" with "Use it" and "Choose
   another...". Nothing is used unasked. `TAKEDAWN_SETUP_NO_SEARCH=1` leaves the
   search out.
-- *Under gamescope* (`GAMESCOPE_WAYLAND_DISPLAY`, or `XDG_CURRENT_DESKTOP`
+- Under gamescope (`GAMESCOPE_WAYLAND_DISPLAY`, or `XDG_CURRENT_DESKTOP`
   `gamescope`; `--couch` and `TAKEDAWN_SETUP_COUCH=1/0` say it outright): the
   window fills the screen without a frame, is scaled so that it is laid out 640
   units high (`QT_SCALE_FACTOR` 1.25 on the Deck's 1280x800; one already set is
   kept), and every control is 44 px and more for a finger. A tap is a click.
-- *Tests*: `tests/pad_test.cpp` (the key repeat from made-up controller states;
+- Tests: `tests/pad_test.cpp` (the key repeat from made-up controller states;
   the places and the search over a made-up home and SD card; the window driven
   by presses alone from the first screen to Play; every control reachable and
   finger sized). `--pad-shots <dir>` renders that flow.
@@ -255,7 +280,7 @@ Takedawn there without data must be able to finish the install.
   (0 = the main one), as it does the game's, and Play hands it on: tests on a
   machine with two displays keep both windows on the one they name.
 
-**How it ships (macOS).** One bundle with both executables:
+How it ships (macOS). One bundle with both executables:
 
 ```
 Takedawn.app/Contents/
@@ -274,14 +299,14 @@ the main executable's library paths; then thinned to the game's architecture).
 With Qt 6.10.3 from qt.io that is 21.7 MB of Qt beside a 20 MB game. A
 Homebrew Qt drags ICU along and comes to 69 MB: do not package with it.
 
-**Look.** The colours are the "game" table of the toolkit's settings overlay
+Look. The colours are the "game" table of the toolkit's settings overlay
 (`src/overlay/overlay_ui.cpp`, `k_theme_game`), mirrored by name in
 `theme.cpp` and nowhere else. The icon is `assets/icon/takedawn.svg`, rendered
 to PNG when the window is built (`render_icon.py`: resvg, rsvg-convert or the
 `resvg_py` module; `-DTAKEDAWN_ICON_PYTHON=` names a Python that has it). Qt's
 own SVG reader is not used: it ignores the clip path.
 
-**Build and test.**
+Build and test.
 
 ```
 cmake -S tools/install/gui -B tools/install/gui/build -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -317,14 +342,16 @@ xiso. File names from the image are treated as data: separators, `..` and
 
 An extracted folder may be the game folder itself or wrap it one level down.
 
-**Supported build, recorded in `tools/install/supported.json` and nowhere else:**
+Supported builds, recorded in `tools/install/supported.json` and nowhere else:
 Burnout 3: Takedown, NTSC-U (North America) retail, title id 0x4541005B,
 `default.xbe` 4,308,992 bytes,
-`sha256 9f497acd82adb8edfb72cc31aeeb35010b45d32b13a3f1fc6540717ff24d13f9`.
+`sha256 9f497acd82adb8edfb72cc31aeeb35010b45d32b13a3f1fc6540717ff24d13f9`;
+and the two European retail discs ([pal.md](pal.md)), each its own program.
 The recompiler's seeds, the spin-wait list and the entry point (0x001D2807) in
-`src/game/main.c` are addresses in this exact file, so a PAL or Japanese disc
-(or a patched XBE) is refused with its title, region and hash, not tried. To
-support another build: add an entry and verify the regen against it.
+`src/game/main.c` are addresses in one exact file, so each disc has its own
+program, and a Japanese disc (or a patched XBE) is refused with its title,
+region and hash, not tried. To support another build: add an entry and verify
+the regen against it.
 
 An Xbox 360 image (as the Burnout Revenge ISOs here) is recognised and refused
 with "has a default.xex".
@@ -425,7 +452,7 @@ else into a private venv `<root>/install/venv`; `--no-pip` only reports it. Noth
 
 Implemented in `linux.py` and `steam.py`; tested on the Steam Deck (below).
 
-**Build in the Steam Runtime sniper SDK container.** The generated C cannot be
+Build in the Steam Runtime sniper SDK container. The generated C cannot be
 shipped, so the machine compiles, and SteamOS has no compiler. As the Deck build
 already does, `regen` runs on the host (plain Python + bash) and `build` runs in
 `registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest` under podman: the
@@ -440,7 +467,7 @@ different run root; the Deck's store lives on the SD card). Second choice,
 libraries (sdl2, libepoxy, vulkan, openssl), reported as `MISSING` lines with the
 distro's install command. `auto` takes the container when podman exists.
 
-**Package** (`--app-dir`, default `<root>/app`):
+Package (`--app-dir`, default `<root>/app`):
 
 ```
 burnout3         the binary
@@ -456,7 +483,7 @@ burnout3.desktop desktop entry with absolute paths
 Data, saves and settings: `<root>` defaults to `~/.local/share/burnout3`, which is
 also the game's own save folder (as on the Mac).
 
-**Opt-in steps**, off unless asked for (`--desktop`, `--steam`, `--shaders`, or `--only`):
+Opt-in steps, off unless asked for (`--desktop`, `--steam`, `--shaders`, or `--only`):
 
 - `desktop`: copies the entry and icon into `$XDG_DATA_HOME` (`--xdg-data-home`),
   `applications/burnout3-takedown.desktop` and `icons/hicolor/256x256/apps/`.
@@ -497,7 +524,7 @@ given (`--podman-root`, or podman's own).
   replays the protocol: built, already built, scene-failed, cache-off, cancelled, silent, crashing,
   and the installer stopped).
 
-**No AppImage**, deliberately: what this installer makes is built from the user's
+No AppImage: what this installer makes is built from the user's
 disc and cannot be handed around, so an AppImage's one advantage (one file to
 distribute) does not apply. Being portable would also mean bundling SDL2 and the
 Vulkan loader, and building it needs appimagetool (a download), for the same
@@ -510,7 +537,7 @@ Implemented in `win.py`; the driver runs natively on Windows under any Python
 3.10+ (the installer package is to carry an embeddable one). Nothing is
 installed system-wide and no PATH is changed.
 
-- **Portable tools**, in `--tools-dir` (default `<root>/tools`): llvm-mingw
+- Portable tools, in `--tools-dir` (default `<root>/tools`): llvm-mingw
   (the Windows x86-64 UCRT zip, 20260922, the version the repo's toolchain file is
   pinned to), CMake 3.31.6, Ninja 1.12.1, SDL2 2.32.10 (mingw development package),
   the Vulkan headers plus an import library for `vulkan-1.dll` made with dlltool from
@@ -521,13 +548,13 @@ installed system-wide and no PATH is changed.
   sha256 in `pins.json` (recorded when the URLs were first fetched) and unpacked with
   path-escape and link checks. The tools are put on PATH for the processes the
   installer starts, not for the system.
-- **capstone**: the PyPI wheel (a zip) is unpacked into `<root>/install/site`; no
+- capstone: the PyPI wheel (a zip) is unpacked into `<root>/install/site`; no
   pip. `regen.py` puts it on `sys.path`.
-- **regen without bash**: `regen.py` is `regen.sh` in Python, stage for stage and
+- regen without bash: `regen.py` is `regen.sh` in Python, stage for stage and
   flag for flag, started with `runpy` so an embeddable Python works. It is used on
-  every platform now (the Mac and Linux runs went through it). Its generated C
+  every platform (the Mac and Linux runs went through it). Its generated C
   was compared with `regen.sh`'s on the Mac: all 29 files identical.
-- **Build**: the repo's Windows build (`docs/windows.md`) done natively: the
+- Build: the repo's Windows build (`docs/windows.md`) done natively: the
   `cmake/llvm-mingw-x86_64.cmake` toolchain file, same options as
   `tools/win/build-mingw.sh`, `SDL2.dll` beside the exe. The user's icon is in the
   exe: the installer compiles `1 ICON "AppIcon.ico"` with llvm-mingw's `windres` and
@@ -537,14 +564,14 @@ installed system-wide and no PATH is changed.
   find SDL2 and glslang through `CMAKE_PREFIX_PATH` once the toolchain file has set
   `CMAKE_FIND_ROOT_PATH` with drive-letter paths, so `SDL2_DIR` and `glslang_DIR` are
   passed outright.
-- **Install folder** (`--app-dir`, default `<root>/app`): `burnout3.exe`, `SDL2.dll`,
+- Install folder (`--app-dir`, default `<root>/app`): `burnout3.exe`, `SDL2.dll`,
   `burnout3.ico`, `enhance.toml` (the exe reads it from beside itself; kept if
   edited), `Burnout 3 Takedown.lnk` (target the exe, working directory
   `<root>/Game` where `Burnout 3 Takedown\` lives, icon the user's .ico) and
   `uninstall.txt`. Saves stay in `%APPDATA%\Burnout3`.
-- **Opt-in `desktop` step** (`--desktop`): copies the `.lnk` to the Start menu and the
+- Opt-in `desktop` step (`--desktop`): copies the `.lnk` to the Start menu and the
   Desktop (`--start-menu-dir`, `--desktop-dir` to redirect).
-- **Uninstall**: nothing is registered, so `uninstall.txt` lists what to delete (the
+- Uninstall: nothing is registered, so `uninstall.txt` lists what to delete (the
   install folder, the root, the shortcuts, optionally the tools) and where the saves
   are, which it leaves alone.
 
@@ -661,7 +688,7 @@ since glslang is built there once.
 ## User-facing options the driver has that Xerenge's installer does not
 
 Xerenge asks for the disc image, the install folder and a few game settings; the rest is
-automatic. Ours, with the reason for each (candidates to hide or drop):
+automatic. The options here, with the reason for each (candidates to hide or drop):
 
 | option | why it exists |
 |---|---|
@@ -707,22 +734,22 @@ wrapper). The toolkit's `tools/xiso` (MIT) does the same job as `xdvdfs.py`.
 
 ## Open decisions for the user
 
-1. **GUI toolkit.** Xerenge uses Qt 6 (C++, QProcess, linuxdeploy / macdeployqt
+1. GUI toolkit. Xerenge uses Qt 6 (C++, QProcess, linuxdeploy / macdeployqt
    / Inno). The driver already speaks a protocol, so a Qt front-end is a small
    QProcess reader plus a progress bar, and the Xerenge packaging scripts are the
    template, but Qt adds a ~100 MB bundle and a C++ build per platform. Cheaper:
    Tk or a local web page from Python (no new dependency, plain look), or a
    native SwiftUI shell on the Mac only.
-2. **Where the source comes from once published.** Proposal: a pinned
+2. Where the source comes from once published. Proposal: a pinned
    `tools/install/sources.json` (burnout3 and toolkit, commit + sha256 of the
    tarball) fetched as GitHub tarballs, so no git is needed and a build is
    reproducible; the alternative is `git clone` of the default branches
    (simpler, unpinned). Which toolkit remote: the apexJCL fork lineage this
    branch builds on, or upstream once it has the Metal backend.
-3. **Toolchain on the Deck.** podman with the sniper SDK image (works, needs a
+3. Toolchain on the Deck. podman with the sniper SDK image (works, needs a
    network pull of a few GB and podman on SteamOS), or a prebuilt toolchain
-   tarball the installer unpacks (fast, but a binary we must host and pin), or
+   tarball the installer unpacks (fast, but a binary I must host and pin), or
    host clang on Bazzite only.
-4. **Data location on the Mac.** Now `~/Library/Application Support/Burnout3/Game`
+4. Data location on the Mac. Now `~/Library/Application Support/Burnout3/Game`
    next to the saves (one folder, easy to delete, may live on the internal disk
    only). Alternative: an install folder of the user's choice (`--root`).

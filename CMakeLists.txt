@@ -43,19 +43,29 @@ option(BO3_RELEASE "Release build: named takedawn, stamped generated code requir
 if(BO3_RELEASE)
     # What a packaged program does differently at run time (src/game/main.c:
     # the display defaults of a first start on a desktop).
-    add_compile_definitions(BO3_RELEASE_BUILD=1)
+    # XNET_NO_NET_SIM: no bad-network test switch in a package (BO-357).
+    add_compile_definitions(BO3_RELEASE_BUILD=1 XNET_NO_NET_SIM=1)
 endif()
 
 # The disc the build is for (src/game/region.h): NTSC-U, the North America
-# retail release, or PAL, the European one. Its default.xbe is translated by
-# regen.sh with BO3_REGION=PAL, which takes config/pal/ and
-# recomp/recomp_manual_pal.c; the C picks the PAL addresses.
-set(BO3_REGION "NTSC-U" CACHE STRING "Disc region: NTSC-U or PAL")
-set_property(CACHE BO3_REGION PROPERTY STRINGS NTSC-U PAL)
+# retail release; PAL, the European Fr/De/It one; or PAL-ENSV, the
+# Europe/Australia En/Es/Nl/Sv one. Its default.xbe is translated by regen.sh
+# with the same BO3_REGION, which takes config/pal/ and
+# recomp/recomp_manual_pal.c (PAL, generated into recomp/gen.pal) or
+# config/pal-ensv/ and recomp/recomp_manual_pal_ensv.c (PAL-ENSV, into
+# recomp/gen.pal-ensv), so that one checkout builds all three programs a
+# package carries; the C picks the disc's addresses.
+set(BO3_REGION "NTSC-U" CACHE STRING "Disc region: NTSC-U, PAL or PAL-ENSV")
+set_property(CACHE BO3_REGION PROPERTY STRINGS NTSC-U PAL PAL-ENSV)
+set(BO3_GEN_NAME gen)
 if(BO3_REGION STREQUAL "PAL")
     add_compile_definitions(BO3_REGION_PAL=1)
+    set(BO3_GEN_NAME gen.pal)
+elseif(BO3_REGION STREQUAL "PAL-ENSV")
+    add_compile_definitions(BO3_REGION_PAL=1 BO3_REGION_PAL_ENSV=1)
+    set(BO3_GEN_NAME gen.pal-ensv)
 elseif(NOT BO3_REGION STREQUAL "NTSC-U")
-    message(FATAL_ERROR "BO3_REGION must be NTSC-U or PAL, not '${BO3_REGION}'")
+    message(FATAL_ERROR "BO3_REGION must be NTSC-U, PAL or PAL-ENSV, not '${BO3_REGION}'")
 endif()
 
 option(BO3_ICALL_FEEDBACK "Record indirect-branch targets for codegen feedback" OFF)
@@ -104,6 +114,19 @@ if((NOT WIN32 OR BO3_WIN_VULKAN) AND EXISTS "${XBOXRECOMP_DIR}/src/overlay/overl
     endif()
 endif()
 
+# Floating point, the same on every target (BO-282.2): no contraction of a
+# multiply and an add into one fused instruction. Clang's default is
+# -ffp-contract=on, and arm64 has the instruction, so the Mac and Android
+# builds fused a*b+c inside an expression (the generated chunks, hirefresh.c,
+# the toolkit) while x86-64 has no FMA at its baseline and never did: the
+# arm64 game thread did not compute what the guest's x87 and SSE code
+# computes. Set here, before the toolkit, so it holds for every target of the
+# build, both trees. No -ffast-math and no -march beyond each platform's
+# baseline either.
+if(NOT MSVC)
+    add_compile_options(-ffp-contract=off)
+endif()
+
 add_subdirectory(${XBOXRECOMP_DIR} ${CMAKE_BINARY_DIR}/xboxrecomp)
 
 add_subdirectory(src/game)
@@ -123,8 +146,61 @@ if(NOT ANDROID)
     add_subdirectory(tests/modfs)
     # A mod's mod.toml (src/game/modmanifest.c).
     add_subdirectory(tests/modmanifest)
+    # A texture pack mod's pack.toml and the folders handed to the toolkit (src/game/modtex.c).
+    add_subdirectory(tests/modtex)
     # The MODS page in the title's Settings menu (src/game/modsmenu.c).
     add_subdirectory(tests/modsmenu)
+    # The online test navigator's screen table and start gate (src/game/onlinebot.c, BO-134).
+    add_subdirectory(tests/onlinebot)
+    # The quick reactions' phrases and d-pad mapping (src/game/react.h, BO-352).
+    add_subdirectory(tests/react)
+    # The player's online navigator's pure decisions (src/game/onlinenav.c, BO-352).
+    add_subdirectory(tests/onlinenav)
+    # QUICK PLAY's decisions and the create state's skipped pages (src/game/quickplay.c, Takedawn Online step 3).
+    add_subdirectory(tests/quickplay)
+    # Waiting for a race under way, then joining its game (src/game/racewait.c, BO-365).
+    add_subdirectory(tests/racewait)
+    # The track vote's rules (src/game/vote.c, BO-356).
+    add_subdirectory(tests/vote)
+    # After a raced online game, back to one lobby (src/game/stay.c, Takedawn Online step 4).
+    add_subdirectory(tests/stay)
+    # The main menu's added lines' layout (src/game/mainquit.h, BO-352).
+    add_subdirectory(tests/mainquit)
+    # SELECT GAMERTAG without the account lines, the dashboard questions' YES (src/game/nodash.c).
+    add_subdirectory(tests/nodash)
+    add_subdirectory(tests/onlinebrand)
+    # The heading font's W and the TAKEDAWN ONLINE heading (src/game/headfont.c).
+    add_subdirectory(tests/headfont)
+    # The Xbox Live menu's added lines' layout (src/game/xboxlive.h, BO-352).
+    add_subdirectory(tests/xboxlive)
+    # The online info line's parser and text (src/game/onlineinfo.c, BO-352).
+    add_subdirectory(tests/onlineinfo)
+    # JOIN WITH CODE's code entry (src/game/codeentry.c, Takedawn Online step 5).
+    add_subdirectory(tests/codeentry)
+    # The lobby status line, kick reasons and per-language texts (src/game/lobbystatus.c, BO-352).
+    add_subdirectory(tests/lobbystatus)
+    # What the title's XNetQos block says about a peer (src/game/peerqos.h, BO-357).
+    add_subdirectory(tests/peerqos)
+    # The online lobby screen stuck in "the game is about to launch" (src/game/startwatch.h, BO-344).
+    add_subdirectory(tests/startwatch)
+    # The online layer's peer lookup tasks (src/game/peertask.h, BO-344).
+    add_subdirectory(tests/peertask)
+    # The online lobby's link reports sent again (src/game/linkresend.h, BO-344).
+    add_subdirectory(tests/linkresend)
+    # Each peer's link state followed and logged (src/game/linkstate.h, BO-345).
+    add_subdirectory(tests/linkstate)
+    # The "can't reach another player" message names the real port (src/game/unreach.h, BO-349).
+    add_subdirectory(tests/unreach)
+    # The menu picture upscale's disc reader, groups, zip and model blend (src/game/upscale_art.c).
+    add_subdirectory(tests/upscale)
+    # The keyboard prompts' key caps drawn for the player's own keys (src/game/keycap.c, BO-267).
+    add_subdirectory(tests/keycap)
+    # The Language row's list for each disc (src/game/languages.c).
+    add_subdirectory(tests/languages)
+    # Which program of the package runs, and the package table (src/game/package.c, BO-341).
+    add_subdirectory(tests/package)
+    # A traffic car out of the collision broadphase (src/game/traffic_bp.c, BO-346).
+    add_subdirectory(tests/traffic_bp)
 endif()
 
 # Line-level symbols for the runtime libraries, so a hang sample inside one

@@ -74,10 +74,10 @@ moved() {    # <what ran>
 seed
 ( cd "$T/empty" && run "$PROG" --version ) > "$T/out/version.txt" 2>&1 || die "--version failed"
 unmoved "--version"
-# The PAL program (BO3_REGION=PAL, docs/pal.md) keeps folders of its own and
-# leaves the old name's alone, since they are NTSC-U's: for it, the steps
+# The PAL programs (Takedawn-pal, Takedawn-ensv; docs/pal.md) keep folders of their own and
+# leave the old name's alone, since they are NTSC-U's: for them, the steps
 # below that expect a move check that nothing moved.
-PAL=0; tr -d '\r' < "$T/out/version.txt" | grep -q '^manifest .*(pal-retail' && PAL=1
+PAL=0; tr -d '\r' < "$T/out/version.txt" | grep -q '^manifest .*(pal-' && PAL=1
 after() {    # <what ran>
     if [ "$PAL" = 1 ]; then unmoved "$1 (PAL)"; else moved "$1"; fi
 }

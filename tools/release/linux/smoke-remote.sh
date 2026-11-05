@@ -4,7 +4,11 @@
 # and cache folders) inside <scratch>; the machine's own session, Steam and
 # the user's folders are not touched, and no window is put on its screen.
 #
-#   smoke-remote.sh <AppImage> <scratch dir> <manifest id> <source copy> [<disc folder or image>] [<reference saves>]
+#   smoke-remote.sh <AppImage> <scratch dir> <manifest ids> <source copy> [<disc folder or image>] [<reference saves>]
+#
+# <manifest ids>: the package's discs' (comma-separated): the disc given is
+# any of them, and its program installs it into its own folder
+# (src/game/package.h; a European disc's under "takedawn pal").
 #
 # One line per check: "OK   <what>" or "NOT RUN <what>: <why>"; the first
 # check that goes wrong ends it with "!! <what>" and status 1.
@@ -143,15 +147,20 @@ grep -q "^RESULT OK" "$T/check.txt" || die "--install --check gave no RESULT OK"
 echo "OK   --install --check: $(grep -a '^STEP disc OK' "$T/check.txt" | head -1 | cut -c1-100)"
 t0=$(date +%s)
 run nice -n 10 "$APP" --install "$DISC" > "$T/install.txt" 2>&1 || { tail -4 "$T/install.txt" >&2; die "--install failed"; }
-ROOT="$T/home/.local/share/takedawn/Game"
-[ -f "$ROOT/.complete" ] && grep -q "$MANIFEST" "$ROOT/.complete" || die "no .complete marker naming $MANIFEST in $ROOT"
-echo "OK   install into the scratch HOME: $(find "$ROOT/Burnout 3 Takedown" -type f | wc -l) files, $(( $(date +%s) - t0 )) s, .complete names manifest $MANIFEST"
+ROOT="$(sed -n 's/^RESULT OK //p' "$T/install.txt" | tail -1)"
+case "$ROOT" in "$T/home/"*) ;; *) die "the install went to '$ROOT', not into the scratch HOME" ;; esac
+got=""
+for m in $(printf '%s' "$MANIFEST" | tr ',' ' '); do
+    [ -f "$ROOT/.complete" ] && grep -q "$m" "$ROOT/.complete" && got="$m"
+done
+[ -n "$got" ] || die "no .complete marker naming a manifest of the package ($MANIFEST) in $ROOT"
+echo "OK   install into the scratch HOME: $(find "$ROOT/Burnout 3 Takedown" -type f | wc -l) files in ${ROOT#$T/home/}, $(( $(date +%s) - t0 )) s, .complete names manifest $got"
 
 if [ -z "$SAVES" ] || [ ! -d "$SAVES/UDATA" ]; then
     echo "NOT RUN boot to the menu: no reference saves"
     exit 0
 fi
-if pgrep -x takedawn > /dev/null || pgrep -x burnout3 > /dev/null; then
+if pgrep -x "takedawn(-pal|-ensv)?" > /dev/null || pgrep -x burnout3 > /dev/null; then
     echo "NOT RUN boot to the menu: another game instance is running on this machine"
     exit 0
 fi

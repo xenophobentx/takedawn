@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Takedawn community server</title>
+<link id="fav" rel="icon" href="data:,">
+<style>
+:root{--ink:#0f1319;--panel:#161d26;--raise:#1d2631;--rule:#3f4d5d;--text:#d4e4fc;--dim:#8296ab;--lit:#fff;
+--crimson:#c41c1c;--bad:#e84840;--warn:#ff8a80;--orange:#f08a3c;--good:#5cb01a;--edge:#5a99c0;
+--head:Bahnschrift,"Avenir Next Condensed","Arial Narrow","Roboto Condensed","Noto Sans Condensed","DejaVu Sans Condensed",sans-serif}
+*{box-sizing:border-box}
+html{background:var(--ink)}
+body{margin:0;color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+background:var(--ink) linear-gradient(rgba(149,192,225,.06) 1px,transparent 1px) 0 0/32px 32px,
+linear-gradient(90deg,rgba(149,192,225,.06) 1px,transparent 1px) 0 0/32px 32px;min-height:100vh}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;
+background:radial-gradient(60% 40% at 50% 0,rgba(196,28,28,.22),transparent 70%)}
+main{position:relative;max-width:900px;margin:0 auto;padding:20px 16px 40px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+header img{width:56px;height:56px;border-radius:13px;flex:none;box-shadow:0 2px 14px rgba(196,28,28,.35)}
+h1,h2,.num,.label,th,.badge,button{font-family:var(--head);font-weight:700;font-style:italic;text-transform:uppercase;letter-spacing:.05em}
+h1{margin:0;font-size:1.7rem;line-height:1.05;color:var(--lit)}
+h1 span{color:var(--bad)}
+.sub{color:var(--dim);font-size:.9rem}
+h2{margin:0 0 10px;font-size:1.05rem;color:var(--warn)}
+.stat{margin-left:auto;text-align:right;font-size:.85rem;color:var(--dim);white-space:nowrap}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--dim);margin-right:6px;vertical-align:baseline}
+.up .dot{background:var(--good);box-shadow:0 0 8px var(--good)}
+.down .dot{background:var(--bad)}
+section,.card{background:linear-gradient(var(--panel),#121920);border:1px solid var(--rule);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.cards .card{margin:0;border-top:3px solid var(--crimson)}
+.num{font-size:2.3rem;line-height:1;color:var(--lit)}
+.label{font-size:.78rem;color:var(--dim);margin-top:4px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.two section{margin:0}
+.kv{display:flex;justify-content:space-between;border-bottom:1px solid rgba(63,77,93,.5);padding:5px 0}
+.kv:last-child{border:0}.kv b{color:var(--lit);font-weight:600}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+th:nth-child(2),td:nth-child(2){width:130px}th:nth-child(3),td:nth-child(3){width:84px}th:nth-child(4),td:nth-child(4){width:104px}
+.m{display:none;color:var(--dim);font-size:.8rem}
+th{text-align:left;font-size:.75rem;color:var(--dim);padding:4px 6px;border-bottom:1px solid var(--rule)}
+td{padding:7px 6px;border-bottom:1px solid rgba(63,77,93,.4);vertical-align:top;overflow-wrap:anywhere}
+td.n{white-space:nowrap}
+.badge{font-size:.7rem;padding:2px 7px;border-radius:4px;background:rgba(92,176,26,.18);color:var(--good);border:1px solid rgba(92,176,26,.5);white-space:nowrap}
+.lock{font-size:.7rem;color:var(--dim);margin-left:6px}
+.racing{opacity:.55}
+.racing .badge{background:rgba(232,72,64,.15);color:var(--bad);border-color:rgba(232,72,64,.5)}
+.empty{color:var(--dim);padding:6px 0}
+.sec2{margin-top:14px;font-size:.8rem}
+.tabs{float:right;display:flex;gap:6px}
+button{background:var(--raise);color:var(--text);border:1px solid var(--rule);border-radius:5px;padding:3px 9px;font-size:.72rem;cursor:pointer}
+button[aria-pressed=true]{background:var(--crimson);color:var(--lit);border-color:var(--crimson)}
+#chart{width:100%;height:150px;display:block}
+.axis{display:flex;justify-content:space-between;color:var(--dim);font-size:.75rem;margin-top:4px}
+.bar{margin:7px 0}
+.bar div{height:9px;border-radius:3px;background:linear-gradient(90deg,var(--crimson),var(--orange));min-width:2px}
+.bar span{display:flex;justify-content:space-between;font-size:.85rem}
+footer{color:var(--dim);font-size:.85rem;margin-top:22px}
+footer a{color:var(--edge)}
+@media(max-width:640px){.cards{grid-template-columns:1fr 1fr}.two{grid-template-columns:1fr}.num{font-size:1.9rem}
+h1{font-size:1.35rem}header img{width:46px;height:46px}.stat{font-size:.78rem}th:nth-child(2),td:nth-child(2){display:none}.m{display:block}th:nth-child(3),td:nth-child(3){width:64px}th:nth-child(4),td:nth-child(4){width:92px}.tabs{float:none;margin-bottom:8px}}
+</style>
+</head>
+<body>
+<main>
+<header>
+<img id="logo" alt="" src="data:image/svg+xml;base64,{{ICON}}">
+<div><h1>Takedawn <span>community server</span></h1><div class="sub">Online lobby for Burnout 3 on PC</div></div>
+<div class="stat" id="state"><span class="dot"></span><span id="stext">connecting</span></div>
+</header>
+
+<div class="cards">
+<div class="card"><div class="num" id="players">-</div><div class="label">Players online</div></div>
+<div class="card"><div class="num" id="waiting">-</div><div class="label">Games waiting</div></div>
+<div class="card"><div class="num" id="racing">-</div><div class="label">Games racing</div></div>
+<div class="card"><div class="num" id="uptime">-</div><div class="label">Server uptime</div></div>
+</div>
+
+<section>
+<h2>Open games</h2>
+<div id="games"></div>
+</section>
+
+<div class="two">
+<section>
+<h2>Today (UTC)</h2>
+<div id="today"></div>
+</section>
+<section>
+<h2>Games by mode, today</h2>
+<div id="modes"></div>
+</section>
+</div>
+
+<section style="margin-top:14px">
+<div class="tabs" id="tabs">
+<button data-k="unique_players" aria-pressed="true">Players</button>
+<button data-k="signins" aria-pressed="false">Sign-ins</button>
+<button data-k="games_started" aria-pressed="false">Races</button>
+</div>
+<h2>Last 30 days</h2>
+<svg id="chart" viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="Bar chart of the last 30 days"></svg>
+<div class="axis"><span id="d0"></span><span id="dmax"></span><span id="d1"></span></div>
+</section>
+
+<footer>
+Takedawn is a PC port of Burnout 3. This is a community-run lobby for its online play: it lists games and
+introduces players, the races run between the players' own computers. Want your own server?
+It is one small program: <a href="https://github.com/xenophobentx/takedawn/blob/main/docs/online.md" rel="noopener">how to run one</a>.
+These numbers are counts only; no names and no addresses are kept. An unofficial fan project, not affiliated with or endorsed by EA.
+</footer>
+</main>
+<script>
+"use strict";
+var $=function(i){return document.getElementById(i)},key="unique_players",last=null;
+try{$("fav").href=$("logo").src}catch(e){}
+function el(t,c,x){var e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e}
+function dur(s){s=Math.max(0,Math.floor(s));var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);
+return d?d+"d "+h+"h":h?h+"h "+m+"m":m+"m"}
+function kv(box,k,v){var r=el("div","kv");r.appendChild(el("span",0,k));r.appendChild(el("b",0,v));box.appendChild(r)}
+function rows(list,cls){var t=el("table",cls),h=el("tr");
+["Game","Mode","Players","State"].forEach(function(x){h.appendChild(el("th",0,x))});t.appendChild(h);
+list.forEach(function(g){var r=el("tr"),n=el("td",0,g.name||"(no name)");
+if(g.locked)n.appendChild(el("span","lock","password"));
+n.appendChild(el("span","m",g.mode));
+r.appendChild(n);r.appendChild(el("td",0,g.mode));r.appendChild(el("td","n",g.players+" / "+g.max));
+var s=el("td"),b=el("span","badge",g.state==="racing"?"In a race":"Waiting");s.appendChild(b);r.appendChild(s);t.appendChild(r)});return t}
+function chart(d){var days=(d.days||[]).slice(-29).concat([d.today]),svg=$("chart"),max=1,i,n=30,w=300/n;
+while(svg.firstChild)svg.removeChild(svg.firstChild);
+days.forEach(function(x){max=Math.max(max,x[key]||0)});
+var off=n-days.length,NS="http://www.w3.org/2000/svg";
+days.forEach(function(x,j){var v=x[key]||0,h=Math.max(v?1.5:0.4,v/max*92),r=document.createElementNS(NS,"rect");
+r.setAttribute("x",(off+j)*w+.6);r.setAttribute("width",w-1.2);r.setAttribute("y",100-h);r.setAttribute("height",h);
+r.setAttribute("rx",1);r.setAttribute("fill",j===days.length-1?"#f08a3c":"#c41c1c");
+var t=document.createElementNS(NS,"title");t.textContent=x.date+": "+v;r.appendChild(t);svg.appendChild(r)});
+$("d0").textContent=days[0].date;$("d1").textContent=days[days.length-1].date;$("dmax").textContent="max "+max}
+function draw(d){last=d;var n=d.now,t=d.today,age=Date.now()/1000-d.updated;
+$("players").textContent=n.players;$("waiting").textContent=n.games_waiting;$("racing").textContent=n.games_racing;
+$("uptime").textContent=dur(d.updated-d.started);
+var up=age<120;$("state").className="stat "+(up?"up":"down");$("stext").textContent=up?"online":"no update for "+dur(age);
+var g=$("games");g.textContent="";var w=d.games.filter(function(x){return x.state==="waiting"}),r=d.games.filter(function(x){return x.state!=="waiting"});
+if(w.length)g.appendChild(rows(w));else g.appendChild(el("div","empty","No games waiting for players right now."));
+if(r.length){g.appendChild(el("div","sub sec2","Under way (cannot be joined)"));g.appendChild(rows(r,"racing"))}
+var pv=n.games_private|0;if(pv)g.appendChild(el("div","sub sec2",pv+(pv>1?" private games are":" private game is")+" not listed."))
+var b=$("today");b.textContent="";kv(b,"Sign-ins",t.signins);kv(b,"Different players",t.unique_players);kv(b,"Most players at once",t.peak_players);
+kv(b,"Games created",t.games_created);kv(b,"Races started",t.games_started);kv(b,"Results reported",t.race_results);
+var m=$("modes"),mx=1;m.textContent="";t.by_mode.forEach(function(x){mx=Math.max(mx,x.created)});
+t.by_mode.forEach(function(x){if(x.mode==="Other"&&!x.created)return;var row=el("div","bar"),s=el("span");
+s.appendChild(el("span",0,x.mode));s.appendChild(el("b",0,x.created+" created, "+x.started+" started"));row.appendChild(s);
+var f=el("div");f.style.width=Math.round(x.created/mx*100)+"%";row.appendChild(f);m.appendChild(row)});
+chart(d)}
+function load(){fetch("stats.json?"+Date.now(),{cache:"no-store"}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(draw).catch(function(){
+$("state").className="stat down";$("stext").textContent=last?"no update":"no data"})}
+Array.prototype.forEach.call($("tabs").children,function(b){b.onclick=function(){key=b.getAttribute("data-k");
+Array.prototype.forEach.call($("tabs").children,function(x){x.setAttribute("aria-pressed",x===b)});if(last)chart(last)}});
+load();setInterval(load,20000);
+</script>
+</body>
+</html>

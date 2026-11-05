@@ -39,8 +39,8 @@
 
 /* The title's heap, as its own decoder uses it: sub_001D2879(size, tag)
  * and sub_001D2919(block, tag), both stdcall. */
-extern void BO3_SUB(sub_001D2879, sub_001D2B99)(void);
-extern void BO3_SUB(sub_001D2919, sub_001D2C39)(void);
+extern void BO3_SUB(sub_001D2879, sub_001D2B99, sub_001D2C39)(void);
+extern void BO3_SUB(sub_001D2919, sub_001D2C39, sub_001D2CD9)(void);
 #define WMA_HEAP_TAG 0x6482A000u
 
 #define S_OK           0x00000000u
@@ -76,7 +76,7 @@ static volatile int s_on;
  * The number is only changed while the title is on EA GAMES TRAX: a chosen
  * soundtrack is an index into the list that is about to change.
  */
-#define MUSIC_MANAGER   BO3_VA(0x004115E8u, 0x00411918u)
+#define MUSIC_MANAGER   BO3_VA(0x004115E8u, 0x00411918u, 0x004119B8u)
 #define MGR_COUNT       (MUSIC_MANAGER + 0x0C0)
 #define MGR_SOURCES     (MUSIC_MANAGER + 0x558)
 #define MGR_ON_EA_TRAX  (MUSIC_MANAGER + 0x538)
@@ -486,7 +486,7 @@ static void m_release(void)
         PUSH32(g_esp, WMA_HEAP_TAG);
         PUSH32(g_esp, obj);
         PUSH32(g_esp, 0);
-        BO3_SUB(sub_001D2919, sub_001D2C39)();
+        BO3_SUB(sub_001D2919, sub_001D2C39, sub_001D2CD9)();
     }
     ret(0, 4);
 }
@@ -726,7 +726,7 @@ void bo3_soundtrack_create_decoder(bo3_guest_fn title_fn)
         PUSH32(g_esp, WMA_HEAP_TAG);
         PUSH32(g_esp, OBJ_SIZE);
         PUSH32(g_esp, 0);
-        BO3_SUB(sub_001D2879, sub_001D2B99)();
+        BO3_SUB(sub_001D2879, sub_001D2B99, sub_001D2C39)();
         obj = g_eax;
     }
     if (!obj) {

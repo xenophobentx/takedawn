@@ -310,7 +310,7 @@ static void report_diff(void)
     }
     fprintf(f, "# %u runs, %u over 4 KB\n", s_nrun, big);
     fprintf(f, "# HUD update (sub_000535E0): %u calls over %u steps, time given %.4f s, after the High refresh scaling %.4f s\n",
-            s_hud.calls, MEM32(BO3_VA(0x4A1EB4u, 0x4A21D4u)) - s_hud.step0, s_hud.given, s_hud.scaled);
+            s_hud.calls, MEM32(BO3_VA(0x4A1EB4u, 0x4A21D4u, 0x4A2274u)) - s_hud.step0, s_hud.given, s_hud.scaled);
     memset(&s_hud, 0, sizeof s_hud);
     fclose(f);
     fprintf(stderr, "[HRAUDIT] %s: %u runs written\n", s_cyc.tag, s_nrun);
@@ -628,7 +628,7 @@ void bo3_hraudit_count(int kind, unsigned runs)
 static void counters(void)
 {
     double now = (double)now_ns() / 1e9;
-    uint32_t step = MEM32(BO3_VA(0x4A1EB4u, 0x4A21D4u));
+    uint32_t step = MEM32(BO3_VA(0x4A1EB4u, 0x4A21D4u, 0x4A2274u));
 
     if (s_cnt.t0 == 0.0) {
         s_cnt.t0 = now;
@@ -650,7 +650,7 @@ static void flash_probe(void)
 {
     static double run0;
     double now = (double)now_ns() / 1e9;
-    const uint32_t m = BO3_VA(0x5A9A00u, 0x5A9D10u);
+    const uint32_t m = BO3_VA(0x5A9A00u, 0x5A9D10u, 0x5A9DB0u);
 
     if (s_fl.n == 0 && s_fl.next == 0) {
         const char *e = getenv("BO3_HRAUDIT_FLASH");
@@ -666,7 +666,7 @@ static void flash_probe(void)
     }
     if (s_fl.next < 0)
         return;
-    if (MEM32(BO3_VA(0x4D53B4u, 0x4D56D4u)) != 5) {     /* the game's running state */
+    if (MEM32(BO3_VA(0x4D53B4u, 0x4D56D4u, 0x4D5774u)) != 5) {     /* the game's running state */
         run0 = 0.0;
         return;
     }
@@ -676,7 +676,7 @@ static void flash_probe(void)
         s_fl.upd++;
         if (MEM32(m + 8u) == 0) {
             fprintf(stderr, "[HRAUDIT] flash: %u steps, %u Updates, %.1f ms (t %.4f, duration %.4f)\n",
-                    MEM32(BO3_VA(0x4A1EB4u, 0x4A21D4u)) - s_fl.step0, s_fl.upd, (now - s_fl.t0) * 1000.0, MEMF(m),
+                    MEM32(BO3_VA(0x4A1EB4u, 0x4A21D4u, 0x4A2274u)) - s_fl.step0, s_fl.upd, (now - s_fl.t0) * 1000.0, MEMF(m),
                     MEMF(m + 4u));
             s_fl.on = 0;
         }
@@ -684,11 +684,11 @@ static void flash_probe(void)
     }
     if (s_fl.next < s_fl.n && now - run0 >= s_fl.at[s_fl.next]) {
         MEMF(m) = 0.0f;
-        MEMF(m + 4u) = MEMF(BO3_VA(0x3B1684u, 0x3B19A4u));
+        MEMF(m + 4u) = MEMF(BO3_VA(0x3B1684u, 0x3B19A4u, 0x3B1A44u));
         MEM32(m + 8u) = 1;
         s_fl.on = 1;
         s_fl.upd = 0;
-        s_fl.step0 = MEM32(BO3_VA(0x4A1EB4u, 0x4A21D4u));
+        s_fl.step0 = MEM32(BO3_VA(0x4A1EB4u, 0x4A21D4u, 0x4A2274u));
         s_fl.t0 = now;
         s_fl.next++;
         fprintf(stderr, "[HRAUDIT] flash started at step %u\n", s_fl.step0);
@@ -708,7 +708,7 @@ void bo3_hraudit_begin(void)
         s_cyc.last_ms = (double)(now_ns() - s_cyc.t0) / 1e6;
         s_cyc.dn++;
         fprintf(stderr, "[HRAUDIT] %s diff %d: %u chunks changed, %.2f ms, step %u\n", s_cyc.tag,
-                s_cyc.dn, n, s_cyc.last_ms, MEM32(BO3_VA(0x4A1EB4u, 0x4A21D4u)));
+                s_cyc.dn, n, s_cyc.last_ms, MEM32(BO3_VA(0x4A1EB4u, 0x4A21D4u, 0x4A2274u)));
         s_cyc.pending = 0;
         if (s_cyc.dn >= s_cyc.ndiff) {
             report_diff();
@@ -786,7 +786,7 @@ void bo3_hraudit_hud(float given, float scaled)
     if (s_on <= 0 || !s_cyc.on)
         return;
     if (!s_hud.calls)
-        s_hud.step0 = MEM32(BO3_VA(0x4A1EB4u, 0x4A21D4u));
+        s_hud.step0 = MEM32(BO3_VA(0x4A1EB4u, 0x4A21D4u, 0x4A2274u));
     s_hud.calls++;
     s_hud.given += given;
     s_hud.scaled += scaled;

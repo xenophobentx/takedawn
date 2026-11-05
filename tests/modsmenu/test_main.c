@@ -12,8 +12,10 @@
 #include <string.h>
 
 #include "recomp_types.h"
+#include "region.h"
 #include "platform/recomp_env.h"
 #include "modfs.h"
+#include "modsmodel.h"
 
 #if defined(_WIN32)
 #  include <direct.h>
@@ -134,7 +136,7 @@ static void guards_check(void)
         s_guard_bad = 1;
 }
 
-void sub_001D2879(void)          /* (size, tag), stdcall; ret address pushed by the caller */
+void BO3_SUB(sub_001D2879, sub_001D2B99, sub_001D2C39)(void)          /* (size, tag), stdcall; ret address pushed by the caller */
 {
     uint32_t size = M32(g_esp + 4);
     g_esp += 12;
@@ -667,6 +669,14 @@ static void pagination_toggles(int n)
     }
 }
 
+static int s_hook_calls, s_hook_changes, s_hook_live;
+static int count_hook(int changes)
+{
+    s_hook_calls++;
+    s_hook_changes = changes;
+    return s_hook_live;
+}
+
 int main(void)
 {
     char tmp[512], state[700];
@@ -798,6 +808,53 @@ int main(void)
         press_a();
         CHECK(!strcmp(line(la), "A.FIRST  OFF*") && !strcmp(line(6), "SAVED - RESTART REQUIRED"), "reopened: as left");
         press_b();
+        /* BO-316: the settings overlay's Mods tab works on the same choices (modsmodel.h). */
+        {
+            int calls0 = s_hook_calls;
+
+            bo3_mods_set_apply_hook(count_hook);
+            CHECK(bo3_mods_count() == 6 && !strcmp(bo3_mods_state(0), "OFF*") && !bo3_mods_next_on(0)
+                  && !strcmp(bo3_mods_apply_text(), "SAVED - RESTART REQUIRED"), "the model: a.first is OFF*, saved");
+            cursor_to(4);
+            press_a();
+            bo3_mods_toggle(1);                      /* as the overlay's tab: b.second off */
+            bo3_mods_toggle(3);                      /* an invalid mod: nothing */
+            CHECK(!strcmp(bo3_mods_state(1), "OFF*") && bo3_mods_unsaved() && !strcmp(bo3_mods_apply_text(), "APPLY - RESTART REQUIRED"),
+                  "overlay toggle: %s / %s", bo3_mods_state(1), bo3_mods_apply_text());
+            CHECK(!strcmp(line(lb), "B.SECOND  ON"), "the page has not drawn it yet");
+            idle();
+            CHECK(!strcmp(line(lb), "B.SECOND  OFF*") && !strcmp(line(6), "APPLY - RESTART REQUIRED"),
+                  "and shows it at its next frame: %s / %s", line(lb), line(6));
+            CHECK(!strstr(slurp(state), "\"b.second\""), "nothing saved yet");
+            bo3_mods_apply();                        /* the overlay's apply */
+            CHECK(strstr(slurp(state), "\"b.second\"") && s_hook_calls == calls0 + 1 && s_hook_changes == 1
+                  && !strcmp(bo3_mods_apply_text(), "SAVED - RESTART REQUIRED"), "apply saved it and called the hook once (%d, %d)",
+                  s_hook_calls - calls0, s_hook_changes);
+            /* BO-338: the NEXT START tag: the saved choice differs from this start's, and nothing put it to use. */
+            CHECK(bo3_mods_restart_pending(1) && bo3_mods_restart_pending(0) && !bo3_mods_restart_pending(3)
+                  && !bo3_mods_restart_pending(-1) && !bo3_mods_restart_pending(99), "restart pending after a saved change");
+            idle();
+            CHECK(!strcmp(line(6), "SAVED - RESTART REQUIRED") && !strcmp(line(lb), "B.SECOND  OFF*"), "the page follows the apply");
+            /* A toggle on the page shows in the model. */
+            cursor_to(lb);
+            press_a();
+            CHECK(bo3_mods_next_on(1) && !strcmp(bo3_mods_state(1), "ON"),
+                  "a toggle on the page is in the model: %s", bo3_mods_state(1));
+            bo3_mods_apply();
+            CHECK(s_hook_calls == calls0 + 2 && !strstr(slurp(state), "\"b.second\""), "put back and applied: hook again");
+            /* A hook that puts the change to use at once: APPLIED. */
+            s_hook_live = 1;
+            bo3_mods_toggle(1);
+            bo3_mods_apply();
+            CHECK(!strcmp(bo3_mods_apply_text(), "APPLIED"), "a live hook: %s", bo3_mods_apply_text());
+            s_hook_live = 0;                         /* back as it was: b.second on, the hook declines */
+            bo3_mods_toggle(1);
+            bo3_mods_apply();
+            CHECK(!strcmp(bo3_mods_state(1), "ON") && strcmp(bo3_mods_apply_text(), "APPLIED"), "a hook that declines: not APPLIED (%s)",
+                  bo3_mods_apply_text());
+            bo3_mods_set_apply_hook(NULL);
+            press_b();
+        }
     }
     start(at("lib"));                     /* the next start */
     CHECK(!strcmp(served("D:\\Data\\x.bin"), "B"), "after a restart: the next mod's file (b.second)");

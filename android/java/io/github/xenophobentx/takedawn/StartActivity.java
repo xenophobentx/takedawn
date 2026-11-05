@@ -1,6 +1,7 @@
 package io.github.xenophobentx.takedawn;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.os.Bundle;
@@ -56,18 +57,43 @@ public class StartActivity extends Activity {
         startGame();
     }
 
-    /** The installer's marker is there and names this program's disc manifest. */
+    /** The installer's marker is there and names the manifest of a disc of the package. */
     static boolean dataComplete(File files) {
+        return installedDisc(files) >= 0;
+    }
+
+    /**
+     * Which disc of the package (BuildInfo.BUILDS, src/game/package.h) the data
+     * installed is: the one whose manifest the installer's marker names, with
+     * its executable in place. -1 for none, or another build's install.
+     */
+    static int installedDisc(File files) {
         File mark = new File(files, ".complete");
         if (!mark.isFile() || !new File(new File(files, GameActivity.GAME_DIR), "default.xbe").isFile()) {
-            return false;
+            return -1;
         }
         try (java.io.InputStream in = new java.io.FileInputStream(mark)) {
             String t = new String(GpuDriver.readAll(in), java.nio.charset.StandardCharsets.UTF_8);
-            return t.contains(BuildInfo.MANIFEST_ID);
+            for (int i = 0; i < BuildInfo.MANIFEST_IDS.length; i++) {
+                if (t.contains(BuildInfo.MANIFEST_IDS[i])) {
+                    return i;
+                }
+            }
         } catch (Exception e) {
-            return false;
+            // unreadable: as none
         }
+        return -1;
+    }
+
+    /**
+     * The native library to load for the data installed: the disc's own
+     * program (libmain.so for North America, libmain_pal.so, libmain_ensv.so);
+     * libmain.so when nothing is installed (its installer takes any disc of
+     * the package). One per process: the three have the same native methods.
+     */
+    static String library(Context c) {
+        int i = installedDisc(GameActivity.filesDir(c));
+        return i >= 0 ? BuildInfo.LIBRARIES[i] : BuildInfo.LIBRARIES[0];
     }
 
     private void startGame() {

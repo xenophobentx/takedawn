@@ -94,6 +94,7 @@ list and is shipped in every package.
 | [DejaVu Sans Mono](https://dejavu-fonts.github.io), a subset (Latin Extended, Greek, Cyrillic) | see the toolkit's `third_party/dejavu/VENDORED.txt` | Bitstream Vera Fonts licence with the DejaVu changes (Arev: Tavmjong Bah); public-domain parts | Bitstream, Inc.; the DejaVu authors | The settings menu's letters outside basic Latin. Text: `DejaVu-fonts-LICENSE.txt` |
 | [dr_libs](https://github.com/mackron/dr_libs): dr_mp3, dr_flac, dr_wav | commit dfe8377 | Public domain (Unlicense) or MIT No Attribution; dr_mp3 contains minimp3 (lieff, CC0) | David Reid | Decode the player's own music folder (custom music). Not in the Android program's use. Text: `dr_libs-LICENSE.txt` |
 | [stb_vorbis](https://github.com/nothings/stb) | commit 2c980bb | Public domain (Unlicense) or MIT | Sean Barrett | Decodes Ogg Vorbis files of the player's own music folder. Text: `stb_vorbis-LICENSE.txt` |
+| [stb_image, stb_image_write, stb_dxt](https://github.com/nothings/stb) | commit f4a71b1 | Public domain (Unlicense) or MIT | Sean Barrett | Read the PNG files of texture packs, write the texture dump, compress big pack textures. Text: `stb-LICENSE.txt` |
 | [ADPCM-XQ](https://github.com/dbry/adpcm-xq) decoder (through xemu) | | BSD-3-Clause | David Bryant | Decodes the game's ADPCM sound. Text: `ADPCM-XQ-BSD-3-Clause.txt` |
 | AMD FidelityFX CAS (the algorithm) | | MIT | Advanced Micro Devices | Sharpening |
 | Super-xBR (the algorithm, a C version written from the published shaders) | | MIT | 2015 Hyllian (sergiogdb@gmail.com) | Menu and HUD upscaling (`graphics.ui_scale`). Text: in `xboxrecomp-NOTICE.txt` |
@@ -201,11 +202,34 @@ fonts.
 | Unleashed Recompiled | Compiling a known shader list while the logos play |
 | apexJCL's BLiNX 2 project (MIT) | The method of the golden-frame comparison in `tools/headless` |
 
+## The menu pictures' upscaler (desktop packages)
+
+"Sharper menu pictures" (the setup window's optional step, or Settings,
+Graphics: see `docs/upscale-art.md`) runs an AI upscaler that every desktop
+package carries (not the Android one): the program unchanged from its makers'
+release, and the models. Linux and Windows: `upscaler/` beside the program;
+macOS: `Contents/MacOS/realesrgan-ncnn-vulkan` (the arm64 part of the release's
+universal program) and `Contents/Resources/upscaler/models`. The release
+scripts fetch them from the addresses in `tools/release/pins.env` and check
+each against its SHA-256.
+
+| Component | Version | Licence | Copyright | Use |
+|---|---|---|---|---|
+| [realesrgan-ncnn-vulkan](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan), from [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN)'s release v0.2.5.0 (`realesrgan-ncnn-vulkan-20220424-<system>.zip`) | 20220424 | MIT | 2021 Xintao Wang | Runs the models. Text: `realesrgan-ncnn-vulkan-MIT.txt` |
+| [ncnn](https://github.com/Tencent/ncnn), built into that program | | BSD-3-Clause, with the notices of its parts | THL A29 Limited, a Tencent company | Text: `ncnn-LICENSE.txt` |
+| [glslang](https://github.com/KhronosGroup/glslang), built into that program | | BSD-3-Clause and others | The Khronos Group and others | Text: `glslang.txt` |
+| [libwebp](https://github.com/webmproject/libwebp), built into that program | | BSD-3-Clause | Google Inc. | Text: `libwebp-BSD-3-Clause.txt` |
+| [MoltenVK](https://github.com/KhronosGroup/MoltenVK), built into the macOS program | | Apache-2.0 | The Brenwill Workshop Ltd. | Text: `MoltenVK-Apache-2.0.txt` |
+| `vcomp140.dll`, the Microsoft Visual C++ OpenMP runtime (Windows only), from the same archive | | Microsoft Visual Studio licence, Distributable Code | Microsoft Corporation | Text: `vcomp140-Microsoft.txt` |
+| RealESRGAN_x4plus (ncnn files, from the same archive) | | BSD-3-Clause | 2021 Xintao Wang | The model for the pictures. Text: `Real-ESRGAN-BSD-3-Clause.txt` |
+| realesr-general-x4v3 at denoise 0.3: its two ncnn weight files from [upscayl/custom-models](https://github.com/upscayl/custom-models) (commit 500e6a0) blended 0.3 / 0.7 at build time, as Real-ESRGAN's own `-dn` does (`tools/release/upscaler/blend_ncnn.py`) | | BSD-3-Clause (Real-ESRGAN's weights) | 2021 Xintao Wang | The quicker model (newspapers, and every picture at the fast quality). Text: `Real-ESRGAN-BSD-3-Clause.txt` |
+
 ## Licence texts in this folder
 
 `takedawn-LICENSE.txt`, `xboxrecomp-LICENSE.txt` (MIT), `xboxrecomp-NOTICE.txt`
 (the toolkit's attribution file), `xboxrecomp-LGPL-2.1.txt`, `DearImGui-MIT.txt`,
-`SMAA-MIT.txt`, `ADPCM-XQ-BSD-3-Clause.txt`, `dr_libs-LICENSE.txt`, `stb_vorbis-LICENSE.txt`, `DejaVu-fonts-LICENSE.txt`, `RobotoCondensed-OFL.txt`, `SDL2-Zlib.txt`, `SDL3-Zlib.txt`, `sdl2-compat-Zlib.txt`,
+`SMAA-MIT.txt`, `ADPCM-XQ-BSD-3-Clause.txt`, `dr_libs-LICENSE.txt`, `stb_vorbis-LICENSE.txt`, `stb-LICENSE.txt`, `DejaVu-fonts-LICENSE.txt`, `RobotoCondensed-OFL.txt`, `SDL2-Zlib.txt`, `SDL3-Zlib.txt`, `sdl2-compat-Zlib.txt`,
+`realesrgan-ncnn-vulkan-MIT.txt`, `ncnn-LICENSE.txt`, `libwebp-BSD-3-Clause.txt`, `MoltenVK-Apache-2.0.txt`, `vcomp140-Microsoft.txt`, `Real-ESRGAN-BSD-3-Clause.txt` (the menu pictures' upscaler),
 `HIDAPI-BSD-3-Clause.txt`, `glslang.txt`, `Vulkan-Headers.txt`,
 `LLVM-Apache-2.0-with-exceptions.txt`, `MinGW-w64-runtime.txt`,
 `winpthreads.txt`, and with the setup window `Qt-NOTICE.txt`,

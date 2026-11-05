@@ -19,13 +19,17 @@ Takedawn @VERSION@ for macOS (Apple silicon)
 3. Takedawn needs the game's data from your own disc: a disc image
    (.iso / .xiso) or an extracted disc folder of Burnout 3: Takedown,
    @DISC@. It checks every file and copies them to
-   ~/Library/Application Support/Takedawn/Game. Without the setup window,
-   from Terminal:
+   ~/Library/Application Support/Takedawn/Game (a European disc's to
+   ~/Library/Application Support/Takedawn PAL/Game) and starts the game for
+   that disc from then on. Without the setup window, from Terminal:
 
      "/Applications/@APP_TITLE@.app/Contents/MacOS/Takedawn" --install <image-or-folder>
 
 Saves and settings are in ~/Library/Application Support/Takedawn, the shader
-cache in ~/Library/Caches/Takedawn.
+cache in ~/Library/Caches/Takedawn; for a European disc in the folders named
+Takedawn PAL. Each disc keeps its own saves and settings. Installing another
+disc later switches the game to that disc and leaves the other's data and
+saves where they are.
 
 How to update
   1. Quit Takedawn.
@@ -35,7 +39,7 @@ How to update
      step 2 above (Open Anyway in Privacy & Security, or the xattr command).
   The saves, settings, game data and shader cache are in the folders above,
   not in the app, and stay as they are; the data is not asked for again.
-  Takedawn says when a newer release exists: Settings > Advanced > Check for
+  Takedawn says when a newer release exists: Settings > System > Check for
   updates (only when you press it; nothing is downloaded).
 
 The licences of everything inside are in

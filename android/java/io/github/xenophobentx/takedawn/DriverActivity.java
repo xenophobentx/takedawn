@@ -242,6 +242,13 @@ public class DriverActivity extends Activity {
                 finish();
             }
         }).setText("Start the game");
+        // The game's data: another disc (src/game/package.h; the setup page takes any of the three).
+        button("Game data: install another disc\u2026", false, new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                startActivity(new Intent(DriverActivity.this, SetupActivity.class)
+                        .putExtra(SetupActivity.EXTRA_ANOTHER, true));
+            }
+        }).setText("Game data: install another disc\u2026");
         button("Licences", false, new View.OnClickListener() {
             @Override public void onClick(View v) {
                 startActivity(new Intent(DriverActivity.this, LicensesActivity.class));

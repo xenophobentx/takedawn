@@ -16,8 +16,9 @@
 ; An update is this setup run over an existing install (BO-100). Same AppId,
 ; so Windows' uninstall entry and the folder are found again; the shortcuts
 ; keep their target. Before any file is written the setup
-;   - refuses while Takedawn (or its setup window) runs: Takedawn.exe,
-;     takedawn-setup.exe and SDL2.dll cannot be opened for writing then, and
+;   - refuses while Takedawn (or its setup window) runs: Takedawn.exe (and
+;     Takedawn-pal.exe, Takedawn-ensv.exe), takedawn-setup.exe and SDL2.dll
+;     cannot be opened for writing then, and
 ;     the folder cannot be renamed if anything else has it open; nothing has
 ;     been changed when it says so (exit code 7 with /SILENT);
 ;   - keeps that folder as the previous version (one copy; the uninstaller
@@ -46,21 +47,13 @@
   #error Icon (takedawn.ico) is required
 #endif
 
-; /DRegion=PAL: the PAL (Europe) build (BO3_REGION=PAL, docs/pal.md), installed
-; beside the NTSC-U one under its own name, folder and uninstall entry; its
-; game keeps its own per-user folders ("Takedawn PAL").
-#ifdef Region
-  #if Region == "PAL"
-    #define AppTitle "Takedawn PAL"
-    #define AppGuid "72D2A8B1-201D-518F-8BD8-FF15282D97C4"
-    #define FileTag "-pal"
-  #endif
-#endif
-#ifndef AppTitle
-  #define AppTitle "Takedawn"
-  #define AppGuid "8C1E5B0A-64D3-4C7E-A1F2-0D9B7E53A6C4"
-  #define FileTag ""
-#endif
+; One setup for every supported disc (BO-341, src/game/package.h): the
+; program folder holds Takedawn.exe (North America) and, beside it,
+; Takedawn-pal.exe and Takedawn-ensv.exe (the two European discs);
+; Takedawn.exe starts the one whose disc is installed.
+#define AppTitle "Takedawn"
+#define AppGuid "8C1E5B0A-64D3-4C7E-A1F2-0D9B7E53A6C4"
+#define FileTag ""
 
 ; VersionInfoVersion takes numbers only: "0.1.2-beta" is 0.1.2 there.
 #define DashAt Pos("-", Version)
@@ -276,7 +269,8 @@ begin
   App := RemoveBackslashUnlessRoot(ExpandConstant('{app}'));
   WasUpdate := FileExists(App + '\Takedawn.exe');
   if not WasUpdate then Exit;
-  if InUse(App + '\Takedawn.exe') or InUse(App + '\takedawn-setup.exe') or InUse(App + '\SDL2.dll') then
+  if InUse(App + '\Takedawn.exe') or InUse(App + '\Takedawn-pal.exe') or InUse(App + '\Takedawn-ensv.exe')
+     or InUse(App + '\takedawn-setup.exe') or InUse(App + '\SDL2.dll') then
   begin
     Result := 'Takedawn cannot be updated while it is running. Close Takedawn (and its setup window), then try again. Nothing was changed.';
     Exit;

@@ -10,8 +10,7 @@ structure of nodes and beams that crumples where it is hit, keeps the dent,
 tears, bends its chassis, throws the game's own sparks and debris where
 metal rips, and loses wheels in a wreck. The car's handling, its
 collisions and the title's own damage logic (panels swinging open and
-coming off, the Crash scoring) are not touched: this is what you see, not
-how the car drives.
+coming off, the Crash scoring) are not touched, so only what you see changes.
 
 Tested on Linux (Vulkan); on other systems it builds from the same code.
 A big pile-up costs a few milliseconds of CPU a frame.
@@ -74,7 +73,7 @@ Two marks in `config/patches.json` call `src/game/softbody.c`:
 
   The two vehicles of a crash each get a hit at the same flip, near the
   same place in the world, their directions opposite. Once both are in
-  (the last 32 hits are kept, vehicles we do not deform among them), each
+  (the last 32 hits are kept, vehicles I do not deform among them), each
   ram takes the other vehicle's shape: up to 900 of its body's vertices
   (kept per model), put into this car's frame, are looked at along the
   ram's direction from its origin, and a height map of 18 × 18 cells of
@@ -151,8 +150,7 @@ of where each would put it, its position plus the body node's rest offset
 turned with it. A structure node's turn is the rotation part of how the
 vectors to its live neighbours moved, found by iterating from last flip's
 (Müller et al., "A robust method to extract the rotational part of
-deformations", 2016), so a part that swings round turns with it rather
-than shearing.
+deformations", 2016), so a part that swings round turns with it without shearing.
 
 The chassis nodes are held to their places by springs that give past 2 %
 of the car's size, so a hard hit that reaches them bends the chassis for
@@ -168,7 +166,7 @@ node left with no brace to the chassis hangs (above).
 
 Tears show as holes: the title reads a strip record's indices (`+ 0xC`)
 and count (`+ 0x10`) at every draw (`sub_00031AB0` to `sub_001D7D10`), so
-once beams tear each level's records point at strips of our own (from the
+once beams tear each level's records point at strips of my own (from the
 runtime's contiguous allocator) without the triangles that have an edge
 stretched past 1.6 times its length and by more than 5 cm, or past 1.3 times
 and by more than 20 cm (a big low-poly triangle would otherwise stretch into
@@ -187,16 +185,16 @@ dent. Wheels have no attached copy and are left alone.
 
 The full level is subdivided before the car is built, so a crumple is finer
 than the model's own triangles: its body (entry 0) each triangle into four
-at its edges' middles. One buffer of our own holds both streams (stream 0
+at its edges' middles. One buffer of my own holds both streams (stream 0
 the 24-byte vertices, stream 1 their 8 bytes after them, so the level's
 vertex count stays what the header's two `Data` fields at `+ 0x4C` and
 `+ 0x58`, physical, span): the loaded vertices first and where they were,
 then one per edge, its position, normal and uv the mean of its ends' and
-its stream 1 its first end's. Entry 0's records point at strips of our own,
+its stream 1 its first end's. Entry 0's records point at strips of my own,
 each new triangle joined to the last by degenerate ones at its own parity.
 The part entries and the lower levels keep theirs. A car's body nodes are
 the finer mesh's (about 4,500 for car1 instead of 1,700). Freed with the
-car; the header and records go back only if the model is still the one we
+car; the header and records go back only if the model is still the one I
 changed. Wrinkles: where the sheet is squashed (a body node's neighbours
 nearer than at rest), its vertices go out along their normal by up to
 6 cm times the squash in a fixed value noise of 7 cm cells, drawn only.
@@ -214,12 +212,12 @@ gradient. It works the same on every model; 65 of the 67 cars match all
 their panels (two each have one panel without an attached copy, which then
 stays as it is).
 
-All of it is our own design (a mass-spring network with plasticity); no
+The design is my own (a mass-spring network with plasticity), with no
 code or data from another program.
 
 Wheels go only in a wreck: the car's `+ 0x3D0` is 4 while it drives and
 flickers between 1 and 0 once it wrecked, until the respawn (or the
-results). Then a wheel whose arch we crushed by more than 0.2 m on average
+results). Then a wheel whose arch I crushed by more than 0.2 m on average
 (the nodes within 0.6 m of its attach point, the model's `+ 0xBB0`) gets the
 title's full wheel damage (the state's `+ 0xF78`, at `car + 0x90`), and the
 title lets it go its own way (its wheel state at `+ 0x4AC` goes to 3, the
@@ -238,10 +236,10 @@ elsewhere and is left alone.
 
 ## Limits
 
-- **Detail is the model's, four times over.** The subdivided full level has
-  about 4,500 body nodes for car1; folds finer than that are the wrinkles'
-  noise, not physics.
-- **Traffic only in crash events.** The music manager's outer state
+- Detail: the subdivided full level has about 4,500 body nodes for car1.
+  Folds finer than that are the wrinkles' noise and have no physics behind
+  them.
+- Traffic only in crash events. The music manager's outer state
   (`0x4115E8 + 0x5F8`) is 6 in a crash mode and 5 in any other stage.
   Outside a crash event, and when one starts again, every hit traffic
   vehicle is released (its shared model back, its copy freed), so a city car
@@ -253,7 +251,7 @@ elsewhere and is left alone.
   `sb_stream` for the level header the draw hands to the vertex streams).
   A copy outside the runtime's allocations would be resolved in the base
   view by the toolkit's `dma_resolve` and draw from empty memory.
-- **Visual only.** Handling and collision shapes are the title's.
+- Visual only: handling and collision shapes are the title's.
 - Not tested: Windows, macOS, Android; split screen; the PAL build.
 
 ## Tools

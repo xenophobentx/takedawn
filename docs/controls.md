@@ -1,8 +1,8 @@
 # Driving controls: Xbox layout or PS2 layout
 
 `input.control_scheme` (overlay: Input > Driving controls; settings.toml;
-`RECOMP_INPUT_CONTROL_SCHEME=xbox|ps2`) chooses the controls used **while
-driving**. `xbox`, the default, is the game as shipped. `ps2` is the
+`RECOMP_INPUT_CONTROL_SCHEME=xbox|ps2`) chooses the controls used while
+driving. `xbox`, the default, is the game as shipped. `ps2` is the
 PlayStation 2 version's layout. Menus are not changed by it: the front end,
 the garage, the pause menu, a crash event's captions, the results and the
 overlay read the pad as they always do. A change in the overlay holds from
@@ -58,8 +58,8 @@ manual, pages 3 and 7,
 
 The keyboard is a pad for player 1 (the toolkit's `src/input/keyboard.c`, on
 by default on Mac, Windows and Linux; `RECOMP_KEYBOARD=0` turns it off, and on
-Android it is off unless `RECOMP_KEYBOARD=1`). The map is fixed. It always has
-the Xbox layout: while a key is held the PS2 layout is not applied, so these
+Android it is off unless `RECOMP_KEYBOARD=1`). The map below is the default;
+the player can change it (next section). It always has the Xbox layout: while a key is held the PS2 layout is not applied, so these
 are the Xbox buttons whatever Driving controls says. A controller works beside
 it: buttons are ORed, a trigger is the larger of the two, and a held key sets
 its stick axis.
@@ -79,6 +79,45 @@ its stick axis.
 | E | Black (next music track) |
 | Enter | Start (pause, select) |
 | Esc | Back; Start while driving (pause) |
+
+### Changing the keys (BO-267, GitHub #57)
+
+Settings > Controls has a row for each of the twelve buttons below the arrows
+(Start, Back, A, B, X, Y, White, Black, accelerate, brake, steer left and
+right), each with two keys. Enter on a row waits for a key; Left and Right pick
+which of the two; Delete empties it; Esc or B cancels. A key does one thing:
+one that another button has is refused and the row keeps waiting. The four
+arrows stay the d-pad of the menus, and may also be keys of a button, as they
+are for driving by default. "Reset keyboard keys to the defaults" (and "Reset
+this page") restore the table below.
+
+What can be bound: letters, digits, the arrows, Space, Enter, Esc, Backspace,
+Shift (either), Ctrl (either), Tab, Page Up and Down, Home, End, Insert and
+the punctuation keys. F1, F7, Alt, Delete and the keypad are not.
+
+They are saved in `settings.toml` as text of the buttons that differ from the
+table, `[input] keys = "boost=Shift;look_back=Space"`, with the names `start`,
+`back`, `boost`, `crashbreaker`, `look_back`, `change_view`, `white`, `black`,
+`accelerate`, `brake`, `steer_left`, `steer_right`; `RECOMP_KEYBOARD_KEYS` takes
+the same text and wins over the file. A name or key it does not know, and a
+key it would give to a second button, is left out. The pause on Esc while
+driving follows the Back button's key.
+
+The button prompts follow the keys (BO-267). In the keyboard prompt set
+(`input.glyphs`, assets/glyphs/keyboard) a button whose first key is not its
+default shows a key cap of that key: the letter or digit, or a short word
+(TAB, ESC, PGUP, HOME, END, INS, CTRL, F2, NUM4), a symbol for Space, Backspace,
+Shift, Enter and the arrows, and the punctuation keys as themselves. A long
+word is made smaller to fit. Only the first key of a button is shown (the
+second when the first is empty). The cap is drawn at run time by
+`src/game/keycap.c` in the style of the baked ones (same outline, face, lip,
+highlight and stroke alphabet: `tools/glyphs/draw.py` and
+`tools/glyphs/gen_keyfont.py` make its table) over a copy of the baked picture,
+for the cells that changed (`src/game/glyphs.c`), and the textures are sent to
+the GPU again when a key is changed in the menu. With the default keys nothing
+is drawn: the baked pixels are used as they are. `keycap_scene.sh`
+(WINDOW=1, CAPTURE=1) takes the prompt with the default key, with Boost on Z,
+and with Space given back; the first and the last are the same pixels.
 
 Esc pauses a race, like in a PC game. While you drive (the same test as the
 PS2 layout's, below) a press of Esc is Start for as long as it is held, so the
@@ -103,7 +142,7 @@ title sees no keys, and the keys held when they close stay unseen until let go.
 ### Keyboard and controller as two players
 
 By default the keyboard and the first controller both drive player 1. With
-Input > First controller at Player 2 (`input.first_pad = "player2"`,
+Controls > First controller at Player 2 (`input.first_pad = "player2"`,
 `RECOMP_INPUT_FIRST_PAD=player2`) the keyboard is player 1 alone and the
 first controller to press a button is player 2, so two people can play
 split screen with one keyboard and one controller. Needs a toolkit with
@@ -128,7 +167,7 @@ ultrawide and render scale do not move them. They keep clear of the HUD's
 corners (POS, LAP, the speedometer, the boost bar) and of the score board.
 On a tablet they stay the size they have on a phone.
 
-Settings, on the Input page of the settings menu: Touch controls (Auto hides
+Settings, on the Controls page of the settings menu: Touch controls (Auto hides
 them while a controller is used and shows them at the next touch; Always;
 Off), their opacity and size, and Accelerate automatically. The settings
 menu itself works by touch: drag a list to scroll it, tap a row to change
@@ -175,7 +214,7 @@ Driving is all of:
 | Nobody has paused | `[0x4D537C]` is -1 (else the pausing player) | the stage update tests it before it looks at Start (sub_00026050 at 0x26609); 0 on the frame after Start, -1 on the frame Resume takes effect |
 | The title takes a pause now | byte `[0x752D33]` is 0 | tested in the same place; set while the event is left after the results |
 | A crash event's fly-by and captions are not up | byte `[0x4D0767]` is 0 | 1 through the fly-by, and from the captions until A leaves them |
-| The results are not up | byte `[0x4D0738]` is 0 | 1 from the results screen to the end of the event |
+| The results are not up | not both: bit `0x2000` (the results camera) of `[0x4D0740]`, and byte `[0x4D0738]` | the title reads the byte the same way (`sub_00167DC0`): the byte is 1 once that camera reaches the end of its path, and only the camera's start clears it, so it is stale once the camera is gone |
 | The event is in play, or counting down | `[0x73B51C]` is 2, or below 2 with the countdown's length at `[0x73B520]` set (not -1.0, not 0) | 2 from the GO; 3 when the event ends for the player; the length (4.5 s in a race, 3 s in a crash event) is written when the countdown begins |
 
 In the two-player stage the last three rows are each player's own, and a pad
@@ -187,6 +226,28 @@ loop of two in the game object's constructor, at `0x4CFB20`; the title's own
 (phase, countdown) `0x27E0` apart (`sub_00025050` steps both in one loop over
 the players). A player whose event is over is back on the menu layout while
 the other still drives.
+
+### Why the results byte needs its camera
+
+A one-player event's end (the stage update at `0x2674C`, `sub_00167EC0`) posts
+event 12 to the player's state machine. Only the wrecked-car state (`0x73BF9888`)
+acts on it, and starts camera state 13 (the object at record + `0xBD0`, vtable
+`0x3A93BC`). Its enter, `sub_00159750`, is the one place that clears the byte,
+and its update, `sub_00159A80`, the one place that sets it. The score screen
+(`sub_00072CC0`) waits for the byte or for a press.
+
+The byte outlives the camera. In a Trailer Trash run the byte went to 1 245
+flips after the finish, and the replay's camera took over 9 flips later, with
+the results still up. Quitting the event and starting the next leave the byte
+at 1. The title does not mind, because it reads the byte only with the state
+bit set (`sub_00167DC0`). A gate that read the byte alone took every later
+event for a results screen, Xbox layout from the first frame, until a press
+skipped the camera at the end of a later event (GitHub #52, #111, #113).
+
+Over the results the gate is off without the byte. Phase 3 holds until the
+replay sets it back; the countdown then reads -1 until `[0x752D33]` is set, on
+the same flip the countdown's length comes back. The replay's loop (phase 1,
+2, 3 and round again) stays behind that byte.
 
 The countdown counts as driving because the boost start is on the
 accelerator. A crash counts as driving: the impact time, the aftertouch and
@@ -205,20 +266,20 @@ held back: the button that confirmed "Resume" may stay down and accelerate.
 
 ## What it does not touch
 
-- **Scripted input.** A pad driven by `RECOMP_PAD_SCRIPT` / `RECOMP_PAD_LIVE`
+- Scripted input. A pad driven by `RECOMP_PAD_SCRIPT` / `RECOMP_PAD_LIVE`
   keeps the Xbox layout whatever the setting is: `rt` in a test, in the scene
   drivers or in the shader pre-build's race accelerates on every machine.
   (`BO3_CTL_SCRIPTED=1` makes a script stand in for a controller, for
   `tools/headless/controls_scene.sh`.) Once a controller takes its pad back
   from a script, the setting applies to it.
-- **The keyboard**: while a key is held the pad state is left as it is, so
+- The keyboard: while a key is held the pad state is left as it is, so
   the keys keep their documented Xbox buttons (see below).
-- **Rumble**: the title's motor speeds do not pass through this.
-- **Replays**: a replay is started from the results screen, where the layout
+- Rumble: the title's motor speeds do not pass through this.
+- Replays: a replay is started from the results screen, where the layout
   is already off, and it stays off (the results byte). Not checked: whether a replay reads
   the pad for anything.
-- **The overlay**: while it is open the title reads a neutral pad anyway.
-- **Button prompts**: they show the game's own button, not the PS2 layout's.
+- The overlay: while it is open the title reads a neutral pad anyway.
+- Button prompts: they show the game's own button, not the PS2 layout's.
   In Crash mode the Crashbreaker prompt shows B (or Circle), while the PS2
   layout fires it with R2 / the right trigger. BO-147 tracks prompts that
   follow the layout while driving.
@@ -264,6 +325,9 @@ affected.) A script that is not a stand-in gets neither setting.
   `FACE=nintendo`.
 - `tools/headless/controls_split_scene.sh <rundir> race|roadrage|teamcrush|doubleimpact|partycrash`:
   the same for the two-player modes (both pads), checked by `controls_split_check.py`.
+- `tools/headless/controls_stale_scene.sh <rundir>`: Crash with the results camera left to
+  arrive, then Road Rage and Race in one process, with the results byte still 1: both must
+  have the PS2 layout (`controls_stale_check.py`).
 - `tools/headless/controls_scene.sh <rundir>` with `SCHEME=ps2|xbox`,
   `EVENT=race|crash` and `FACE=xbox|nintendo`: a scripted run through boot, the menus, the garage,
   loading, the countdown, driving, a pause with the accelerator still held,
@@ -284,7 +348,7 @@ affected.) A script that is not a stand-in gets neither setting.
   player's event ends, while the other still drives. Party Crash plays on the first
   player's records and the first pad throughout (it is the one-player stage), so it
   goes by player 1 like a one-player event. Not run: keyboard plus controller
-  (Input > First controller), a pause by player 2, real controllers, Windows, Android.
+  (Controls > First controller), a pause by player 2, real controllers, Windows, Android.
   Also reported working in split screen on macOS with two controllers.
 - A race to its finish line, Road Rage, Burning Lap and online: the end of an
   event was traced in a crash event and by quitting a race.

@@ -40,6 +40,9 @@ struct LaunchConfig {
   QString disc;      // a disc image or folder to start with
   QString platform;  // tests: show another system's options ("macos", "linux", "windows")
   bool shaders = true;   // the "Prepare graphics" box starts ticked (BO-93); the player can untick it
+  // "Sharper menu pictures" (BO-311): -1 as the game offers it for this computer
+  // (--data-status: ticked, unticked or not shown), 0 unticked, 1 ticked.
+  int upscale = -1;
   bool test = false;     // tests and screenshots: no confirmation boxes, Play starts nothing
   // No mouse or keyboard to count on (gamescope, a Steam Deck in Game Mode): the
   // window fills the screen without a frame, its controls are finger sized, and
@@ -100,7 +103,7 @@ class InstallerWindow : public QWidget {
   enum class NoteTone { Info, Warning, Error };
 
   struct StepRow {
-    QString id;        // "disc", "shaders"
+    QString id;        // "disc", "shaders", "upscale"
     int weight = 1;    // its share of the progress bar
     RowStatus status = RowStatus::Pending;
     double fraction = 0.0;
@@ -150,6 +153,8 @@ class InstallerWindow : public QWidget {
   void RefreshDestControls();
   bool DestFixed() const;  // --data / TAKEDAWN_DATA named the root, or a checkout: no choice
   void RefreshSpace();
+  void AdoptDiscProgram(const QString& build, const QString& root, const QString& place, const QString& def,
+                        qint64 bytes, qint64 free_needed);
   qint64 CopiedBytes() const;  // the game's files already in the data folder
   qint64 FreeBytes() const;    // free on the disk the data folder is on, -1 when unknown
   qint64 StillNeededFree() const;  // what the installer wants free now (the 3 GB less what is already there)
@@ -172,6 +177,9 @@ class InstallerWindow : public QWidget {
   void StartInstall();
   void RunInstall();
   void RunShaders();
+  void RunUpscale();
+  // The optional steps after the copy, in order; false when none is left.
+  bool RunNextOptional();
   void StartStep(const QString& step, const QStringList& arguments);
   void OnEvent(const Event& event);
   void OnFinished(const DriverProcess::Result& result);
@@ -230,6 +238,7 @@ class InstallerWindow : public QWidget {
   qint64 data_bytes_ = 0;
   qint64 free_needed_ = 0;
   int data_files_ = 0;
+  QString data_build_;    // the build of the program that answered (--data-status, then the disc's --check)
   QString data_place_;    // where the game looks by itself: "named", "saved", "default", "checkout"
   QString default_root_;  // the per-user default folder
   QString target_;        // the folder the player chose with Change... (empty: where the game looks)
@@ -255,6 +264,18 @@ class InstallerWindow : public QWidget {
   QString current_step_;
   QString shader_cache_;    // from "LOG shaders cache <dir>", for its cancel file
   QString shader_warning_;
+  QString upscale_offer_ = "no";   // from "LOG data upscale <on|off|no> <quality> <why>"
+  QString upscale_quality_ = "best";
+  QString upscale_work_;     // from "LOG upscale work <dir>", for its cancel file
+  QString upscale_warning_;
+  QString upscale_pack_ = "none";  // from "LOG data upscale-pack made|none|declined"
+  // The data was whole already (an update): the box is offered once, unticked, with
+  // its own button; nothing else runs. Seen and not used: `--upscale-art --dismiss`.
+  bool late_upscale_ = false;
+  bool upscale_shown_ = false;     // the box was on screen at some point
+  bool upscale_answered_ = false;  // used, or the dismissal sent
+  void StartLateUpscale();
+  void DismissUpscaleOffer();
   QString gpu_warning_;  // the graphics preparation ran on the CPU: the renderer's name
   DriverProcess* driver_ = nullptr;
   QStringList last_command_;
@@ -286,6 +307,9 @@ class InstallerWindow : public QWidget {
   QLabel* space_label_ = nullptr;
   QCheckBox* shaders_box_ = nullptr;
   QLabel* shaders_cost_ = nullptr;
+  QCheckBox* upscale_box_ = nullptr;
+  QLabel* upscale_cost_ = nullptr;
+  void RefreshUpscaleOffer();
   QCheckBox* steam_box_ = nullptr;  // Linux only: the Steam shortcut (steam_shortcut.h)
   // Asked when Steam is running and has to close for the shortcut; tests replace it.
   std::function<bool()> ask_close_steam_;

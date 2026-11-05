@@ -19,6 +19,16 @@
     <!-- Rumble (the pad's, or the device's own motor). -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- Online play (BO-134, docs/online.md): the game's Xbox Live menus
+         talk to a lobby server and to the other players over the network.
+         Both are normal permissions, granted at install; nothing is sent
+         unless online.mode is on. ACCESS_NETWORK_STATE only reads whether
+         the device has a network. CHANGE_WIFI_MULTICAST_STATE lets the
+         local-network mode hear another copy's lobby announcement. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
     <!-- Custom music (docs/custom-music.md, "Android"): the player's audio
          files in shared storage (Music, Download, a card) read as plain
          files. Asked for by the game only when the Custom music folder row
@@ -27,6 +37,13 @@
          before, should the minSdk ever go lower. -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+
+    <!-- Sharper menu pictures (BO-326, docs/upscale-art.md): a foreground
+         service keeps the app's process going while the pictures are made,
+         also with the app in the background. Normal permissions, granted at
+         install; the service runs only while a run lasts. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <!-- extractNativeLibs: the libraries lie in nativeLibraryDir as files (a
          replacement GPU driver's hooks will have to be loaded from there).
@@ -108,6 +125,18 @@
             android:screenOrientation="sensorLandscape"
             android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:preferMinimalPostProcessing="true"
+            android:exported="false" />
+
+        <!-- While the menu pictures are made (UpscaleService): one in the
+             game's process, one in the setup page's. -->
+        <service android:name="io.github.xenophobentx.takedawn.UpscaleService"
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="true"
+            android:exported="false" />
+        <service android:name="io.github.xenophobentx.takedawn.SetupUpscaleService"
+            android:process=":setup"
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="true"
             android:exported="false" />
 
         <!-- The bug report from the start page (docs/running.md, "Reporting

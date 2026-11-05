@@ -23,7 +23,9 @@
 # does this script (common.sh check_apk_licenses) on the unsigned and the
 # signed APK.
 #
-# In the APK: libmain.so (the program), SDL2, libc++, libadrenotools' hooks,
+# In the APK: libmain.so, libmain_pal.so and libmain_ensv.so (the three
+# discs' programs, src/game/package.h; the app loads the installed disc's),
+# SDL2, libc++, libadrenotools' hooks,
 # a Mesa Turnip driver: by default the prebuilt A725 build that
 # tools/android/fetch-deps.sh takes out of UnleashedRecomp-Android's release
 # (BO-152, docs/android.md). No game data, no shader key list.
@@ -46,7 +48,7 @@ STAMPED=1
 if [ -f "$HERE/common.sh" ]; then
     # shellcheck source=/dev/null
     source "$HERE/common.sh"
-    assert_gen
+    assert_gen_all
 else
     # Before the release scripts' common part is in this checkout: the same
     # names, and a build that says it is not a release.
@@ -73,6 +75,18 @@ H="$TAKEDAWN_ANDROID_HOST"
 D="${TAKEDAWN_ANDROID_DIR:-takedawn-build/android}"
 ENVF="${TAKEDAWN_ANDROID_ENV:-}"
 ls "$GEN"/recomp_0*.c >/dev/null 2>&1 || die "no generated code in $GEN"
+# Every program's generated code (common.sh PKG_REGIONS: gen, gen.pal,
+# gen.pal-ensv), each with its tree and key to compare with the build's.
+GENS=""; WANT=""
+if [ "$STAMPED" = 1 ]; then
+    for r in $PKG_REGIONS; do
+        use_region "$r"; assert_gen
+        GENS="$GENS $(basename "$GEN")"; WANT="$WANT $(basename "$GEN"):$GEN_TREE:$GEN_KEY"
+    done
+    use_region "${PKG_REGIONS%% *}"; assert_gen
+else
+    GENS="gen"; WANT="gen:$GEN_TREE:"
+fi
 
 say "copying the sources and the generated code to the build machine"
 ssh "$H" "mkdir -p '$D/src/takedawn/src/game/recomp/gen' '$D/src/xboxrecomp' '$D/licenses'"
@@ -89,7 +103,10 @@ fi
 # nothing else is copied; the generated code has its own copy below.
 git -C "$REPO" ls-files -z | rsync -a --from0 --files-from=- "$REPO/" "$H:$D/src/takedawn/"
 git -C "$TOOLKIT" ls-files -z | rsync -a --from0 --files-from=- "$TOOLKIT/" "$H:$D/src/xboxrecomp/"
-rsync -a --delete "$GEN/" "$H:$D/src/takedawn/src/game/recomp/gen/"
+for g in $GENS; do
+    ssh "$H" "mkdir -p '$D/src/takedawn/src/game/recomp/$g'"
+    rsync -a --delete "$REPO/src/game/recomp/$g/" "$H:$D/src/takedawn/src/game/recomp/$g/"
+done
 # The copies have no git: say which commits they are (the toolkit's
 # cmake/build_id.cmake reads BUILD_COMMIT), so the program's version line
 # names them as on every other platform.
@@ -100,7 +117,7 @@ fi
 
 say "building the unsigned APK"
 LICENV=""
-if [ "$STAMPED" = 1 ]; then LICENV='export BO3_LICENSES_DIR="$PWD/../../licenses" BO3_REQUIRE_LICENSES=1'; fi
+if [ "$STAMPED" = 1 ]; then LICENV='export BO3_LICENSES_DIR="$PWD/../../licenses" BO3_REQUIRE_LICENSES=1 BO3_REQUIRE_ALL_PROGRAMS=1'; fi
 # shellcheck disable=SC2087
 ssh "$H" bash -s <<REMOTE
 set -euo pipefail
@@ -110,29 +127,35 @@ export XBOXRECOMP_DIR="\$PWD/../xboxrecomp" BUILD_DIR="\$PWD/../../build" SIGN=0
 export TAKEDAWN_ANDROID_BUILD="${TAKEDAWN_ANDROID_BUILD:-0}"
 $LICENV
 tools/android/fetch-deps.sh > ../../fetch-deps.log 2>&1 || { tail -20 ../../fetch-deps.log; exit 1; }
-tools/android/build-apk.sh -DBO3_RELEASE=ON -DBO3_REGION=$BO3_REGION \${TAKEDAWN_PYTHON:+-DBO3_GLYPHS_PYTHON=\$TAKEDAWN_PYTHON} > ../../build-apk.log 2>&1 || { grep -n "error" ../../build-apk.log | head -20; tail -5 ../../build-apk.log; exit 1; }
-grep -a -m1 "regen key" ../../build-apk.log || true
+tools/android/build-apk.sh -DBO3_RELEASE=ON \${TAKEDAWN_PYTHON:+-DBO3_GLYPHS_PYTHON=\$TAKEDAWN_PYTHON} > ../../build-apk.log 2>&1 || { grep -n "error" ../../build-apk.log | head -20; tail -5 ../../build-apk.log; exit 1; }
+grep -a "regen key" ../../build-apk.log || true
 grep -a "versionCode\|with Mesa\|licence files" ../../build-apk.log || true
 TDIR=turnip-a725; [ "\${BO3_ANDROID_TURNIP:-1}" = mesa ] && TDIR=turnip
 cat "\${BO3_ANDROID_DEPS:-\$HOME/.cache/bo3-android-deps}/\$TDIR/SOURCE.txt" | sed 's/^/   turnip: /'
-t=\$(mktemp); ( cd src/game/recomp/gen && for f in \$(ls | grep '^recomp_' | LC_ALL=C sort); do printf '%s  %s\n' "\$(sha256sum "\$f" | cut -d' ' -f1)" "\$f"; done ) > "\$t"
-echo "GENTREE \$(sha256sum "\$t" | cut -d' ' -f1)"; rm -f "\$t"
 REMOTE
 mkdir -p "$DIST"
 log="$(mktemp)"
 ssh "$H" "cat '$D/build-apk.log'" > "$log"
-rkey="$(sed -n 's/.*regen key \([0-9a-f]*\).*/\1/p' "$log" | head -1)"
-rtree="$(ssh "$H" "cd '$D/src/takedawn/src/game/recomp/gen' && t=\$(mktemp) && for f in \$(ls | grep '^recomp_' | LC_ALL=C sort); do printf '%s  %s\n' \"\$(sha256sum \"\$f\" | cut -d' ' -f1)\" \"\$f\"; done > \$t && sha256sum \$t | cut -d' ' -f1; rm -f \$t")"
+rkeys="$(sed -n 's/.*regen key \([0-9a-f]*\).*/\1/p' "$log" | sort -u | tr '\n' ' ')"
 rm -f "$log"
-[ "$rtree" = "$GEN_TREE" ] || die "the generated code on the build machine ($rtree) is not this checkout's ($GEN_TREE)"
-if [ "$STAMPED" = 1 ]; then
-    [ "$rkey" = "$GEN_KEY" ] || die "the build's regen key is '$rkey', this checkout's is '$GEN_KEY'"
-fi
-U="$DIST/Takedawn-$VERSION$PKG_TAG-android-arm64-unsigned.apk"
-scp -q "$H:$D/src/takedawn/out/takedawn$PKG_TAG-android-arm64-unsigned.apk" "$U"
+for w in $WANT; do
+    g="${w%%:*}"; rest="${w#*:}"; tree="${rest%%:*}"; key="${rest#*:}"
+    rtree="$(ssh "$H" "cd '$D/src/takedawn/src/game/recomp/$g' && t=\$(mktemp) && for f in \$(ls | grep '^recomp_' | LC_ALL=C sort); do printf '%s  %s\n' \"\$(sha256sum \"\$f\" | cut -d' ' -f1)\" \"\$f\"; done > \$t && sha256sum \$t | cut -d' ' -f1; rm -f \$t")"
+    [ "$rtree" = "$tree" ] || die "$g: the generated code on the build machine ($rtree) is not this checkout's ($tree)"
+    if [ "$STAMPED" = 1 ]; then
+        case " $rkeys " in *" $key "*) ;; *) die "$g: no build had this checkout's regen key $key (the builds': $rkeys)" ;; esac
+    fi
+done
+rkey="$rkeys"
+U="$DIST/Takedawn-$VERSION-android-arm64-unsigned.apk"
+scp -q "$H:$D/src/takedawn/out/takedawn-android-arm64-unsigned.apk" "$U"
+for lib in libmain.so libmain_pal.so libmain_ensv.so; do
+    [ "$STAMPED" = 0 ] && [ "$lib" != libmain.so ] && continue
+    unzip -Z1 "$U" | grep -qx "lib/arm64-v8a/$lib" || die "the APK has no lib/arm64-v8a/$lib"
+done
 [ "$STAMPED" = 0 ] || check_apk_licenses "$U"
 say "unsigned: $U ($(wc -c < "$U" | tr -d ' ') bytes, sha256 $(sha256_of "$U"))"
-say "generated code $GEN_TREE${rkey:+, regen key $rkey}"
+say "generated code:$(for w in $WANT; do printf ' %s %s' "${w%%:*}" "$(printf '%s' "${w#*:}" | cut -c1-16)"; done)${rkey:+; regen keys $rkey}"
 if [ "${1:-}" = "--no-sign" ]; then exit 0; fi
-"$HERE/sign-android.sh" "$U" "$DIST/Takedawn-$VERSION$PKG_TAG-android-arm64.apk"
-[ "$STAMPED" = 0 ] || check_apk_licenses "$DIST/Takedawn-$VERSION$PKG_TAG-android-arm64.apk"
+"$HERE/sign-android.sh" "$U" "$DIST/Takedawn-$VERSION-android-arm64.apk"
+[ "$STAMPED" = 0 ] || check_apk_licenses "$DIST/Takedawn-$VERSION-android-arm64.apk"

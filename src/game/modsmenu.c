@@ -58,24 +58,25 @@
 #include "platform/recomp_patch.h"
 #include "recomp_types.h"
 #include "modfs.h"
+#include "modsmodel.h"
 #include "region.h"
 
 extern RECOMP_TLS uint32_t g_eax, g_ebx, g_ecx, g_edx, g_esi, g_edi, g_esp, g_ebp, g_seh_ebp;
 extern ptrdiff_t g_xbox_mem_offset;
-extern void BO3_SUB(sub_001D2879, sub_001D2B99)(void);          /* the title's heap: (size, tag), stdcall */
-extern void BO3_SUB(sub_00085170, sub_000853C0)(void);          /* the Settings page's set-up: eax = the page */
-extern void BO3_SUB(sub_00141010, sub_001412B0)(void);          /* a front-end sound, stdcall 6, eax */
+extern void BO3_SUB(sub_001D2879, sub_001D2B99, sub_001D2C39)(void);          /* the title's heap: (size, tag), stdcall */
+extern void BO3_SUB(sub_00085170, sub_000853C0, sub_00085460)(void);          /* the Settings page's set-up: eax = the page */
+extern void BO3_SUB(sub_00141010, sub_001412B0, sub_00141350)(void);          /* a front-end sound, stdcall 6, eax */
 
 #define MM8(va)  (*(uint8_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 #define MM16(va) (*(uint16_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 #define MM32(va) (*(uint32_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 
-#define SP_PAGE      BO3_VA(0x0055ABC4u, 0x0055AEE4u)
+#define SP_PAGE      BO3_VA(0x0055ABC4u, 0x0055AEE4u, 0x0055AF84u)
 #define SP_CURSOR    (SP_PAGE + 4)
 #define SP_COUNT     (SP_PAGE + 6)
 #define SP_ITEMS     (SP_PAGE + 8)
-#define FLOW         BO3_VA(0x00567170u, 0x00567490u)          /* the front end's state machine */
-#define STRTAB       BO3_VA(0x004D532Cu, 0x004D564Cu)          /* [[STRTAB] + 0xC] = the string pointers */
+#define FLOW         BO3_VA(0x00567170u, 0x00567490u, 0x00567530u)          /* the front end's state machine */
+#define STRTAB       BO3_VA(0x004D532Cu, 0x004D564Cu, 0x004D56ECu)          /* [[STRTAB] + 0xC] = the string pointers */
 #define TITLE_SLOT   0x6C4u               /* the Settings page's title string */
 #define HEAP_TAG     0x4D4F4453u          /* "MODS" */
 
@@ -103,6 +104,16 @@ static unsigned char s_touched[BO3_MODFS_MAX_MODS]; /* the player chose for it (
 static unsigned char s_choice[BO3_MODFS_MAX_MODS];  /* on / off as chosen, whatever the mod list says */
 static unsigned char s_saved[BO3_MODFS_MAX_MODS];   /* what the mod list says (read at each build and APPLY) */
 static int s_save_failed;                  /* the last APPLY could not save every choice */
+/* A mod the game turns on or off at once (BO-311: the menu pictures made on
+ * this computer, a texture pack only): set by the game, NULL in the tests. 1
+ * when the change is in use now, so it asks for no restart. */
+static int (*s_live)(const char *id, int on);
+static unsigned char s_live_done[BO3_MODFS_MAX_MODS];   /* in use as s_live_on says */
+static unsigned char s_live_on[BO3_MODFS_MAX_MODS];
+void bo3_modsmenu_set_live(int (*fn)(const char *id, int on)) { s_live = fn; }
+static unsigned s_gen = 1, s_built_gen;    /* the choices change (any view); the page's lines were built at s_built_gen */
+static int (*s_apply_hook)(int changes);   /* bo3_mods_set_apply_hook */
+static int s_applied_live;                 /* the hook put the last APPLY to use at once */
 
 /* Made by the build (cmake/modsmenu_marks.cmake): 1 when the generated code
  * calls si_items, si_select, mm_flow_sel and mm_flow_back where
@@ -156,7 +167,7 @@ static uint32_t mm_block(void)
         PUSH32(g_esp, HEAP_TAG);
         PUSH32(g_esp, size);
         PUSH32(g_esp, 0);                   /* the return address its ret takes */
-        BO3_SUB(sub_001D2879, sub_001D2B99)();
+        BO3_SUB(sub_001D2879, sub_001D2B99, sub_001D2C39)();
         s_blk = g_eax;
         g_eax = a; g_ecx = c; g_edx = d; g_esp = sp;
         if (s_blk)
@@ -170,14 +181,14 @@ static void play_select(void)
 {
     uint32_t a = g_eax, c = g_ecx, d = g_edx, sp = g_esp;
     PUSH32(g_esp, 0);
-    PUSH32(g_esp, MM8(BO3_VA(0x411560, 0x411890)) ? 1u : 0u);
+    PUSH32(g_esp, MM8(BO3_VA(0x411560, 0x411890, 0x411930)) ? 1u : 0u);
     PUSH32(g_esp, 0x3F800000u);
     PUSH32(g_esp, 0x3ECCCCCDu);
     PUSH32(g_esp, 0xB701A7E2u);
     PUSH32(g_esp, 0xA9E00000u);
     PUSH32(g_esp, 0);
     g_eax = 0;
-    BO3_SUB(sub_00141010, sub_001412B0)();
+    BO3_SUB(sub_00141010, sub_001412B0, sub_00141350)();
     g_eax = a; g_ecx = c; g_edx = d; g_esp = sp;
 }
 
@@ -214,7 +225,8 @@ static int changes_unsaved(void)   /* 1: APPLY would change the mod list */
 static int restart_needed(void)    /* 1: the mod list differs from what this start used */
 {
     for (int i = 0; i < nmods(); i++)
-        if (bo3_modfs_mod(i)->usable && s_saved[i] != bo3_modfs_mod(i)->enabled)
+        if (bo3_modfs_mod(i)->usable && s_saved[i] != bo3_modfs_mod(i)->enabled
+                && !(s_live_done[i] && s_live_on[i] == s_saved[i]))
             return 1;
     return 0;
 }
@@ -270,6 +282,7 @@ static int build_mods(void)
     int n = 0, nm = nmods(), active = 0, per;
 
     read_saved();
+    s_built_gen = s_gen;
     for (int i = 0; i < nm; i++)
         active += bo3_modfs_mod(i)->usable && bo3_modfs_mod(i)->enabled;
     per = nm <= PAGE_ALL ? PAGE_ALL : PAGE_MODS;
@@ -300,9 +313,7 @@ static int build_mods(void)
         s_line_mod[n++] = -1;
     }
     s_apply_line = n;
-    put_label(label_va(n), s_save_failed ? "NOT SAVED - SEE THE LOG"
-                         : changes_unsaved() ? "APPLY - RESTART REQUIRED"
-                         : restart_needed() ? "SAVED - RESTART REQUIRED" : "NO CHANGES");
+    put_label(label_va(n), bo3_mods_apply_text());
     s_line_mod[n++] = -1;
     s_detail_line = n;                       /* about the line under the cursor (detail_refresh) */
     s_detail[0] = 0;
@@ -373,6 +384,12 @@ static void detail_refresh(void)
     int cur;
     if (!s_mode || s_detail_line < 0 || !s_blk)
         return;
+    if (s_built_gen != s_gen) {              /* the settings overlay changed the choices meanwhile */
+        MM16(SP_COUNT) = (uint16_t)build_mods();
+        if (MM16(SP_CURSOR) >= s_nlines)
+            MM16(SP_CURSOR) = (uint16_t)(s_nlines - 1);
+        s_info[0] = s_detail[0] = 0;
+    }
     cur = MM16(SP_CURSOR);
     if (cur == s_detail_line || cur == s_info_line)
         return;                              /* on one of them: keep what they say */
@@ -419,7 +436,7 @@ static void rebuild(int mode)
     s_rebuilding = 1;
     g_eax = SP_PAGE;
     PUSH32(g_esp, 0);
-    BO3_SUB(sub_00085170, sub_000853C0)();
+    BO3_SUB(sub_00085170, sub_000853C0, sub_00085460)();
     s_rebuilding = 0;
     MM32(slot) = old;
     g_eax = a; g_ebx = b; g_ecx = c; g_edx = d; g_esi = si; g_edi = di; g_esp = sp; g_ebp = bp; g_seh_ebp = sbp;
@@ -523,25 +540,113 @@ static void mm_flow_back(void)
 }
 
 /* The choices saved: each mod whose choice differs from the mod list. */
-static void apply(void)
+static int apply(void)
 {
-    int ok = 1, n = 0;
+    int ok = 1, n = 0, live = 0;
     for (int i = 0; i < nmods(); i++) {
         const bo3_mod *m = bo3_modfs_mod(i);
         if (!m->usable || chosen(i) == s_saved[i])
             continue;
         n++;
-        if (bo3_modfs_set_enabled(m->manifest.id, chosen(i)))
+        if (bo3_modfs_set_enabled(m->manifest.id, chosen(i))) {
+            if (s_live && s_live(m->manifest.id, chosen(i))) {
+                s_live_done[i] = 1;          /* in use now: no restart for it */
+                s_live_on[i] = (unsigned char)chosen(i);
+                live++;
+            }
             s_touched[i] = 0;                /* now what the mod list says */
-        else
+        } else
             ok = 0;                          /* this choice stays, to try again */
     }
     s_save_failed = !ok;
+    s_gen++;
     if (ok)
         fprintf(stderr, "[MODS] APPLY: %d change(s) saved\n", n);
     else
         fprintf(stderr, "[MODS] APPLY: not every change saved: no mod list file (TAKEDAWN_MOD_LIST empty), or it "
                         "could not be read or written (lines above)\n");
+    /* The one place a live apply hooks in (BO-316): after the changes are saved.
+     * The game's own live mods (s_live, BO-311: the generated texture pack)
+     * are put to use above, per mod, for this page and the settings' Mods tab
+     * alike (both apply here): when every change was, nothing waits for a
+     * restart and the line says APPLIED. */
+    s_applied_live = ok && n && live == n;
+    if (ok && n && s_apply_hook && s_apply_hook(n))
+        s_applied_live = 1;
+    return ok;
+}
+
+/* ---- the model both views use: this page and the settings overlay's Mods tab (modsmodel.h) ---- */
+
+int bo3_mods_count(void) { return nmods(); }
+
+const char *bo3_mods_state(int i)
+{
+    if (i < 0 || i >= nmods())
+        return "";
+    return state_word(i);
+}
+
+int bo3_mods_next_on(int i)
+{
+    return i >= 0 && i < nmods() && chosen(i);
+}
+
+/* The mod list's choice for it is not what this start uses, and it was not put to use at once either:
+ * the change waits for the next start. What the settings overlay's NEXT START tag says. */
+int bo3_mods_restart_pending(int i)
+{
+    if (i < 0 || i >= nmods())
+        return 0;
+    return bo3_modfs_mod(i)->usable && s_saved[i] != bo3_modfs_mod(i)->enabled
+           && !(s_live_done[i] && s_live_on[i] == s_saved[i]);
+}
+
+const char *bo3_mods_name(const bo3_mod *m) { return mod_name(m); }
+
+void bo3_mods_refresh(void)
+{
+    read_saved();
+}
+
+void bo3_mods_toggle(int i)
+{
+    if (i < 0 || i >= nmods() || !bo3_modfs_mod(i)->usable)
+        return;
+    read_saved();
+    s_choice[i] = (unsigned char)!chosen(i);
+    s_touched[i] = 1;
+    s_save_failed = 0;
+    s_applied_live = 0;
+    s_gen++;
+}
+
+int bo3_mods_unsaved(void) { read_saved(); return changes_unsaved(); }
+int bo3_mods_restart_needed(void) { read_saved(); return restart_needed(); }
+int bo3_mods_save_failed(void) { return s_save_failed; }
+
+const char *bo3_mods_apply_text(void)
+{
+    return s_save_failed ? "NOT SAVED - SEE THE LOG"
+         : changes_unsaved() ? "APPLY - RESTART REQUIRED"
+         : s_applied_live ? "APPLIED"
+         : restart_needed() ? "SAVED - RESTART REQUIRED" : "NO CHANGES";
+}
+
+int bo3_mods_apply(void)
+{
+    int ok;
+    read_saved();
+    if (!changes_unsaved() && !s_save_failed)
+        return 1;
+    ok = apply();
+    read_saved();
+    return ok;
+}
+
+void bo3_mods_set_apply_hook(int (*fn)(int changes))
+{
+    s_apply_hook = fn;
 }
 
 /* menuentry.c's si_select mark (0x853B4), after its own: al = A taken. */
@@ -573,14 +678,11 @@ static void mm_select(void)
         int i = s_line_mod[cur];
         if (!bo3_modfs_mod(i)->usable)
             return;                          /* a mod that cannot be used: nothing to turn on */
-        s_choice[i] = (unsigned char)!chosen(i);
-        s_touched[i] = 1;
-        s_save_failed = 0;
+        bo3_mods_toggle(i);
     } else if (cur == s_apply_line) {
         if (!changes_unsaved() && !s_save_failed)
             return;
-        apply();
-        read_saved();
+        bo3_mods_apply();
     } else if (cur == s_next_line || cur == s_prev_line) {
         /* Another page has another number of lines, and the widget makes its
          * line frames once, at set-up: so a page change is the title's own A

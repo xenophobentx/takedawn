@@ -5,13 +5,22 @@ project(burnout3_game C)
 # jumps to the XBE entry point; recomp_manual.c is where a function the lifter
 # got wrong is replaced. Everything else is generated (gen/, gitignored).
 
+# The generated C: recomp/gen, or recomp/gen.pal-ensv for the PAL En/Es/Nl/Sv
+# disc (BO3_GEN_NAME, ../../CMakeLists.txt).
+if(NOT BO3_GEN_NAME)
+    set(BO3_GEN_NAME gen)
+endif()
+set(BO3_GEN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/recomp/${BO3_GEN_NAME}")
 file(GLOB RECOMP_GEN_SOURCES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/recomp/gen/recomp_*.c"
+    "${BO3_GEN_DIR}/recomp_*.c"
 )
-# The PAL build's wrapped functions are named by their PAL addresses
-# (recomp_manual_pal.c; recomp_manual.c has the NTSC-U ones).
+# The PAL builds' wrapped functions are named by their own addresses
+# (recomp_manual_pal.c, recomp_manual_pal_ensv.c; recomp_manual.c has the
+# NTSC-U ones).
 if(BO3_REGION STREQUAL "PAL")
     list(APPEND RECOMP_GEN_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/recomp/recomp_manual_pal.c")
+elseif(BO3_REGION STREQUAL "PAL-ENSV")
+    list(APPEND RECOMP_GEN_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/recomp/recomp_manual_pal_ensv.c")
 endif()
 
 if(ANDROID)
@@ -21,6 +30,8 @@ if(ANDROID)
     add_library(burnout3 SHARED
         main.c
         install.c
+        package.c
+        languages.c
         fatal.c
         controls.c
         autopilot.c
@@ -33,6 +44,7 @@ if(ANDROID)
         soundtrack.c
         dsound_notify.c
         soundbank.c
+        traffic_bp.c
         hirefresh.c
         hraudit.c
     mixer.c
@@ -41,7 +53,40 @@ if(ANDROID)
         recomp/recomp_manual.c
         ${RECOMP_GEN_SOURCES}
     )
-    set_target_properties(burnout3 PROPERTIES OUTPUT_NAME main)
+    # One app carries the three programs (package.h): libmain.so (NTSC-U),
+    # libmain_pal.so, libmain_ensv.so; the app loads the installed disc's.
+    if(BO3_REGION STREQUAL "PAL")
+        set_target_properties(burnout3 PROPERTIES OUTPUT_NAME main_pal)
+    elseif(BO3_REGION STREQUAL "PAL-ENSV")
+        set_target_properties(burnout3 PROPERTIES OUTPUT_NAME main_ensv)
+    else()
+        set_target_properties(burnout3 PROPERTIES OUTPUT_NAME main)
+    endif()
+    # Sharper menu pictures in the app (BO-326, upscale.c): the fast model run
+    # in this library with ncnn (tools/android/fetch-deps.sh builds it), as no
+    # program of its own can be started. Without ncnn the step is not offered.
+    target_sources(burnout3 PRIVATE upscale.c upscale_art.c upscale_tile.c)
+    find_package(ncnn CONFIG QUIET)
+    if(TARGET ncnn)
+        enable_language(CXX)
+        # ncnn's package names "pthread" to link, which bionic has in libc (no
+        # libpthread on Android).
+        get_target_property(_ncnn_libs ncnn INTERFACE_LINK_LIBRARIES)
+        list(REMOVE_ITEM _ncnn_libs pthread)
+        set_target_properties(ncnn PROPERTIES INTERFACE_LINK_LIBRARIES "${_ncnn_libs}")
+        # A library of its own: ncnn's target asks its users for -fno-rtti
+        # and -fno-exceptions, which are for this file alone.
+        add_library(bo3_upscale_ncnn STATIC upscale_ncnn.cpp)
+        target_link_libraries(bo3_upscale_ncnn PRIVATE ncnn)
+        target_link_libraries(burnout3 PRIVATE bo3_upscale_ncnn)
+        target_compile_definitions(burnout3 PRIVATE BO3_HAVE_NCNN=1)
+        if(NCNN_VULKAN)
+            target_compile_definitions(burnout3 PRIVATE BO3_NCNN_VULKAN=1)
+        endif()
+        message(STATUS "menu picture upscale: ncnn ${ncnn_VERSION} (Vulkan: ${NCNN_VULKAN}) from ${ncnn_DIR}")
+    else()
+        message(WARNING "no ncnn (tools/android/fetch-deps.sh): the app will not offer the menu picture upscale")
+    endif()
     # Calls and data inside the library bind to it at link time: 24 000
     # lifted functions call each other directly, not through the PLT.
     # --as-needed: no libvulkan.so among the dependencies. The runtime calls
@@ -52,6 +97,8 @@ else()
 add_executable(burnout3
     main.c
     install.c
+    package.c
+    languages.c
     fatal.c
     controls.c
     autopilot.c
@@ -62,9 +109,12 @@ add_executable(burnout3
     unlockall.c
     glyphs.c
     shaderbuild.c
+    upscale.c
+    upscale_art.c
     soundtrack.c
     dsound_notify.c
     soundbank.c
+    traffic_bp.c
     hirefresh.c
     hraudit.c
     mixer.c
@@ -79,8 +129,10 @@ endif()
 # API on Windows, POSIX (openat, fdopendir) everywhere else. A mod's mod.toml
 # is read with the toolkit's TOML reader, which is part of its enhancements
 # library; a build without that library gets the reader's one file. The
-# MODS page in the title's Settings menu (modsmenu.c) on every platform.
-target_sources(burnout3 PRIVATE modfs.c modmanifest.c modsmenu.c)
+# MODS page in the title's Settings menu (modsmenu.c) and the main menu's QUIT
+# line (mainquit.c) and the keyboard prompts' key caps drawn for the player's own
+# keys (keycap.c, used by glyphs.c) on every platform.
+target_sources(burnout3 PRIVATE modfs.c modmanifest.c modsmenu.c modtex.c modstab.c mainquit.c keycap.c xboxlive.c codeentry.c onlinedesc.c quickplay.c racewait.c vote.c onlinebrand.c onlinebrand_text.c headfont.c stay.c nodash.c)
 target_include_directories(burnout3 PRIVATE ${XBOXRECOMP_DIR}/src/enhance)
 if(NOT TARGET xbox_enhance)
     if(NOT EXISTS ${XBOXRECOMP_DIR}/src/enhance/recomp_cfg.c)
@@ -95,18 +147,26 @@ endif()
 # config/pal/patches.json.
 if(BO3_REGION STREQUAL "PAL")
     set(_mm_patches ${CMAKE_CURRENT_SOURCE_DIR}/../../config/pal/patches.json)
+elseif(BO3_REGION STREQUAL "PAL-ENSV")
+    set(_mm_patches ${CMAKE_CURRENT_SOURCE_DIR}/../../config/pal-ensv/patches.json)
 else()
     set(_mm_patches ${CMAKE_CURRENT_SOURCE_DIR}/../../config/patches.json)
 endif()
 set(_mm_marks_c ${CMAKE_CURRENT_BINARY_DIR}/modsmenu_marks.c)
 add_custom_command(OUTPUT ${_mm_marks_c}
     COMMAND ${CMAKE_COMMAND} -DPATCHES=${_mm_patches}
-            -DGEN=${CMAKE_CURRENT_SOURCE_DIR}/recomp/gen -DOUT=${_mm_marks_c} -DRELEASE=${BO3_RELEASE}
+            -DGEN=${BO3_GEN_DIR} -DOUT=${_mm_marks_c} -DRELEASE=${BO3_RELEASE}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/modsmenu_marks.cmake
     DEPENDS ${RECOMP_GEN_SOURCES} ${_mm_patches}
             ${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/modsmenu_marks.cmake
     VERBATIM)
 target_sources(burnout3 PRIVATE ${_mm_marks_c})
+
+# Online play (BO-134 spike): the title's XNet/XOnline on host sockets, off
+# unless TAKEDAWN_ONLINE=1.
+target_sources(burnout3 PRIVATE online.c onlinebot.c lobbystatus.c statustext.c react.c onlinenav.c onlinescreens.c onlineinfo.c ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/lobby/aries_server.c)
+# BO-352: react.c provides bo3_react_ticker_text; status_tick prefers it.
+target_compile_definitions(burnout3 PRIVATE BO3_HAVE_REACT=1)
 
 # The shipped shader coverage manifest (BO-208, docs/shader-prebuild.md):
 # graphics/pipelines-<backend>.manifest, compiled in as bytes so that it is
@@ -270,7 +330,7 @@ endif()
 target_include_directories(burnout3 PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/recomp
-    ${CMAKE_CURRENT_SOURCE_DIR}/recomp/gen
+    ${BO3_GEN_DIR}
     ${XBOXRECOMP_DIR}/src
     ${XBOXRECOMP_DIR}/src/kernel
     # The template runtime headers, not a local copy: BO3's old copy had
@@ -307,13 +367,16 @@ else()
         set_property(SOURCE ${RECOMP_GEN_SOURCES} APPEND PROPERTY
             COMPILE_OPTIONS ${_bo3_gen_opt})
     endif()
-    # macOS: the lifted code in its own section, __TEXT,__guest, so that
+    # macOS, Linux, the Deck and Android (clang): the lifted code in its own
+    # section (__TEXT,__guest on macOS, guest_text on ELF), so that
     # RECOMP_DEBUG=guest_cpus=token can preempt a guest thread there (the
-    # toolkit's kernel_thread.c; the Def Jam port does the same). The
-    # toolkit's header, when it has one; without the switch nothing reads it.
+    # toolkit's kernel_thread.c and docs/runtime/guest-cpus.md; the Def Jam
+    # port does the same). The toolkit's header, when it has one; without the
+    # switch nothing reads it. GCC and Windows have no such section.
     set(_bo3_guest_section
         "${XBOXRECOMP_DIR}/templates/runtime/recomp_guest_section.h")
-    if(APPLE AND EXISTS "${_bo3_guest_section}")
+    if(NOT WIN32 AND CMAKE_C_COMPILER_ID MATCHES "Clang"
+       AND EXISTS "${_bo3_guest_section}")
         set_property(SOURCE ${RECOMP_GEN_SOURCES} APPEND PROPERTY
             COMPILE_OPTIONS "-include" "${_bo3_guest_section}")
     endif()

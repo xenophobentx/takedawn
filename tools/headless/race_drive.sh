@@ -36,6 +36,11 @@
 #                   Back+Start) a few times; MIX_PLAN="flips:pause
 #                   flips:overlay ..." sets when, in flips after the GO.
 #                   The flips of each go to mix.txt in the run directory.
+#   SAVE_AT_END=1   after the last race, Continue and the RACE RESULTS page's
+#                   CONTINUE (the title's autosave): waits for the title to
+#                   open Profile 1 to write it, then 300 flips for the save
+#                   guard to put it in place ("[SAVE] Profile 1: replaced" in
+#                   log.txt). BO-323: an imported profile saved back.
 #   EVENTS="race roadrage"
 #                   with PICK=random: the event types, taken in turn, race n
 #                   being word ((n-1) mod count). race = Single Event > Race;
@@ -192,4 +197,10 @@ while :; do
     SHOT_WINDOW=0 shot "retry_$n" "$(flip)" 20 0
     press a:400 0
 done
+if [ "${SAVE_AT_END:-0}" = 1 ]; then
+    press a:400 300         # Continue: RACE RESULTS, CONTINUE / RETRY
+    press a:400 300         # CONTINUE: the autosave
+    wait_log 'Profile 1 [(]disp [^1]' "Profile 1 opened for writing"
+    wait_flips 300
+fi
 scene_end "autopilot: $n race(s)"

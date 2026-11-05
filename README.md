@@ -19,7 +19,7 @@
   &nbsp;·&nbsp;
   <a href="#reporting-a-bug">Report a bug</a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/xenophobentx/takedawn/milestone/1">Coming in 0.3</a>
+  <a href="CHANGELOG.md">What's new in 0.3.0</a>
 </p>
 
 > [!IMPORTANT]
@@ -29,55 +29,70 @@
 >
 > No game data is included or distributed: no disc images, no textures,
 > models, sound, music or films, and no shader cache made from them. To play
-> you need your own, legally obtained disc of the North America (NTSC-U)
-> retail release for the original Xbox. Takedawn checks a copy of it and takes
-> the game data from there. Please do not ask for game files or disc images,
+> you need your own, legally obtained disc of one of the three supported
+> retail releases for the original Xbox: North America (NTSC-U) or one of the
+> two European (PAL) discs. Takedawn checks a copy of it and takes the game
+> data from there. Please do not ask for game files or disc images,
 > and do not share them. See the full [legal notice](#legal-notice).
 
-**TL;DR**
+TL;DR
 
 - This is a port, not a remaster. It runs the original 2004 game with its
-  own cars, tracks, textures and physics. The picture and sound extras are
-  options on top.
+  own cars, tracks, textures and physics. The picture and sound extras are options on top.
 - Takedawn runs the original Xbox *Burnout 3: Takedown* as a native program.
 - Compared with the console: up to 4x resolution, widescreen and ultrawide,
   60 fps crash cameras, and music and 60 fps in split screen. Custom
   soundtracks play from a folder of your own MP3 or FLAC files.
   [Highlights](#highlights) has the rest.
+- New in 0.3.0: online play. Pick TAKEDAWN ONLINE in the main menu for
+  QUICK PLAY, a game with a code for your friends, or the list of games. See
+  [docs/online.md](docs/online.md).
+- The European discs work too: all three discs (North America, Europe, and
+  Europe and Australia) in one download, with the game in your disc's
+  languages.
 - [Download](#download) it for your device and start it. For
   [full speed](#for-full-speed-60-fps) it needs about a Steam Deck's power.
 - On Windows a few antivirus tools flag the unsigned installer. It is a false
   positive; see [Antivirus warnings](docs/antivirus.md).
-- Point it at a disc image of your own Burnout 3 (USA). It installs the game
-  data, then you play.
+- Point it at a disc image of your own Burnout 3. It installs the game data,
+  then you play.
 - To update, install the new version over the old one. Saves and settings stay.
-- Coming in 0.3: mod support, online play, keyboard remapping and PAL
-  discs. The [0.3 milestone](https://github.com/xenophobentx/takedawn/milestone/1)
-  shows what's in it and which issues it fixes.
+- Mods go in a mods folder and switch on and off in the game's own MODS
+  page. [CHANGELOG.md](CHANGELOG.md) has everything that is new in 0.3.0.
 - Settings: Back and Start, F1, or TAKEDAWN SETTINGS in the game's menu.
 - Bugs: first check the [known issues](#known-issues). Then switch on
-  Advanced > Diagnostic logging, restart the game and make the
-  problem happen again. Then Advanced > Create bug report, and attach the zip
+  System > Diagnostic logging, restart the game and make the
+  problem happen again. Then System > Create bug report, and attach the zip
   to the [issue form][issues].
 
 <p align="center">
-  <img src="docs/screenshots/takedawn-hero-roadrage-psyche-out.jpg" alt="The Road Rage takedown camera at 16:9: a wrecked rival car slides on its side down a Far East city road in a spray of sparks, a Psyche Out banner at the top" width="100%">
+  <img src="docs/screenshots/takedawn-030-race-island-paradise-beach.jpg" alt="A race on Island Paradise at 16:9: a blue hatchback on a sandy beach road lined with palm trees, a red taxi coming the other way, position 2 of 6 and 132 mph" width="100%">
 </p>
 
 <table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/takedawn-030-roadrage-softbody-wreck.jpg" alt="Road Rage crash camera at Downtown: the player's blue roadster crumpled and torn open beside a yellow taxi, an armoured van on its side behind them"><br><sub>Road Rage with soft-body damage.</sub></td>
+    <td width="50%"><img src="docs/screenshots/takedawn-030-crash-softbody-dents.jpg" alt="Crash mode at a city junction: a blue roadster and yellow taxis wrecked together, their bodies dented and bent, CRASHBREAKER in 4 at the bottom"><br><sub>Crash mode, dents that stay.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/takedawn-030-main-menu-online.jpg" alt="The main menu with BURNOUT 3 WORLD TOUR, SINGLE EVENT, MULTIPLAYER, TAKEDAWN ONLINE, DRIVER DETAILS and QUIT, a film playing behind it"><br><sub>The main menu with TAKEDAWN ONLINE and QUIT.</sub></td>
+    <td width="50%"><img src="docs/screenshots/takedawn-030-online-page.jpg" alt="The TAKEDAWN ONLINE page with QUICK PLAY, CREATE GAME, JOIN WITH CODE and BROWSE GAMES next to a globe"><br><sub>The online page.</sub></td>
+  </tr>
   <tr>
     <td width="50%"><img src="docs/screenshots/takedawn-alt-12-europe-winter-city-cathedral.jpg" alt="A race through a snowy European city: the player's blue car drifts past a row of shops, sparks flying as it clips a bench, a cathedral spire in the distance"><br><sub>A winter city in Europe.</sub></td>
     <td width="50%"><img src="docs/screenshots/takedawn-alt-20-fareast-harbour-ferry.jpg" alt="A blue car drifting at 131 mph on a sunny harbour road in the Far East, a ferry and tower blocks behind"><br><sub>Road Rage at the Far East harbour.</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/takedawn-alt-16-europe-alpine-snow-tunnel.jpg" alt="A blue car drifting on an alpine road, snowy peaks and pine forest ahead"><br><sub>Alpine road in Europe.</sub></td>
-    <td width="50%"><img src="docs/screenshots/takedawn-alt-43-crash-fareast-dockside-pileup-cash.jpg" alt="Crash mode seen from above: a pile-up of cars and trucks at a dockside junction, with the money tally"><br><sub>Crash mode at the Far East docks.</sub></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/takedawn-05a-settings-graphics.jpg" alt="The settings menu over a paused race, on the Graphics page, with the rows Render scale, Anisotropic filtering, Anti-aliasing and Sharpening"><br><sub>Settings, Graphics page.</sub></td>
+    <td width="50%"><img src="docs/screenshots/takedawn-030-settings-graphics-sharper-art.jpg" alt="The settings menu on the Graphics page, its Sharper art rows: Menu and HUD upscaling 4x, Texture upscale NNEDI3, Upscale scale 4x, Upscale road surfaces Off, Film upscale Best"><br><sub>Settings, Graphics page.</sub></td>
     <td width="50%"><img src="docs/screenshots/takedawn-09c-pause-menu-playstation.jpg" alt="The game's pause menu with TAKEDAWN SETTINGS selected and PlayStation button prompts at the bottom"><br><sub>Pause menu with a PlayStation pad.</sub></td>
   </tr>
 </table>
+
+<p align="center">
+  <img src="docs/screenshots/takedawn-030-menu-film-blurred-sides.gif" alt="The main menu with its background film kept 4:3 in the middle and a blurred, darker copy of it at both sides" width="80%">
+  <br>
+  <sub>The film behind the menus in its 4:3 shape, with blurred sides.</sub>
+</p>
 
 <p align="center">
   <img src="docs/screenshots/takedawn-02-race-ultrawide-21x9.jpg" alt="A race at 21:9 through a town street at sunset: buildings on both sides fill the whole width, with the displays at the far left and right edges" width="100%">
@@ -92,14 +107,14 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/takedawn-08-setup-window.png" alt="The setup window on first start: a disc image was found and accepted, and the Install button is lit" width="600">
+  <img src="docs/screenshots/takedawn-08-setup-window.png" alt="The setup window on first start: a disc image was found and accepted, the graphics preparation, the sharper menu pictures and the Steam library options are ticked, and the Install button is lit" width="600">
   <br>
   <sub>Setup window on first start, disc image accepted.</sub>
 </p>
 
-<sub>Unedited screenshots. The game content in them belongs to its owners.</sub>
+<sub>Unedited screenshots, apart from the side-by-side crops. The game content in them belongs to its owners.</sub>
 
-**Contents:** [What it is](#what-is-takedawn) · [Highlights](#highlights) ·
+Contents: [What it is](#what-is-takedawn) · [Highlights](#highlights) ·
 [Download](#download) · [Quick start](#quick-start) ·
 [How to update](#how-to-update) · [Setup by platform](#setup-by-platform) ·
 [Controls](#controls) · [Settings](#settings) · [Performance](#performance) ·
@@ -114,16 +129,38 @@ Takedawn runs the original Xbox release of *Burnout 3: Takedown* as an
 ordinary program on your device. The game's own code was translated ahead of
 time into a native program for x86-64 and arm64. The menus, the races and
 Crash mode all run that translated code (see [how it works](#how-it-works)).
-It needs the North American Xbox version of the game.
+It works with three versions of the game: the North American disc and the two
+European ones.
 
 The download is only the program. The game data (cars, tracks, sound, films)
 comes from your own disc: on first start Takedawn asks for a copy of it,
 checks every file and copies the data into place. Then you play, with a few
 things the console couldn't do: a higher internal resolution, widescreen with
-an undistorted HUD, ultrawide, and a settings menu you can open mid-race.
+an undistorted HUD, ultrawide, and a settings menu you can open mid-race. The
+game's online mode works again too, through a lobby server that stands in for
+EA's.
 
 ## Highlights
 
+- Online play: QUICK PLAY, games with a code for your friends, and a list of
+  the games that are open, racing or full. Before a QUICK PLAY race everyone
+  votes for the track, and after the race the players stay together for the
+  next one. Local network play works without the internet.
+  [docs/online.md](docs/online.md) has the details.
+- All three retail discs in one download: North America, Europe (France,
+  Germany, Italy), and Europe and Australia (English, Spanish, Dutch,
+  Swedish). Game > Language picks the text, the speech and the films from
+  the ones on your disc.
+- Mods: a mod folder replaces the game's files, and a texture pack replaces
+  its textures at any size. The game's own MODS page turns each mod on or
+  off. See [docs/mod-folders.md](docs/mod-folders.md).
+- Sharper menu pictures: the setup window can upscale the loading screens,
+  menu backgrounds and car pictures 4x with AI, on your computer.
+- Soft-body damage: cars crumple, keep their dents, tear and lose wheels. Off
+  by default.
+- Film upscale sharpens the intro and the films behind the menus, and 4:3
+  pictures keeps the loading screens and those films in their 4:3 shape with
+  blurred sides.
 - High refresh rate: draws at your display's refresh rate (120, 144 Hz and
   faster) while the game keeps its 60 steps a second. Cars and the camera
   move smoothly between the steps.
@@ -192,19 +229,22 @@ an undistorted HUD, ultrawide, and a settings menu you can open mid-race.
   install never leaves you with a half-installed game. The game data can go
   in a folder of your choice. The first start builds all shaders, so the first
   race doesn't hitch.
-- Advanced > Create bug report puts the logs, settings and a system summary in
+- System > Create bug report puts the logs, settings and a system summary in
   one zip, with your user name and home folder removed.
-- On desktop, Advanced > Check for updates tells you whether a newer version
+- On desktop, System > Check for updates tells you whether a newer version
   is out.
 
 ## Download
 
 | Platform | File | Size |
 |---|---|---|
-| Mac (Apple silicon, macOS 13 or newer) | [`Takedawn-0.2.1-macos-arm64.dmg`](https://github.com/xenophobentx/takedawn/releases/download/v0.2.1/Takedawn-0.2.1-macos-arm64.dmg) | about 20 MB |
-| Windows (64-bit) | [`Takedawn-0.2.1-windows-x64-setup.exe`](https://github.com/xenophobentx/takedawn/releases/download/v0.2.1/Takedawn-0.2.1-windows-x64-setup.exe) | about 18 MB |
-| Linux and Steam Deck (x86-64) | [`Takedawn-0.2.1-linux-x86_64.AppImage`](https://github.com/xenophobentx/takedawn/releases/download/v0.2.1/Takedawn-0.2.1-linux-x86_64.AppImage) | about 24 MB |
-| Android (arm64, Snapdragon), experimental | [`Takedawn-0.2.1-android-arm64.apk`](https://github.com/xenophobentx/takedawn/releases/download/v0.2.1/Takedawn-0.2.1-android-arm64.apk) | about 14 MB |
+| Mac (Apple silicon, macOS 13 or newer) | [`Takedawn-0.3.0-macos-arm64.dmg`](https://github.com/xenophobentx/takedawn/releases/download/v0.3.0/Takedawn-0.3.0-macos-arm64.dmg) | about 75 MB |
+| Windows (64-bit) | [`Takedawn-0.3.0-windows-x64-setup.exe`](https://github.com/xenophobentx/takedawn/releases/download/v0.3.0/Takedawn-0.3.0-windows-x64-setup.exe) | about 68 MB |
+| Linux and Steam Deck (x86-64) | [`Takedawn-0.3.0-linux-x86_64.AppImage`](https://github.com/xenophobentx/takedawn/releases/download/v0.3.0/Takedawn-0.3.0-linux-x86_64.AppImage) | about 82 MB |
+| Android (arm64, Snapdragon), experimental | [`Takedawn-0.3.0-android-arm64.apk`](https://github.com/xenophobentx/takedawn/releases/download/v0.3.0/Takedawn-0.3.0-android-arm64.apk) | about 42 MB |
+
+Every file works with all three discs. The desktop files are large because they carry the programs for all three discs and the AI
+upscaler for the menu pictures.
 
 All files are on the [releases page][releases], with a `SHA256SUMS` file and a
 `BUILDINFO` file that says what each was built from. To check a download, run
@@ -230,24 +270,33 @@ I play it on these machines:
 | Retroid Pocket 5 | Snapdragon 865 | 8 GB | Adreno 650, bundled Turnip driver | Android 13 |
 | Laptop | Intel Core Ultra 5 228V | 32 GB | Intel Arc 130V | Windows 11, tried only |
 
-Before 0.2.1 went out, I ran it for 40 minutes or more in one go on each
-platform, race after race without restarting the game, with the settings a
-fresh install starts with: on the MacBook Air, the Windows PC with the Ryzen 7
-5800X at 120 Hz, the Steam Deck OLED in Game Mode at 60 Hz and the Retroid
-Pocket 5. None of them crashed. Memory use stayed flat on the Mac, Windows and
-the Deck. On the Retroid Pocket 5 it grew by about 3 MB a minute, which I am
-looking into.
+I ran the online mode for about three hours in one go on the live server, with
+the build before the final one and copies on Linux, Windows and a Mac, 11
+scenarios in all: private games, quick play, stay-together rematches, late
+joiners and a full game. Nothing crashed and memory use stayed flat. In one
+race, two players stayed on WAITING FOR OTHER PLAYERS at the start line
+for 17 minutes. I found the cause: a player whose messages stopped arriving
+filled the host's queue of 32 reliable messages, so the start signal never
+went out. I rebuilt that case with five copies, one of them reachable in
+only one direction. Before the fix three of four guests sat on the start
+line until I stopped the test. After it everyone raced, the race ended for
+all four and the next one started. The same night I ran the build before
+the final one with a dead server address, and with a bad link (150 ms
+delay, 30 ms jitter, 2 % packet loss) between three copies: the race ended
+for everyone and nobody was kicked.
 
-I also installed 0.2.1 by hand the way this README describes, from the
-download through the setup window and the disc image to a race, on the Mac,
-on Windows 11 and on Ubuntu 24.04. The update kept saves, settings and game
-data on Windows and Ubuntu (from 0.2.0) and on my Steam Deck (from 0.1.1,
-started from its existing Steam shortcut in Game Mode). On the Retroid Pocket
-5, the new APK installed over the old one kept the save and settings.
+The test suites pass: the game's on all three discs (three tests that use
+North American save fixtures fail on the European discs, as they did before),
+the toolkit's, and 170 checks of the online server's lobby code. The Mac,
+Windows and Linux packages report the same two source commits. The final Mac
+package is installed on my MacBook Air.
 
-That's as much as one person can test. If you play it on other hardware,
+I have not yet played this exact build on the Steam Deck and the Retroid
+Pocket 5. Both run the build before it.
+
+One person can only test so much. If you play it on other hardware,
 or something breaks, please tell me through the [issue form][issues]. A bug
-report zip from Advanced > Create bug report helps a lot.
+report zip from System > Create bug report helps a lot.
 
 ### Devices
 
@@ -306,8 +355,10 @@ whole game runs slower.
 
 ## Quick start
 
-1. Make a copy of your own disc. Takedawn supports one version of the game:
-   the North America (NTSC-U) retail disc for the original Xbox. It accepts an
+1. Make a copy of your own disc. Takedawn supports three versions of the
+   game, the retail discs for the original Xbox from North America (NTSC-U),
+   Europe (France, Germany, Italy) and Europe and Australia (English,
+   Spanish, Dutch, Swedish). It accepts an
    `.iso` in XISO layout, a full disc image with the video partition first, or
    a folder with the extracted files. Takedawn does not provide disc images
    and does not link to them.
@@ -331,8 +382,8 @@ update leaves them alone.
 
 ### How to update
 
-Updates are manual. On desktop, Settings > Advanced > Check for updates
-tells you whether a newer version is out, and the Advanced page shows which
+Updates are manual. On desktop, Settings > System > Check for updates
+tells you whether a newer version is out, and the System page shows which
 version you have. Download the new one from the [releases page][releases].
 
 - Mac: quit Takedawn, drag the new one into Applications and choose Replace,
@@ -393,6 +444,16 @@ There is no portable zip. The game data goes to `%LOCALAPPDATA%\Takedawn\Game`,
 or to the folder you pick with Change... in the setup window, and your saves
 to `%APPDATA%\Takedawn`.
 
+To keep everything next to the program, for a USB stick or a second drive,
+install to a folder of your choice (the setup asks where) and make an empty
+file called `portable.txt` beside `Takedawn.exe`, or a folder called `data`
+there. At the next start the saves, `settings.toml`, logs, shader cache and
+game data are in `data\Saves`, `data\cache` and `data\Game` next to
+`Takedawn.exe`, and nothing goes to `%APPDATA%` or `%LOCALAPPDATA%`. The log
+says `portable mode` when it is on. Takedawn does not move anything you
+already have: copy your old save folder to `data\Saves` yourself if you want
+it. Remove the marker (and the folder, if you made it) to go back.
+
 In a 24 Hz or 30 Hz display mode the game can't show 60 fps. Use 60 Hz or
 more.
 
@@ -406,8 +467,8 @@ the game data and your saves and says where they are. Delete
 1. Make the AppImage executable and start it:
 
    ```sh
-   chmod +x Takedawn-0.2.1-linux-x86_64.AppImage
-   ./Takedawn-0.2.1-linux-x86_64.AppImage
+   chmod +x Takedawn-0.3.0-linux-x86_64.AppImage
+   ./Takedawn-0.3.0-linux-x86_64.AppImage
    ```
 
 2. The setup window looks for your disc in your home folder, Downloads,
@@ -427,6 +488,15 @@ system-wide. The AppImage bundles its own SDL and Qt and needs glibc 2.30 or
 newer, the Vulkan loader and the usual desktop libraries from your system. It
 was built in the Steam Runtime SDK. If it doesn't run on your distribution,
 please report it.
+
+To keep everything next to the AppImage, make an empty file called
+`portable.txt`, or a folder called `data`, in the folder that holds the
+`.AppImage` file. At the next start the saves, `settings.toml`, logs, shader
+cache and game data are in `data/Saves`, `data/cache` and `data/Game` there,
+and nothing goes to `~/.local/share` or `~/.cache`. The folder has to be one
+you can write to; without the marker nothing changes. Takedawn does not move
+anything you already have. The same switch works on Windows
+([above](#windows)).
 
 To remove it: delete the AppImage, `~/.local/share/takedawn` (this deletes
 your saves too) and `~/.cache/takedawn`.
@@ -527,7 +597,7 @@ uninstall it. Android offers to keep its data, which holds your saves.
 
 The game uses its own Xbox controls. Other pads are matched by button
 position, and the keyboard works as a pad on Mac, Windows and Linux. If you
-know the game from the PlayStation 2, Input > Driving controls has the PS2
+know the game from the PlayStation 2, Controls > Driving controls has the PS2
 layout for driving.
 
 | Action | Controller | Keyboard |
@@ -542,11 +612,19 @@ layout for driving.
 | Next music track | Right shoulder | E |
 | Pause | Start | Enter or Esc |
 
+These are the default keys. To change them, open the settings (below), go to
+Controls, open "Keyboard keys..." and pick a row. Each button has two keys. Press
+Enter on the row, then the new key; Left and Right choose the first or the
+second key, Delete empties it, Esc cancels. A key can only do one thing, so a
+key another button already has is refused. "Reset keyboard keys to the
+defaults" puts them all back. The keys are saved in `settings.toml`
+(`input.keys`). The key pictures in the game's button prompts (the keyboard prompt set) follow the first key of each button at once, with no restart.
+
 The settings open with TAKEDAWN SETTINGS in the game's Settings and pause
 menus, with Back and Start together on a controller (View and Menu on a Steam
 Deck, Select and Start on a Retroid Pocket), or with F1 on a keyboard.
 
-Input > Button prompts sets which button icons are shown (Auto follows the
+Controls > Button prompts sets which button icons are shown (Auto follows the
 controller in use). With the PS2 layout, the prompts still show the game's own buttons
 (in Crash mode the Crashbreaker prompt says B, while R2 fires it). The PS2 layout and
 the Nintendo face-button layout are described in
@@ -554,19 +632,23 @@ the Nintendo face-button layout are described in
 
 ## Settings
 
-The game is paused while the settings are open and sees no input. Move with
+The game is paused while the settings are open and sees no input. Online it
+keeps running with your input held, so the others in your game keep hearing
+from you. Move with
 the D-pad or the arrow keys, change pages with LB and RB (on a keyboard Q and E,
 Tab and Shift+Tab, or Page Up and Page Down), set a row back to its default
 with Y or Delete, and close with B or Esc.
-Changes are saved to `settings.toml` in the save folder. Rows marked (restart)
-take effect at the next start. Each page can be reset to its defaults.
+Changes are saved to `settings.toml` in the save folder. A row with a NEXT
+RACE or NEXT START tag takes effect then. Rows few players need are behind
+"Show advanced settings" at the bottom of a page, which is off each time the
+game starts. Each page can be reset to its defaults.
 
 The first start uses defaults that suit modern screens:
 
 | | First-start settings |
 |---|---|
 | Mac, Windows, Linux desktop | Full screen, the game's 16:9 mode with the widescreen HUD fix, linear filter, render scale 3, SMAA, sharpening 30%, Menu and HUD upscaling 2x, texture sharpness Auto, vehicle detail Far, scenery detail Far |
-| Steam Deck, and any machine in a gamescope session | The same, with render scale 2 |
+| Steam Deck, and any machine in a gamescope session | The same, with render scale 2. On a 16:10 screen such as the Deck's, the 16:10 picture |
 | Android | Full screen, 16:9 with the widescreen HUD fix, render scale 1.5, FXAA, sharpening 30%, Menu and HUD upscaling 2x |
 
 Once you change a setting, your choice sticks. 4:3, windowed mode and 1x are
@@ -574,54 +656,68 @@ still in the menu. Everything else that changes the console's look
 (ultrawide, km/h and the rest) is off until you switch it on.
 
 <details>
-<summary><b>All settings and their defaults</b></summary>
+<summary>All settings and their defaults</summary>
 
-**Display**
+#### Display
 
 | Row | Choices | Default and notes |
 |---|---|---|
 | Fullscreen | On, Off | On. Not on Android, where the game always fills the screen |
-| Aspect ratio (restart) | 4:3, 16:9 | 16:9, the game's own widescreen mode |
+| Aspect ratio | 4:3, 16:9, 16:10 | 16:9, the game's own widescreen mode; 16:10 on a Steam Deck and on 16:10 screens. 16:10 is the 16:9 view with more above and below, with the HUD and menus fitted to it. From the next start |
 | Filter | Nearest, Linear, Integer | Linear. How the picture is scaled to the window |
 | Overscan | Show all, Crop, Fill height | Crop: cuts off the border a TV would hide, the sides too. Fill height drops only the black border at the top and bottom and stretches the picture to the full height (about 7% taller, as a PS2 looked on a TV); the sides stay |
-| Present fit | Letterbox, Fill 16:10 | Letterbox. Fill 16:10 fills a Steam Deck's screen and crops the sides a little |
-| Speed units | mph, km/h | mph, as on the disc. km/h also changes distances to metres. Applies from the next race |
-| Language (restart) | the languages on your disc | Only shown when the disc has more than one: the European disc has German, French and Italian text, speech and films, the US disc English only. Without a choice the game shows what an Xbox set to English would: French on the European disc |
-| Widescreen HUD | On, Off | On. With 16:9, keeps the HUD in its 4:3 shape at the edges of the picture, and the menus 4:3 in the middle with the decoration across the screen. Applies from the next race |
-| Crash Nav map | Full width, 4:3 | Full width. Shown with Widescreen HUD on. In Crash Nav's Select Location, Full width spreads the map, its route and its markers across the screen like the frame around it. 4:3 keeps the map in the shape of the rest of the menu. Changes at once |
-| Ultrawide | Off, 21:9, 32:9, Window | Off. Needs Aspect ratio 16:9. Applies from the next race |
-| Frame pacing | Automatic, Low latency, Smooth | Automatic: Smooth on a Steam Deck, Low latency elsewhere. Windows, Linux and Steam Deck. Smooth keeps one finished frame queued, so a late frame does not repeat the last one. It adds one refresh (16.7 ms at 60 Hz) of delay. On a variable-refresh display, or at a refresh far from 60 Hz, it acts like Low latency |
-| Score board | Original, Smooth | Original, as on the console. Smooth fades the dark plate behind the score together with its text |
-| Rival marker switch | Original, Farther | Original. The marker over a rival is a small arrow far away and the race position (4th) near. Original changes at 35 m, checked twice a second. Farther shows the position from 60 m and the arrow again past 75 m, checked every frame, so it changes earlier and does not flip back and forth. Changes at once |
+| Present fit | Letterbox, Fill 16:10 | Letterbox. Shown only on a 16:10 screen with Aspect ratio 16:9. Fill 16:10 fills a Steam Deck's screen and crops the sides a little |
+| HDR | On, Off | Off. Shown when the display does HDR: Use HDR on in Windows, HDR on in game mode on the Steam Deck and Linux, or an HDR display on a Mac. Lamps, sparks, the boost glow and the sun go brighter than white. HUD and menus keep their brightness. Rows for peak brightness, paper white, HUD and menu brightness appear when it is on, and shadows and highlight gain under "Show advanced settings" |
 
-**Graphics**
+Under *Frame rate*:
 
 | Row | Choices | Default and notes |
 |---|---|---|
-| Render scale (restart) | 1x to 4x; on Android also 1.5x | 3x, 2x on a Steam Deck, 1.5x on Android. 1x is 640x480, 2x is 1280x960, 3x is 1920x1440, 4x is 2560x1920 |
+| High refresh rate | On, Off | Off. Draws at the display's refresh rate (120, 144 Hz and faster); the game itself keeps its 60 steps a second, and cars and the camera move smoothly between them. Menus, split screen, and crash cameras unless 60 fps crash cameras is on, stay at the game's own rate. Adds up to one 60 Hz step of delay. Needs a fast machine. [Details](docs/high-refresh.md) |
+| Frame presentation (Mac only) | Legacy, Auto (display link), Aimed | Auto. On macOS 14 and later Auto hands each frame to the display at its refresh. [Details](docs/present-timing.md) |
+| Frame pacing (Windows, Linux, Steam Deck) | Automatic, Low latency, Smooth | Automatic: Smooth on a Steam Deck, Low latency elsewhere. Smooth keeps one finished frame queued, so a late frame does not repeat the last one. It adds one refresh (16.7 ms at 60 Hz) of delay. On a variable-refresh display, or at a refresh far from 60 Hz, it acts like Low latency |
+| Power mode | Balanced, Battery saver, Auto; on a Mac also Maximum | Balanced. Battery saver uses less power and can show an occasional small dip. Auto watches the frame times and only works harder when frames start to arrive late |
+| Performance overlay | On, Off | Off. Frame rate and a frame-time graph in the corner |
+
+Maximum busy-waits all the time. In measurements it was no steadier than
+Balanced on the Steam Deck and the Mac and worse on Windows. It also uses more
+power, so it's not in the menu on Windows, Linux and Android. On the Mac,
+Balanced held the same frame times at about half of Maximum's CPU use and
+added no input latency (measured from button press to finished frame).
+
+#### Graphics
+
+| Row | Choices | Default and notes |
+|---|---|---|
+| Render scale | 1x to 4x; on Android also 1.5x | 3x, 2x on a Steam Deck, 1.5x on Android. 1x is 640x480, 2x is 1280x960, 3x is 1920x1440, 4x is 2560x1920 |
 | Anisotropic filtering | Off, 2x to 16x | 8x. 4x on Android |
 | Anti-aliasing | Off, FXAA, SMAA | SMAA, FXAA on Android. Both work on the finished frame. SMAA is cleaner and costs a little more |
 | Sharpening | 0 to 100% | 30% |
+
+Under *Sharper art*:
+
+| Row | Choices | Default and notes |
+|---|---|---|
 | Menu and HUD upscaling | Off, 2x, 4x | 2x. Smooths the game's menu text, HUD and icons |
-| Texture sharpness (LOD bias) | Off, Auto, -0.5, -1.0, -1.5 | Auto, Off on Android. With a render scale above 1x, picks sharper texture levels |
 | Texture upscale | Off, FSRCNNX, NNEDI3 | Off. Not on Android. Sharpens the textures of the world (signs, buildings, cars) on the graphics card while you play. FSRCNNX is sharper, NNEDI3 softer. A texture first shows as the game has it and turns sharp a moment later. Sharpened textures are kept on disk, so the next race has them at once. Cut-outs (fences, trees) keep the game's own edges. Uses more video memory |
 | Upscale scale | 2x, 4x | 2x. Shown when Texture upscale is on, not on a Steam Deck, which gets 2x only. 4x needs four times the video memory of 2x and takes longer to fill in. Textures over 256 pixels a side get 2x |
 | Upscale road surfaces | On, Off | Off. Shown when Texture upscale is on. The upscalers can make the road's fine grain look noisy |
-| Upscale while loading | On, Off | On. Shown when Texture upscale is on. Does most of the sharpening during the loading screen and the countdown, so the first race on a track hitches less. A fast PC can leave it off |
-| Dither (Mac only) | On, Off | Off. A faint noise that hides stripes in smooth gradients such as the sky |
-| HDR | On, Off | Off. Shown when the display does HDR: Use HDR on in Windows, HDR on in game mode on the Steam Deck and Linux, or an HDR display on a Mac. Lamps, sparks, the boost glow and the sun go brighter than white. HUD and menus keep their brightness. Rows for peak, paper white, HUD brightness, shadows, highlights and gamma appear when it is on. |
+| Upscale while loading | On, Off | On. Shown when Texture upscale is on, under "Show advanced settings". Does most of the sharpening during the loading screen and the countdown, so the first race on a track hitches less. A fast PC can leave it off |
+| Film upscale | Off, Cheap, Best | Best, Cheap on Android. Sharpens the intro and the films behind the menus while they play: a light pass over the blocks of the video compression, then an upscale to twice the size. Best uses FSRCNNX, Cheap uses AMD FSR 1, which costs much less. Races are not affected |
+
+Under *Effects and detail*:
+
+| Row | Choices | Default and notes |
+|---|---|---|
 | Bloom | 0 to 100% | 100%, as on the console. The glow over the picture while you boost |
 | Motion blur | 0 to 100% | 100%, as on the console. The streaks towards the edges at speed |
-| Vehicle detail distance | Original, Far (2x), Farthest (4x) | Far, Original on Android. How far away rival cars and traffic keep their detailed models. It does not change scenery or where traffic appears |
-| Scenery detail | Original, Far | Far, Original on Android. How far away trees and other roadside objects keep their detailed models. On Original the pines turn into flat cut-outs at 250 m; on Far they stay detailed as far as they are drawn |
-| 60 fps crash cameras | On, Off | Off. The console drops to 30 in crash and takedown cameras. Needs a fast machine |
-| 60 fps split screen | On, Off | Off. Two-player races at 60 instead of 30. Needs a fast machine; leave it off on a handheld |
-| High refresh rate | On, Off | Off. Draws at the display's refresh rate (120, 144 Hz and faster); the game itself keeps its 60 steps a second, and cars and the camera move smoothly between them. Menus and split screen stay at the game's own rate, and so do crash cameras unless 60 fps crash cameras is on. Adds up to one 60 Hz step of delay. Needs a fast machine. [Details](docs/high-refresh.md) |
-| Potato mode | On, Off | Off. A machine under 60 fps runs the start of a race in slow motion until the first crash. On skips frames to keep real time. Applies from the next race. [Details](docs/race-clock.md) |
 | Soft-body damage | On, Off | Off. Cars crumple, tear and bend where they are hit, lose wheels in a wreck, and throw the game's own sparks and debris where metal rips, instead of only losing panels. Drawn only: handling and the race are unchanged. Costs CPU in big pile-ups. Applies after a restart. [Details](docs/softbody.md) |
-| Build shaders now | action | See [the shader pre-build](#the-shader-pre-build). Not on Android |
+| Vehicle detail distance | Original, Far (2x), Farthest (4x) | Far, Original on Android. How far away rival cars and traffic keep their detailed models. It does not change scenery or where traffic appears |
+| Scenery detail distance | Original, Far | Far, Original on Android. How far away trees and other roadside objects keep their detailed models. On Original the pines turn into flat cut-outs at 250 m; on Far they stay detailed as far as they are drawn |
+| Texture sharpness (LOD bias) | Off, Auto, -0.5, -1.0, -1.5 | Auto, Off on Android. Under "Show advanced settings". With a render scale above 1x, picks sharper texture levels |
+| Build shaders now | action | Under "Show advanced settings". See [the shader pre-build](#the-shader-pre-build). Not on Android |
 
-**How HDR works.** Takedawn doesn't invent highlights. The game already lights its scenes past white: its frame pass doubles the 3D picture, so lamps, sparks, the boost and the sun go above white, and the Xbox's 8-bit output clipped them. With HDR on, Takedawn keeps those values and maps them to your display's peak (HDR10) with a soft roll-off. The HUD and menus are drawn separately at paper white.
+How HDR works: the game already lights its scenes past white. Its frame pass doubles the 3D picture, so lamps, sparks, the boost and the sun go above white, and the Xbox's 8-bit output clipped them. With HDR on, Takedawn keeps those values and maps them to your display's peak (HDR10) with a soft roll-off. The HUD and menus are drawn separately at paper white.
 
 Two exceptions: three light sprites (the boost glow, the exhaust flame and the sun glints on the paint) get a fixed gain, and the sun's disc gets a smooth profile, because the original draw shows as a square in HDR.
 
@@ -631,58 +727,72 @@ the driver at the next start, driver packages, and "Restart now to use it".
 Bloom and motion blur are drawn at the render scale you chose, like the rest
 of the picture.
 
-**Audio**
+#### Game
+
+| Row | Choices | Default and notes |
+|---|---|---|
+| Language | the languages on your disc | Only shown when the disc has more than one: the European disc has German, French and Italian text, speech and films, the US disc English only. Without a choice the game shows what an Xbox set to English would: French on the European disc. From the next start |
+| Widescreen HUD | On, Off | On. With 16:9, keeps the HUD in its 4:3 shape at the edges of the picture, and the menus 4:3 in the middle with the decoration across the screen. From the next race |
+| 4:3 pictures | Blurred sides, Black bars, Stretched | Blurred sides. Shown with Widescreen HUD on. The loading screens, the films behind the menus and the Crash Nav map keep their 4:3 shape, with a blurred, darker copy or dark bars beside them. Stretched spreads them across the screen, as the original does in widescreen |
+| Crash Nav map | Full width, 4:3 | Full width. Shown with Widescreen HUD on and 4:3 pictures on Stretched. Full width spreads the map, its route and its markers across the screen like the frame around it. 4:3 keeps the map in the shape of the rest of the menu |
+| Ultrawide | Off, 21:9, 32:9, Window | Off. Needs Aspect ratio 16:9. From the next race |
+| Score board | Original, Smooth | Original, as on the console. Smooth fades the dark plate behind the score together with its text |
+| Rival marker switch | Original, Farther | Original. The marker over a rival is a small arrow far away and the race position (4th) near. Original changes at 35 m, checked twice a second. Farther shows the position from 60 m and the arrow again past 75 m, checked every frame, so it changes earlier and does not flip back and forth |
+| Speed units | mph, km/h | mph, as on the disc. km/h also changes distances to metres. From the next race |
+| 60 fps crash cameras | On, Off | Off. The console drops to 30 in crash and takedown cameras. Needs a fast machine |
+| 60 fps split screen | On, Off | Off. Two-player races at 60 instead of 30. Needs a fast machine; leave it off on a handheld |
+| Music in split screen | On, Off | Off. The console plays no music in split screen. On plays EA GAMES TRAX or your custom music in two-player Race and Road Rage |
+| Potato mode | On, Off | Off. A machine under 60 fps runs the start of a race in slow motion until the first crash. On skips frames to keep real time. From the next race. [Details](docs/race-clock.md) |
+
+#### Audio
 
 | Row | Choices | Default and notes |
 |---|---|---|
 | Master volume, Mute, Mute in the background | | 100%, Off, Off |
-| Menu sounds | On, Off | On. The settings menu plays the game's menu sounds, read from your copy of the game |
-| Speakers (restart) | Auto, Stereo, 5.1 | Auto: 5.1 when the system's sound output has six or more channels |
-| Speaker test | action | Plays each of the six speakers in turn |
+| Menu sounds | On, Off | On. Under "Show advanced settings". The settings menu plays the game's menu sounds, read from your copy of the game |
+| Speakers | Auto, Stereo, 5.1 | Auto: 5.1 when the system's sound output has six or more channels |
 | Custom music folder | a folder | Off. See [Can I use my own music?](#faq-and-troubleshooting). On Android the row asks for access to music files |
 | Custom music at start | On, Off | On. With a folder set, the game starts on the custom soundtrack you last chose in EA GAMES TRAX. Off starts on the game's own music |
 | Custom music loudness | Off, Quieter, Match game music, Louder | Match game music |
-| Music in split screen | On, Off | Off. The console plays no music in split screen. On plays EA GAMES TRAX or your custom music in two-player Race and Road Rage |
+| Speaker test | action | Plays each of the six speakers in turn |
 
-**Input**
+#### Controls
 
 | Row | Choices | Default and notes |
 |---|---|---|
-| Stick deadzone, Trigger deadzone | | Raise the stick deadzone if the car steers by itself |
-| Rumble strength | 0 to 3 | 1.5 on desktops, 1.75 on a Steam Deck, 2.0 on Android. 0 turns it off. 1.0 is the Xbox pad's own curve |
-| Face buttons | Xbox layout, Nintendo layout | Xbox layout |
 | Driving controls | Xbox layout, PS2 layout | Xbox layout. See [Controls](#controls) |
+| Face buttons | Xbox layout, Nintendo layout | Xbox layout |
 | First controller | Player 1, Player 2 | Player 1: the first controller is player 1 and the keyboard drives the same player. Player 2: the keyboard is player 1 alone and controllers start at player 2, for split screen with a keyboard and a controller. Press a button on each controller after a change. Not on Android |
 | Button prompts | Auto, Xbox (original), Xbox (modern), PlayStation, PlayStation 5, Nintendo, Steam, Positional, Keyboard | Auto |
+| Rumble strength | 0 to 3 | 1.5 on desktops, 1.75 on a Steam Deck, 2.0 on Android. 0 turns it off. 1.0 is the Xbox pad's own curve |
 | Vibration (Android only) | Auto, Controller, This device, Off | Auto: the device vibrates when you play on its built-in pad |
+| Stick deadzone, Trigger deadzone | | Raise the stick deadzone if the car steers by itself |
 | Touch controls (Android only) | Auto, Always, Off | Auto: shown while no controller is in use |
 | Touch controls opacity, size (Android only) | 10% to 100%, 60% to 160% | 50%, 100% |
 | Touch: accelerate automatically (Android only) | On, Off | Off. On drives the car forward by itself; BRAKE slows down and reverses |
+| Keyboard keys... | two keys for each button of the pad | The game's own. Opens its own page; B goes back. Not shown on a Steam Deck or in Game Mode |
 
-**Power**
+#### Mods
 
-| Row | Choices | Default and notes |
-|---|---|---|
-| Power mode | Balanced, Battery saver, Auto; on a Mac also Maximum | Balanced. Battery saver uses less power and can show an occasional small dip. Auto watches the frame times and only works harder when frames start to arrive late |
+The first line names the mods folder. Below it are the installed mods with
+their name, version and author, each with an on and off switch. A change is
+saved at once and used from the next start. The same list, with the same
+switches, is the MODS page in the game's own Settings menu. The Sharper menu
+pictures rows are here too. See [docs/mod-folders.md](docs/mod-folders.md) and
+[docs/upscale-art.md](docs/upscale-art.md).
 
-Maximum busy-waits all the time. In measurements it was no steadier than
-Balanced on the Steam Deck and the Mac and worse on Windows. It also uses more
-power, so it's not in the menu on Windows, Linux and Android. On the Mac,
-Balanced held the same frame times at about half of Maximum's CPU use and
-added no input latency (measured from button press to finished frame).
-
-**Advanced**
+#### System
 
 | Row | Notes |
 |---|---|
-| Performance overlay | Frame rate and a frame-time graph in the corner |
-| Diagnostic logging | Off. On writes the full log, which bug reports include. Switch it on, restart, then make the problem happen |
-| Entry in the game's menu | On. TAKEDAWN SETTINGS in the game's Settings and pause menus |
-| Add Steam library art | Linux and Steam Deck. Writes cover, hero, logo and icon for a Takedawn entry already in Steam |
-| Create bug report, Create bug report with a screenshot | See [Reporting a bug](#reporting-a-bug) |
 | Version | Which build you are running |
 | Check for updates | Says whether a newer version is out. Not on Android |
-| Import Xbox save... | Copies a save from an original Xbox. See [Can I use my old Xbox save?](#faq-and-troubleshooting) |
+| Add Steam library art | Linux and Steam Deck. Writes cover, hero, logo and icon for a Takedawn entry already in Steam |
+| Entry in the game's menu | On. TAKEDAWN SETTINGS in the game's Settings and pause menus |
+| Online play | Internet, Local network, Off. Internet by default. With it on: Online name, and on Internet the Server, the server's player count and the Game code. From the next start. See [docs/online.md](docs/online.md) |
+| Diagnostic logging | Off. On writes the full log, which bug reports include. Switch it on, restart, then make the problem happen |
+| Create bug report, Create bug report with a screenshot | See [Reporting a bug](#reporting-a-bug) |
+| Export save, Import save, Import Xbox or PS2 save... | Under *Save data*. See [Can I use my old Xbox save?](#faq-and-troubleshooting) and [Can I use my PS2 save?](#faq-and-troubleshooting) |
 | Reset this page, Reset all settings | Each asks once more |
 
 </details>
@@ -765,36 +875,40 @@ Not measured yet:
   Retroid Pocket 5, 1.5x is the default for that reason.
 - For a 21:9 display use render scale 4. The game's frame is 640 columns
   wide, so a wide picture needs the higher scale to stay sharp.
-- Advanced > Performance overlay shows the frame rate and frame times.
+- Display > Performance overlay shows the frame rate and frame times.
 
 ## FAQ and troubleshooting
 
-**Does Takedawn include the game?**
+#### Does Takedawn include the game?
 
 No. It includes the program, which contains the game's translated code and no
 game data. Cars, tracks, sound, music and films come from your own disc.
 
-**Which version of the game do I need?**
+#### Which version of the game do I need?
 
-The North America (NTSC-U) retail disc for the original Xbox. The setup
-recognises it by the SHA-256 of its `default.xbe`:
-`9f497acd82adb8edfb72cc31aeeb35010b45d32b13a3f1fc6540717ff24d13f9`. It refuses
-PAL and Japanese discs and patched files, because the program was built from
-that one executable.
+One of the three retail discs for the original Xbox: North America
+(NTSC-U), Europe (France, Germany, Italy) or Europe and Australia (English,
+Spanish, Dutch, Swedish). The setup recognises each by the SHA-256 of its
+`default.xbe`; the North America one is
+`9f497acd82adb8edfb72cc31aeeb35010b45d32b13a3f1fc6540717ff24d13f9`, and
+[docs/pal.md](docs/pal.md) has the European ones. Every download has the
+programs for all three and starts the one for the disc you installed. Each
+disc keeps its own saves and settings. It refuses the Japanese disc and
+patched files, because each program was built from one exact executable.
 
-**Is this an emulator?**
+#### Is this an emulator?
 
 No. The game's x86 code was translated ahead of time into a native program.
 Takedawn supplies what the game expects from the console: its system
 software, graphics chip, sound chip and controllers.
 
-**Can the draw distance be raised?**
+#### Can the draw distance be raised?
 
 Only for vehicles. Graphics > Vehicle detail distance keeps rival cars and
 traffic detailed for longer. Where scenery, track and traffic appear is fixed
 in the game's track data and cannot be raised by a setting.
 
-**Can I use my own music?**
+#### Can I use my own music?
 
 Yes. Choose a folder in Audio > Custom music folder, then pick it in the
 game's EA GAMES TRAX screen. The game starts on the soundtrack you chose
@@ -803,15 +917,15 @@ game asks for access to music files the first time you open the row; if you
 said no, allow it in Settings > Apps > Takedawn > Permissions > Music and
 audio.
 
-**Can it run above 60 frames per second?**
+#### Can it run above 60 frames per second?
 
 The game steps its simulation once per frame, so 60 is its own speed. With
-High refresh rate on (Graphics page) it draws at the display's refresh rate
+High refresh rate on (Display page) it draws at the display's refresh rate
 instead, while the game itself keeps its 60 steps a second: cars and the
 camera are drawn between the steps. Smoke, debris, skid marks and the dents
 on cars still move 60 times a second. [Details](docs/high-refresh.md).
 
-**Can I use my old Xbox save?**
+#### Can I use my old Xbox save?
 
 Yes, if it is a Burnout 3 save from the North America game. Copy the save
 folder off the console (over FTP on a modded Xbox) or out of xemu. It is
@@ -819,8 +933,8 @@ folder off the console (over FTP on a modded Xbox) or out of xemu. It is
 
 Then either:
 
-- In the game, open Advanced, choose "Import Xbox save...", pick the folder
-  and restart. I have not tried this row on Android.
+- In the game, open System, choose "Import Xbox or PS2 save...", pick the
+  folder and restart. I have not tried this row on Android.
 - Or run `Takedawn --import-save <path>` with the game closed.
 
 The path can be the save folder, the `4541005b` folder above it, a whole copy
@@ -831,15 +945,40 @@ Takedawn signs the profile again for itself, because the console's signature
 only fits the console. Your current save is copied to `save-before-import` in
 the save folder first. The import prints the profile name it found.
 
-Saves made with Takedawn move between its platforms the same way as before:
+#### Can I use my PS2 save?
+
+Yes. Takedawn reads a Burnout 3 save from the PS2, US, PAL or Japanese, and
+turns one of its profiles into a Takedawn profile. It reads:
+
+- a PCSX2 memory card (`Mcd001.ps2` and the like), or a PCSX2 folder memory
+  card;
+- a save exported by uLaunchELF (`.psu`), Action Replay MAX (`.max`),
+  CodeBreaker (`.cbs`), X-Port or SharkPort (`.xps`, `.sps`), or a PS3
+  (`.psv`);
+- a plain save folder: `BASLUS-21050` (US), `BESLES-52584` or
+  `BESLES-52585` (PAL), `BISLPM-65719` (Japan).
+
+In the game, open System, choose "Import Xbox or PS2 save...", pick the
+folder the file is in and restart. Or run `Takedawn --import-save <file or
+folder>` with the game closed. A zip of any of these works on the command
+line. When the save holds more than one profile, the game lists them to pick
+from; on the command line, add `--ps2-slot 1`, `2` or `3`.
+
+What comes over: medals, records, Burnout points, takedowns, Signature
+Takedowns, headlines and play time. Cars and events open from your medals,
+the way the game always works them out. Your Takedawn settings stay as they
+are; the PS2 settings are used only when there is no Takedawn save yet. Your
+current save is copied to `save-before-import` first.
+
+Saves made with Takedawn move between its platforms by copying:
 quit the game on both machines and copy the `UDATA` folder from one save
 folder to the other.
 
-**The setup refuses my disc image. Why?**
+#### The setup refuses my disc image. Why?
 
 It tells you why:
 
-- Wrong game or wrong version: not the North America retail disc.
+- Wrong game or wrong version: not one of the three supported retail discs.
 - A disc for another console.
 - Not an Xbox disc image: for example a video DVD image or another file with
   an `.iso` name.
@@ -851,23 +990,23 @@ It tells you why:
 If an install is interrupted, start it again. It continues, and the game does
 not start until every file is in place and checked.
 
-**My Mac says Takedawn cannot be opened.**
+#### My Mac says Takedawn cannot be opened.
 
 Use Open Anyway in System Settings > Privacy & Security, as described under
 [Mac](#mac). You do this again after each update.
 
-**Windows shows "Windows protected your PC".**
+#### Windows shows "Windows protected your PC".
 
 The setup program is not code signed. Click More info, then Run anyway.
 
-**My antivirus flags the Windows download. Is it safe?**
+#### My antivirus flags the Windows download. Is it safe?
 
 Yes. A few antivirus engines flag the Windows installer because it is not code
 signed, which is a false positive. Most engines pass it, and the code is open
 source. See [Antivirus warnings on Windows](docs/antivirus.md) for how to check
 the file yourself.
 
-**Android will not install the APK.**
+#### Android will not install the APK.
 
 Allow the app you opened it with to install unknown apps (Settings > Apps >
 Special app access > Install unknown apps). If Android says the app conflicts
@@ -875,25 +1014,25 @@ with an existing one, an APK signed with a different key is installed, for
 example a build you made yourself. Uninstall that one first and keep its data
 if you are offered the choice.
 
-**Android: the start page says no usable graphics driver, or the game is very slow.**
+#### Android: the start page says no usable graphics driver, or the game is very slow.
 
 The game needs Vulkan 1.3. Open the graphics driver page from the launcher and
 choose Automatic. On a device without Adreno graphics the game uses the
 device's own driver. If that driver has no Vulkan 1.3, the game can only draw
 on the processor, which is far too slow to play.
 
-**The game hitches in the first races.**
+#### The game hitches in the first races.
 
 Shaders are compiling. Run Graphics > Build shaders now, or play on: each
 hitch happens once.
 
-**There is no rumble on my controller on Android.**
+#### There is no rumble on my controller on Android.
 
 On Android, the library Takedawn uses for controllers can't rumble external
 pads. When you play on the built-in controls, the device's own vibration motor
 is used.
 
-**Where are my saves, settings and logs?**
+#### Where are my saves, settings and logs?
 
 | | Mac | Windows | Linux and Steam Deck | Android |
 |---|---|---|---|---|
@@ -906,7 +1045,7 @@ game copies the profile to `backup/` if it changed, and keeps the newest five.
 Deleting the save folder, or the Android app without keeping its data, deletes
 your saves.
 
-**Can I put the game data somewhere else?**
+#### Can I put the game data somewhere else?
 
 Yes, on Mac, Windows and Linux. In the setup window press Change... next to
 "Installs to" and pick a folder, on another drive or on the Steam Deck's SD
@@ -934,9 +1073,9 @@ first, for the starts that use them.
 
 ### Reporting a bug
 
-1. Open the settings, go to Advanced and switch on Diagnostic logging. Restart
+1. Open the settings, go to System and switch on Diagnostic logging. Restart
    the game so the log covers the start, then make the problem happen again.
-2. In Advanced, choose Create bug report, or Create bug report with a
+2. In System, choose Create bug report, or Create bug report with a
    screenshot to add the picture behind the menu. If the game does not start,
    run the program with `--bug-report` from a terminal. On Android the start
    page has the same button, with "Save a copy to Downloads" and "Share".
@@ -959,40 +1098,38 @@ handled.
 
 ## Known issues
 
-- High refresh rate at 120 Hz and above needs a fast processor. On a Ryzen 7
-  5800X the game holds 120 on straights, but it can stutter briefly in drift
-  corners and crashes. A Ryzen 7 7700X holds it. On the Steam Deck at 90 Hz,
-  don't expect a steady 90 fps: there are small dips in heavy scenes, which
-  we're working on smoothing out. High refresh is experimental. If something
-  looks wrong with it on (a car, the camera, the HUD or an effect), turn it
-  off to check, and open an issue with a bug report (Advanced > Create bug
-  report). The next version is meant to close most of the speed gap. These
-  are in testing now:
-  - a faster renderer, which takes about 0.4 ms off every frame;
-  - a faster path for the sparks and debris of a crash, which are the
-    heaviest moments for the processor today;
-  - Smooth frame pacing with High refresh, an option that keeps one frame in
-    hand so a single slow frame doesn't show as a stutter, at the cost of one
-    refresh of extra delay (8 ms at 120 Hz).
+- Online: if the host leaves, the game ends. It doesn't pass to another
+  player.
+- Online: in a full game, a player who cannot connect to all the others can
+  be removed from the game. The error box says why.
+- Online on a Mac that has Local Network access turned off (or behind a
+  router without hairpin): it cannot reach players on the same network
+  directly. Its car may not show for the others, it can get an empty result,
+  and two players can get the same place. Turn on Takedawn under System Settings > Privacy & Security >
+  Local Network.
+- Online: if the server can't be reached, the connecting page can't be
+  cancelled with B. After about 15 seconds the game says it cannot play online
+  and goes back to the menu.
+- The online messages (the lobby's top line, the waiting lines) are in
+  English in every language.
 - With Driving controls set to PlayStation 2, Crash mode shows the wrong
   button prompts. The Crashbreaker prompt says B (or Circle), while R2 fires
   it.
+- On a Mac the accelerator can stop working after a few Crash events
+  ([#111](https://github.com/xenophobentx/takedawn/issues/111)).
+- High refresh rate at 120 Hz and above needs a fast processor. On a Ryzen 7
+  5800X the game holds 120 on straights, but it can stutter briefly in drift
+  corners and crashes. A Ryzen 7 7700X holds it. On the Steam Deck at 90 Hz
+  there are small dips in heavy scenes. High refresh is experimental. If
+  something looks wrong with it on (a car, the camera, the HUD or an effect),
+  turn it off to check, and open an issue with a bug report (System > Create
+  bug report).
 
 ## What's next
 
-The next version is 0.3. What goes into it, and which reported issues
-it fixes, is on the [0.3 milestone](https://github.com/xenophobentx/takedawn/milestone/1).
-The main parts:
-
-- Mod support: mod folders with `mod.toml`, a MODS page in Settings, and
-  HD texture packs.
-- Online play through a stand-in for EA's lobby, with a server anyone can
-  host and a LAN mode.
-- Keyboard remapping, Quit in the main menu, and a portable mode (settings,
-  saves and game data next to the program).
-- PAL (Europe) discs, with a language setting.
-
-Later: more Android devices, iPad?
+- Online: the game passes to another player when the host leaves.
+- More Android devices.
+- iPad?
 
 There are no dates.
 
@@ -1058,7 +1195,7 @@ Further documents:
 | Topic | Document |
 |---|---|
 | Running, saves, the bug report, headless scripts, environment variables | [docs/running.md](docs/running.md) |
-| How we test: scratch profiles, the AI driver, headless scenes, frame-time tools | [docs/testing.md](docs/testing.md) |
+| How I test: scratch profiles, the AI driver, headless scenes, frame-time tools | [docs/testing.md](docs/testing.md) |
 | How the release packages are built | [docs/release.md](docs/release.md) |
 | The data installer and the setup window | [docs/installer.md](docs/installer.md) |
 | The Windows build and its measurements | [docs/windows.md](docs/windows.md) |
@@ -1070,12 +1207,15 @@ Further documents:
 | Driving controls: Xbox and PS2 layout | [docs/controls.md](docs/controls.md) |
 | Draw distance and vehicle detail | [docs/draw-distance.md](docs/draw-distance.md) |
 | Mod folders: replace disc files with your own | [docs/mod-folders.md](docs/mod-folders.md) |
+| Sharper menu pictures (AI upscale of the menu art) | [docs/upscale-art.md](docs/upscale-art.md) |
 | Potato mode: real-time race start on machines below 60 fps | [docs/race-clock.md](docs/race-clock.md) |
 | High refresh rate: drawing above 60 fps | [docs/high-refresh.md](docs/high-refresh.md) |
 | Soft-body damage: how vehicles crumple, tear and bend | [docs/softbody.md](docs/softbody.md) |
 | Button prompt artwork | [assets/glyphs/README.md](assets/glyphs/README.md) |
 | How the parts fit together | [docs/architecture.md](docs/architecture.md) |
-| The PAL (Europe) build | [docs/pal.md](docs/pal.md) |
+| The PAL (Europe) builds | [docs/pal.md](docs/pal.md) |
+| Online play, and running your own lobby server | [docs/online.md](docs/online.md) |
+| Antivirus warnings and the VirusTotal scores | [docs/antivirus.md](docs/antivirus.md) |
 
 Bug reports and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md)
 says what a useful report contains, what must never be committed and where

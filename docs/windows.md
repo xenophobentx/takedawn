@@ -32,6 +32,27 @@ toolkit checkout is found as before (`XBOXRECOMP_DIR`, or a sibling `xboxrecomp`
     tools/win/fetch-deps.sh
     tools/win/build-mingw.sh
 
+## Portable mode (BO-263)
+
+A file `portable.txt`, or a folder `data`, beside `Takedawn.exe` turns it on
+(`recomp_portable_find`, the toolkit's `recomp_exe_dir.h`; the program decides
+once, at the start, from its own folder). Linux has the same switch beside
+the `.AppImage` file (`$APPIMAGE`; docs/running.md); macOS and Android ignore it. The
+per-user folders of `recomp_user_dir` then all move into `data` next to the
+executable and the program's name is not used:
+
+| Normally | Portable |
+|---|---|
+| `%APPDATA%\Takedawn` (saves, `settings.toml`, logs, reports, crash) | `data\Saves` |
+| `%LOCALAPPDATA%\Takedawn` (`Game`, `data-folder.txt`) | `data` (`data\Game`) |
+| `%LOCALAPPDATA%\Takedawn\cache` (shaders) | `data\cache` |
+
+`RECOMP_SAVE_DIR`, `--data`, `TAKEDAWN_DATA` and the folder chosen in the setup
+window still win over it. Nothing is moved from the usual folders, and the
+earlier-name move (`Burnout3` to `Takedawn`) is not done. The log has a
+`[SAVE] portable mode` line. The path logic is checked on every host by
+`tests/portable_dir` in the toolkit.
+
 ## Packaging
 
 Ship: `burnout3.exe`, `SDL2.dll`, the user's own `Burnout 3 Takedown\` folder
@@ -57,14 +78,14 @@ only there for CMake's `find_package(Vulkan)`; nothing links it.
 5. The first run compiles shaders (hitches), caches are in
    `%LOCALAPPDATA%\Takedawn\cache`. Crash reports: `%APPDATA%\Takedawn\crash`.
 6. A bug report ([running.md](running.md#reporting-a-bug)): the overlay's
-   Advanced page, "Create bug report", and `burnout3.exe --bug-report` from a
+   System page, "Create bug report", and `burnout3.exe --bug-report` from a
    terminal; both write `%APPDATA%\Takedawn\reports\takedawn-report-*.zip`.
    Open it: `system.txt` names Windows, the CPU and the GPU with its driver,
    and no file in it has your user name or the PC's name.
 
 ## Things to know
 
-**Text is UTF-8, paths included.** The executable carries a manifest
+Text is UTF-8, paths included. The executable carries a manifest
 (`tools/release/windows/takedawn.exe.manifest`, embedded by every Windows
 build) that makes the process's ANSI code page UTF-8 (Windows 10 1903 and
 later). So the C library's file calls, `getenv` and the Win32 "A" functions
@@ -96,19 +117,19 @@ The setup window is Qt, wide inside: it starts the game with a wide command
 line (`QProcess`), and reads paths from variables with
 `qEnvironmentVariable`.
 
-- **Defaults are the Linux ones.** `main.c` sets `RECOMP_VBLANK_SYNC=display`,
+- Defaults are the Linux ones. `main.c` sets `RECOMP_VBLANK_SYNC=display`,
   `RECOMP_PRESENT_PACING=sleep` and `RECOMP_PRESENT_SPIN_LEAD=8` for this
   build too; the swapchain is FIFO with the driver's minimal two images
   (`[PRESENT] Vulkan swapchain: ... 2 images, ... FIFO (vsync)`). The kernel's
   timer thread raises the timer resolution (`timeBeginPeriod(1)`) and sleeps
   on high-resolution waitable timers.
-- **The display lock needs the refresh times.** AMD's Windows driver offers no
+- The display lock needs the refresh times. AMD's Windows driver offers no
   `VK_KHR_present_wait` (the log says so), so the Vulkan presenter follows the
   display with a thread on `IDXGIOutput::WaitForVBlank` of the window's
   monitor, as the D3D11 presenter does: `[PRESENT] vblank sync: ... (DXGI
   WaitForVBlank ...)`. At 120 Hz the guest vblank takes every second refresh
   (`display 8.33 ms` in the `[PACING]` lines).
-- **Guest threads run on every core.** The toolkit pins a title's threads to
+- Guest threads run on every core. The toolkit pins a title's threads to
   one host core, as on the console (another title races without it), but
   Burnout 3 opts out on Windows (`xbox_GuestCpusDefaultUnpinned`, BO-282.10):
   pinned, its thread waited for that idle core to wake after each hand-off
@@ -121,39 +142,39 @@ line (`QProcess`), and reads paths from variables with
   the first even-numbered logical processor from 2 on, `[KERNEL] guest
   threads on one host core (cpu 2)`: core 0 takes the device interrupts, and
   pinned there 1.6 % of the 60 Hz race frames were late).
-- **Frame rate follows the display mode.** With vsync on the game flips at most
+- Frame rate follows the display mode. With vsync on the game flips at most
   twice per display refresh, so a screen in a 24 Hz mode gives `48 flips/s, 24
   presents/s` (the "45 fps" seen in an early title bar was a test PC's 4K output
   in a 24 Hz mode). Use 60 Hz or more; the log line `[PRESENT] display 0 mode
   WxH at N Hz` names what SDL sees, and `RECOMP_PRESENT_STATS=1` prints
   `flips/s` and `presents/s` every 5 s. With `RECOMP_PRESENT_VSYNC=0`
   (immediate present) the display no longer holds the game back.
-- **DPI.** The process is per-monitor (v2) DPI aware (SDL2's
+- DPI. The process is per-monitor (v2) DPI aware (SDL2's
   `SDL_HINT_WINDOWS_DPI_AWARENESS`, the level its documentation prefers), so
   Windows no longer stretches the window: SDL sizes are pixels and the
   swapchain is the real size. The start size is 2x the 640x480 frame times the
   desktop scale (1920x1440 at 150 %), so the window looks as big as before.
   `SDL_WINDOWS_DPI_AWARENESS=unaware` in the environment restores the old
   behaviour. The overlay scales with the window height.
-- **Window placement.** If the window with its frame does not fit the display's
+- Window placement. If the window with its frame does not fit the display's
   usable area (a smaller screen, a streamed 720p/800p desktop,
   `RECOMP_WINDOW_SCALE=3` or 4) it is shrunk to fit (aspect kept) and centred;
   the log says `window did not fit the usable area`. Before that, Windows
   put the title bar above the top edge.
-- **Exit.** Closing the window ends the process (the exit-time log flush used
+- Exit. Closing the window ends the process (the exit-time log flush used
   to block forever on Windows).
-- **Pads.** Pads come from SDL's game controller API (XInput, DirectInput,
+- Pads. Pads come from SDL's game controller API (XInput, DirectInput,
   HID); a pad gets its port at its first button press. The keyboard is a pad on port 0
   with a fixed map ([controls.md](controls.md#the-keyboard)); F1 opens the overlay. Without a pad, `RECOMP_PAD_LIVE` and
   `RECOMP_PAD_SCRIPT` drive the title ([running.md](running.md)).
-- **Rare long stalls.** One frame of 0.3-5 s per 5-10 minute run was seen on
+- Rare long stalls. One frame of 0.3-5 s per 5-10 minute run was seen on
   the first day; the stall hunt put those down to other work on the test PC.
   What is left on a quiet PC: in about 35 minutes of Balanced racing, one
   stall of 50-66 ms in which nothing in the process ran, the time-critical
   thread on `WaitForVBlank` included (six refreshes with no vertical blank
   reported, process CPU time 0): outside the game, cause not found.
-- **Maximum (the title's own busy-wait) is not for Windows.** The overlay's
-  Power page does not offer it (BO-75; a stored `stock` is read as
+- Maximum (the title's own busy-wait) is not for Windows. The overlay's
+  Power mode row does not offer it (BO-75; a stored `stock` is read as
   Balanced; `RECOMP_PRESENT_PACING=spin` still selects it for diagnosis).
   The title's
   threads share one host core. With `present.pacing = spin` the main thread
@@ -168,7 +189,7 @@ line (`QProcess`), and reads paths from variables with
   default here, sleeps in the title's waits, so the core is free for whoever
   is made ready. A traced run made it worse than a played one: every line a
   thread logs takes the same lock.
-- **Recording a session.** `tools/win/play-trace.cmd`, copied beside the exe,
+- Recording a session. `tools/win/play-trace.cmd`, copied beside the exe,
   starts the game as a double-click does and writes `traces\log-*.txt`,
   `ft-*.csv` (one line per frame), `vp-*.csv` (every present and display
   refresh) and the HUD monitor's files (BO-89). It records no per-frame log
@@ -177,7 +198,7 @@ line (`QProcess`), and reads paths from variables with
   0.8 ms of the executor's frame). `tools/win/pacing_stats.py log ft [vp]` reads
   them: per-state percentiles and every racing frame over 20 ms with where
   its time went.
-- **Reading a log.** Two threads' stderr lines can run together on Windows
+- Reading a log. Two threads' stderr lines can run together on Windows
   (`...fence 0x00008779[PACING] present 8097 ...`). A reader that takes
   `[PACING]` lines only at a line's start loses those presents and counts a
   33 ms interval for each: the first Balanced baseline's "4-7 racing frames
@@ -202,7 +223,7 @@ split by the title's own interval (`tools/win/pacing_stats.py`).
 | boot, menus, loading: guest, 7 025 | 16.66 | 17.06 | 17.39 | 17.75 | 66.7 | 4 |
 
 1 192 whole seconds of racing: every one at 60 flips/s but one (45). The
-in-game frame-time panel (Advanced > perf overlay) read `60.0 fps, p99 17.2 ms,
+in-game frame-time panel (Display > Performance overlay) read `60.0 fps, p99 17.2 ms,
 max 18.5 ms` in lap 2. For comparison the Deck's 19-minute session (BO-83): 0.60 %
 of the 60 Hz frames over 20 ms, 16 over 33 ms, p99 18.7 ms; here 2 over 20 ms.
 At 120 Hz (a 5-minute race): racing p50 16.67, p95 17.05, p99 17.45, 2 missed in
@@ -241,20 +262,20 @@ after a frame that was on time).
 
 What is left in Balanced, each with its cause:
 
-- **The race scene's first frame, 67-77 ms** (every run, every mode): the cut
+- The race scene's first frame, 67-77 ms (every run, every mode): the cut
   from the loading screen to the intro camera uploads the scene's 87-88
   textures (3.7 M texels) in one frame: 36.6 ms of CPU decode, 36.5 ms of
   image creation (0.41 ms for each image with its own `vkAllocateMemory` on
   this driver), 2.7 ms of copies (`[vulkan] textures:` under
   `RECOMP_TRACE=pcache`). The frame before it is the loading screen. In the
   race itself 12 frames have 2.3-9.5 ms of uploads and none of them is late.
-- **A shader or pipeline compiled at first use** (`[vulkan] pcache: compiled
+- A shader or pipeline compiled at first use (`[vulkan] pcache: compiled
   ... on the ack thread`, 15-60 ms): only while the cache does not know the
   scene yet; the two measured runs had none, the warm-up run before them 15
   (4 racing frames of 24-33 ms).
-- **A present one refresh late** after a frame that was on time (25 ms, then
+- A present one refresh late after a frame that was on time (25 ms, then
   8 ms): one in seven Balanced runs, none in these two.
-- **The stall outside the game** of the note above: one in about 35 minutes of Balanced racing.
+- The stall outside the game of the note above: one in about 35 minutes of Balanced racing.
 
 Latency, as far as it can be measured without a camera (Balanced; in Maximum
 the present comes 0.45 ms later after the refresh, the rest is the same): 2 frames in flight in the backend, a FIFO swapchain

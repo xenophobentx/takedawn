@@ -1,7 +1,7 @@
 # Contributors
 
-Everyone who has moved this project forward, and what they did. If you've
-contributed and aren't listed, or a line here is wrong, open a PR against this
+Everyone who has moved this project forward, and what they did. If you have
+contributed and are not listed, or a line here is wrong, open a PR against this
 file.
 
 ## Maintainer of Takedawn
@@ -28,7 +28,7 @@ backend and the first macOS host.
 The High refresh rate setting (#33, with xboxrecomp#3): the game keeps its 60
 steps a second and the picture is drawn between them at the display's rate.
 Off by default, and the same as the original when off. Shipped in 0.2.1 after
-we moved it onto the port's new frame pacing.
+it was moved onto the port's new frame pacing.
 
 ### [jillsandwich1998](https://github.com/jillsandwich1998)
 The mouse cursor that hides itself after 2.5 seconds without movement and when

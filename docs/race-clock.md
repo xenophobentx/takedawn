@@ -6,7 +6,7 @@ however long the frame took. At the end of the first crash camera the title
 switches itself to a mode that runs as many steps as the time since the last
 frame holds. The rest of the race keeps real time. The switch
 `game.race_clock` puts the race in that mode from its start. Overlay
-Graphics page, "Potato mode"; `settings.toml` `[game] race_clock`;
+Game page, "Potato mode"; `settings.toml` `[game] race_clock`;
 `RECOMP_GAME_RACE_CLOCK=1`. Off by default on every platform: the race runs
 as shipped.
 
@@ -174,7 +174,7 @@ The setting is off by default and its help text says to leave it off on a
 fast PC. Re-run after the rebase onto the current heads, Mac, headless,
 scratch HOME, one instance at a time, the same autopilot race (3 laps).
 The Mac was busy with other work during these runs (load average about 15),
-so times are noisy; compare ranges, not single runs.
+so times are noisy; compare ranges.
 
 | arm | race time, s | best lap, s |
 |---|---|---|

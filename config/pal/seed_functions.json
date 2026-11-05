@@ -46,5 +46,9 @@
  {
   "start": "0x003644DB",
   "note": "(NTSC-U 0x003641DB) XPP XID input-report completion callback, set as a transfer completion routine; reached only indirectly. Follows a ret 8, not inside any function."
+ },
+ {
+  "start": "0x000968B0",
+  "note": "(NTSC-U 0x000966F0) BO-134: the Xbox Live connect screen's state-1 update (0x964F0 tail-jumps here; it polls the lobby object's status). Undetected, it was a stub and the screen never left CONNECTING TO EA."
  }
 ]

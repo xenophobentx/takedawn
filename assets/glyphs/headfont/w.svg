@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="34" height="38" viewBox="0 0 34 38">
+<!-- Takedawn: the letter W for the game's heading font (34x38 texels), drawn from Anton's W
+     (SIL Open Font License 1.1, Copyright 2020 The Anton Project Authors). Written by
+     tools/glyphs/headfont.py. -->
+<path d="M4.942 37.5 0.5 0.5H8.585L10.865 23.856L13.192 0.5H20.902L23.111 23.856L25.321 0.5H33.5L28.987 37.5H19.068L17 19.694L15.026 37.5Z" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="miter" stroke-miterlimit="4"/>
+</svg>

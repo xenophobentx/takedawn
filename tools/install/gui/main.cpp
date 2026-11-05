@@ -34,14 +34,8 @@
 #define TAKEDAWN_SETUP_VERSION "0.1.0"
 #endif
 
-// The program's name in the window titles: the PAL package's is its own, as
-// its install folder and shortcuts are (tools/release/common.sh APP_TITLE).
-#ifndef TAKEDAWN_APP_TITLE
+// The program's name in the window titles.
 #define TAKEDAWN_APP_TITLE "Takedawn"
-#endif
-#ifndef TAKEDAWN_DISC_SHORT
-#define TAKEDAWN_DISC_SHORT "NTSC-U"
-#endif
 
 // Test and unattended runs must never raise the operating system's crash dialog
 // on someone's screen: a fatal Qt message (no platform plugin, say) or a crash
@@ -200,7 +194,7 @@ int main(int argc, char** argv) {
 
   QCommandLineParser parser;
   parser.setApplicationDescription(
-      "Takedawn's setup window: puts the game's data in place from your own Burnout 3: Takedown (" TAKEDAWN_DISC_SHORT ") disc "
+      "Takedawn's setup window: puts the game's data in place from your own Burnout 3: Takedown disc "
       "image or folder, then starts the game. The game opens it when its data is missing.");
   parser.addHelpOption();
   parser.addVersionOption();
@@ -209,6 +203,8 @@ int main(int argc, char** argv) {
   QCommandLineOption iso("iso", "Disc image or extracted folder to start with.", "path");
   QCommandLineOption shaders_opt("shaders", "Start with \"Prepare graphics\" ticked (it is the default).");
   QCommandLineOption no_shaders_opt("no-shaders", "Start with \"Prepare graphics\" unticked.");
+  QCommandLineOption upscale_opt("upscale", "Start with \"Sharper menu pictures\" ticked (where the game offers it).");
+  QCommandLineOption no_upscale_opt("no-upscale", "Start with \"Sharper menu pictures\" unticked.");
   QCommandLineOption size("size", "Window size, e.g. 780x680.", "WxH");
   QCommandLineOption platform("platform", "Test: show another system's options (macos, linux, windows).", "name");
   QCommandLineOption shots("shots", "Test: every state against the fake installer named by --program; PNGs here.", "directory");
@@ -220,7 +216,7 @@ int main(int argc, char** argv) {
   QCommandLineOption no_pad("no-pad", "Do not read the controllers.");
   QCommandLineOption pad_shots("pad-shots", "Test: the install driven by controller presses alone, against the fake "
                                             "installer named by --program and a made-up tree of folders; PNGs here.", "directory");
-  parser.addOptions({program, dest, iso, shaders_opt, no_shaders_opt, size, platform, shots, check_shot, e2e_shots, show_grab, couch_opt,
+  parser.addOptions({program, dest, iso, shaders_opt, no_shaders_opt, upscale_opt, no_upscale_opt, size, platform, shots, check_shot, e2e_shots, show_grab, couch_opt,
                      no_pad, pad_shots});
   parser.process(app);
 
@@ -230,6 +226,7 @@ int main(int argc, char** argv) {
   config.disc = parser.value(iso);
   config.platform = parser.isSet(platform) ? parser.value(platform) : qEnvironmentVariable("TAKEDAWN_SETUP_PLATFORM");
   config.shaders = !parser.isSet(no_shaders_opt) || parser.isSet(shaders_opt);
+  config.upscale = parser.isSet(no_upscale_opt) ? 0 : parser.isSet(upscale_opt) ? 1 : -1;
   config.couch = couch;
   config.pad = !parser.isSet(no_pad);
 

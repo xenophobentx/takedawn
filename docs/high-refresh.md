@@ -1,7 +1,7 @@
 # High refresh rate (`graphics.high_refresh`)
 
 Frames at the display's refresh rate, the simulation at its own 60 steps a
-second, and the pictures between two steps blended. Overlay Graphics page,
+second, and the pictures between two steps blended. Overlay Display page (Frame rate),
 "High refresh rate"; `settings.toml` `[graphics] high_refresh`;
 `RECOMP_GFX_HIGH_REFRESH=1`. Off by default on every platform.
 
@@ -48,7 +48,7 @@ The stepper cannot just be given a minimum of 0:
 
 ## What it does
 
-**The steps.** The title's stepper runs as shipped, but its count is not
+The steps. The title's stepper runs as shipped, but its count is not
 used. At the start of `Update` the count is the number of steps that bring
 the simulation up to the picture's time: 0 when it is there already, at
 most 4. The menus' mode 2 keeps the lag beyond the cap and the other modes
@@ -60,11 +60,10 @@ swap, the swaps it has seen, the last one's edge and the grid's period;
 the game counts its own swaps (`sub_00350DB0`, D3D's swap) and so knows how
 many frames are on their way, each one period later, and which edge this
 frame gets. The pictures are then exactly one display refresh apart, as the
-display shows them. (The first version took the wall time between
-`Update`s in whole flip periods, with the difference carried: `Update` runs
-ahead of its flip by a varying amount, 3.7 to 10.6 ms between Updates at
-144 Hz, and the raw wall time moved the car 0.85 to 1.15 times its average
-per picture.)
+display shows them. The wall time between `Update`s is not used: `Update`
+runs ahead of its flip by a varying amount (3.7 to 10.6 ms between Updates at
+144 Hz), and the raw wall time moved the car 0.85 to 1.15 times its average
+per picture.
 
 Active only while the game's state (`0x4D53B4`) is 5 in a stage (the
 stage `0x4D5370` has a mode object at + 0x1B8): races and the pause menu,
@@ -78,7 +77,7 @@ back, it is. The other states of
 `Update`'s jump table (`0x16CC8`: loads, the stage's set-up, hand-overs)
 step once a frame by their own code and keep flips at 60.
 
-**The flips.** The game asks the toolkit for a host grid at the display's
+The flips. The game asks the toolkit for a host grid at the display's
 rate. The toolkit holds each flip until the grid's next edge instead of the
 swap's vblank, with a timed wait (the last half millisecond is spun only on
 a grid faster than 200 Hz). The emulated vblank goes on at 60 Hz for
@@ -98,7 +97,7 @@ refresh shows one new frame. The edge is the frame's vblank for the
 presenter, so Metal's timed present aims each frame at its own refresh. The
 pacing watchdog decides nothing while the grid runs.
 
-**The pictures between steps.** Two kinds of object move:
+The pictures between steps. Two kinds of object move:
 
 - RenderWare frames: the camera and everything else hung on an `RwFrame`.
   RenderWare 3.7's `_rwFrameSyncDirty` (`sub_001E15E0`; dirty roots at
@@ -117,14 +116,14 @@ pacing watchdog decides nothing while the grid runs.
   `Update`'s steps still run (the step count short of where they end) is
   not taken, nor does it start the picture.
   The record of a frame is kept by its address, so it outlives the frame.
-  Until int027 a frame found elsewhere within a step was marked for good
-  ("shared", for the showroom); a frame made later at the same address
-  inherited the mark. When the view's camera frame had it, the camera was
-  never blended again: the world moved only at the steps, under a car
+  No mark is kept for good on a frame found elsewhere within a step. A
+  permanent mark ("shared", for the showroom) was inherited by a frame made
+  later at the same address. When the view's camera frame had it, the camera
+  was never blended again: the world moved only at the steps, under a car
   blended to the picture time. On the Steam Deck at 90 Hz the car then
   jumped up and down against the road from picture to picture (BO-241,
-  the owner's recordings from int027; he had seen it before). Nothing is
-  kept for good now; see the evidence below.
+  the owner's recordings from int027; he had seen it before). See the
+  evidence below.
 - Vehicles: race cars and traffic are not frames. `CB3RaceCar::Draw`
   (`sub_0018DE00`) and `CB3TrafficSystem::Draw` (`sub_001A4710`) pass the
   vehicle's own world matrix (car + 0x10, laid out as an `RwMatrix`) to
@@ -153,15 +152,15 @@ pacing watchdog decides nothing while the grid runs.
   `sub_001C8A60` builds both from the camera the steps left (+0x40): the
   camera frame's modelling matrix and, from the same, the view matrix,
   before the frame sync. The sync blends the camera frame, so the world is
-  drawn from the blended camera, but the view matrix stayed at the step's.
+  drawn from the blended camera while the view matrix is at the step's.
   The rival marker (`sub_0018F060`: the triangle, the position number and
   the label above a rival, at the car's point projected with that matrix;
-  its size and the triangle/number switch from the point's depth) was drawn
-  from the step's camera over a car drawn from the blended one: up to a
-  step's camera move off its car, by a different amount in each picture.
+  its size and the triangle/number switch from the point's depth) would then
+  be drawn from the step's camera over a car drawn from the blended one: up
+  to a step's camera move off its car, by a different amount in each picture.
   Far away that is under a pixel; a rival a few metres off at speed had its
   "4th" jump by 10 to 50 pixels of the 640x480 frame from one picture to
-  the next (BO-241). After the camera frame's blend the view matrix is
+  the next (BO-241). So after the camera frame's blend the view matrix is
   rebuilt to match it, V' = B^-1 M V (M the camera's true LTM, B its blend;
   M V, the view window part, is kept), and put back with the blends.
   `BO3_HIREFRESH_VIEW=step` leaves it at the step's camera (the A/B arm).
@@ -170,16 +169,15 @@ pacing watchdog decides nothing while the grid runs.
   position number, by distance rank from the view's game camera (view +
   0x68, + 0x30), not by car: it sorts the racers (the table at `0x64B38C`,
   + 0x204: the car's matrix) each picture and the looks stay with the
-  ranks. A car was blended only when drawn, so one behind the camera stayed
-  at its step, and the camera point too, while a rival in view was up to a
-  step behind: two racers at about the same distance swapped ranks from
-  picture to picture and the rival's marker flickered between arrow and
-  number (Original mode with High refresh). Now every racer's matrix is
-  blended at the frame sync, before anything of the picture is drawn, and
-  the camera point the same way (taken once a step, lerped, put back with
-  the blends), so the ranks are of one time; the draw finds the blend in
-  place. A car drawn from its own copy (+ 0x19AB, `0x18DEF2`) is left to
-  the draw as before. `BO3_HIREFRESH_RACERS=draw` blends at the draw only
+  ranks. Every racer's matrix is blended at the frame sync, before anything
+  of the picture is drawn, and the camera point the same way (taken once a
+  step, lerped, put back with the blends), so the ranks are of one time; the
+  draw finds the blend in place. Blending a car only when it is drawn left
+  one behind the camera at its step, and the camera point too, while a rival
+  in view was up to a step behind: two racers at about the same distance
+  swapped ranks from picture to picture and the rival's marker flickered
+  between arrow and number (Original mode with High refresh). A car drawn
+  from its own copy (+ 0x19AB, `0x18DEF2`) is left to the draw. `BO3_HIREFRESH_RACERS=draw` blends at the draw only
   (the A/B arm).
 
 The position is lerped; the axes are lerped and made orthogonal again
@@ -187,48 +185,48 @@ The position is lerped; the axes are lerped and made orthogonal again
 more than 8 units in a step or a turn of more than about 45 degrees: a
 camera cut, a reset, or a frame whose address was reused.
 
-**The HUD.** `sub_000535E0` is updated once a frame with one step's time
+The HUD. `sub_000535E0` is updated once a frame with one step's time
 (`MEMF(0x4AE1FC)`; [crash60.md](crash60.md)), so at 144 Hz its animations
-ran 2.4 times fast. Its time is now that value times the picture's time
+would run 2.4 times fast. Its time is that value times the picture's time
 since the last over 1/60 s.
 
-**The players' cameras.** `sub_00167940` updates a player's cameras once a
+The players' cameras. `sub_00167940` updates a player's cameras once a
 frame, after the steps (from `sub_000170B0`), with the frame's steps times
 one step's time; each camera in force (the player's record + 0xC20, a bit
 each) through its vtable (+ 0x10) with that time, except cameras 0 and 14,
 which get one step's time (`MEMF(0x4AE1FC)`) whatever the steps: they take
-a frame to be a step. With pictures between steps they ran once a picture,
-1.5 to 2.4 times as often as the steps. After a side hit the chase camera
-swung three or four times where the console swings once (BO-241, seen on
-the Steam Deck at 90 Hz), and in the look-back view the player's car, which
-that view hides, was drawn in every picture without a step (its inside
-showed). Now the cameras run once a step as shipped: not at all in a
-picture without a step (the picture between is the blend), and n times
-with one step's time each after n steps. Headless at host:90 with the
+a frame to be a step. The cameras run once a step as shipped: not at all in
+a picture without a step (the picture between is the blend), and n times
+with one step's time each after n steps. Run once a picture instead, they
+ran 1.5 to 2.4 times as often as the steps. After a side hit the chase
+camera swung three or four times where the console swings once (BO-241,
+seen on the Steam Deck at 90 Hz), and in the look-back view the player's
+car, which that view hides, was drawn in every picture without a step (its
+inside showed). Headless at host:90 with the
 executor slowed as on the Deck (60-90 pictures a second, a fifth of the
 Updates with two steps): look back held for 4 s, the car hidden in every
 picture (before: drawn in 1 of 3); after side hits the car's sideways place
 in the camera's view changed direction 1-4 times in the 2 s after (mean 2.0)
 against 1-9 (mean 4.2) before.
 
-**The body's rock after a slam.** When a rival slams the car, the title
+The body's rock after a slam. When a rival slams the car, the title
 rocks its body for 1.25 s (`sub_0018DA00`, from the car's step: a decaying
 turn of the car's matrix, about 2.5 swings, into a copy at car + 0x1930,
 + 0x19AB set). `CB3RaceCar::Draw` puts the copy in car + 0x10 for the body
-and the lights and its own matrix back after. The vehicle blend took the
-copy as the car's matrix, and a later frame sync of the same picture blended
-the car again in place, so the swap put the rock back as the car's true
-matrix: the simulation stepped on from the rocked car, which then fishtailed
-(BO-241, the owner's Steam Deck at 90 Hz: three or four swings where the
-console rocks once). Now the copy is taken and blended under its own record
-and nothing is put back for it (the title does), and a later sync never
-blends a vehicle's matrix again. Headless at host:90, a rock started by a
+and the lights and its own matrix back after. The copy is taken and
+blended under its own record and nothing is put back for it (the title
+does), and a later sync never blends a vehicle's matrix again. Otherwise the
+vehicle blend takes the copy as the car's matrix, a later frame sync of the
+same picture blends the car again in place, and the swap puts the rock back
+as the car's true matrix: the simulation steps on from the rocked car, which
+then fishtails (BO-241, the owner's Steam Deck at 90 Hz: three or four
+swings where the console rocks once). Headless at host:90, a rock started by a
 test switch (`BO3_HIREFRESH_WOBBLE=<race s>`): the car's true yaw rate during
 it went -344 to +386 deg/s with 4 sign changes before, -31 to +74 with 1
 after (High refresh off: -19 to +70, none); the drawn rock is within -7.5 to
 +5.4 degrees of the car's step (off: -6.0 to +5.6).
 
-**What is put back.** Every vehicle matrix the blend touches is
+What is put back. Every vehicle matrix the blend touches is
 snapshotted at the picture's first frame sync, after the steps and the
 title's per-frame updates and before anything is drawn. While a matrix still
 holds a blend of ours at the swap, the snapshot is put back, never a value
@@ -247,7 +245,7 @@ the "title", 4300-9000 rival and 4700-8400 traffic overrides per 10 s and
 nothing left to it; a race with 60 fps crash cameras and real crashes: 58
 rival overrides (a rival's rock), nothing left to the title.
 
-**The executor's idle time.** While the flips are held to the host grid
+The executor's idle time. While the flips are held to the host grid
 the toolkit's executor spins instead of napping when it has nothing to do
 (the hold to the grid's edge, the waits between the title's kicks): on the
 Steam Deck at 90 Hz the naps cost it about 13% of its clock against 60 Hz
@@ -256,9 +254,9 @@ mode, and High refresh reached 76 pictures a second on the glass instead of
 nothing. An idle guard keeps it from running a core for nothing: it spins
 only while the frames leave under 30% of the period to hold for (off again
 above 40%), so a pause menu that holds most of the period naps.
-`RECOMP_DEBUG=hr_spin=0` naps as before.
+`RECOMP_DEBUG=hr_spin=0` naps instead.
 
-**The sparks.** The sparks from scrapes and hits (`fxspark`, the six
+The sparks. The sparks from scrapes and hits (`fxspark`, the six
 particle systems of the effects manager `0x5A9A00` at + 0x39DD0, 0xF0
 each) are drawn as streaks through the last pictures, not where the
 simulation left them. `sub_00038200`, called once a picture from the
@@ -275,15 +273,15 @@ to the first two entries with the same time (`0x3688C`). The quads are the
 title's own, built on the CPU in clip space with a fixed width and sent as
 inline vertices (begin QUADS, `SET_VERTEX4F`); no point or line state.
 
-The times were the race clock (`0x60EA20`), which moves only at the steps.
-A picture between two steps had the time of the one before but was 1/60 s
-past entry 1, so the history moved down and its two newest entries had the
-same time: that picture drew no spark at all, and the next one only the
-newest quad. At 60 every picture draws three quads, 0.05 s of a spark's path;
-at 90 the pictures drew 0, 1 and 2, at 120 none and one in turn, at 144
-mostly none. The sparks got thinner as the rate rose (BO-274, seen on the
-Steam Deck and on Windows). The push and the six draws now get the
-picture's time: the race clock at the picture's place between its last two
+The title takes these times from the race clock (`0x60EA20`), which moves
+only at the steps. A picture between two steps then has the time of the one
+before but is 1/60 s past entry 1, so the history moves down and its two
+newest entries have the same time: that picture draws no spark at all, and
+the next one only the newest quad. At 60 every picture draws three quads,
+0.05 s of a spark's path; at 90 the pictures drew 0, 1 and 2, at 120 none and
+one in turn, at 144 mostly none. The sparks got thinner as the rate rose
+(BO-274, seen on the Steam Deck and on Windows). To avoid that, the push and
+the six draws get the picture's time: the race clock at the picture's place between its last two
 steps, and as the frame's time the clock's advance since the last picture,
 both put back after each call. The history is then one of pictures, as the
 title meant it (1/96 s or more apart): the streak is the same 0.05 s of
@@ -316,7 +314,7 @@ vertices still move once a step.
 Linux (NixOS 26.11, kernel 7.2), AMD Ryzen 7 9800X3D, NVIDIA GeForce RTX
 5060 Ti (driver 610.57.04), Vulkan backend, headless, render scale 1,
 2026-10-18. Without a display, `RECOMP_FLIP_PACING=host:<Hz>` stands in for
-the display's rate. It is vblank pacing as before unless the title asks
+the display's rate. It is plain vblank pacing unless the title asks
 for the grid. Autopilot races (`tools/headless/race_drive.sh`), the pause
 menu by `MIX=1`, and `BO3_PACE_LOG` per flip.
 
@@ -357,7 +355,7 @@ display's rate from SDL, the locked row, races, the pause menu and
 two-player split screen worked as above, and the rate followed the window
 when it was moved from one display to another (Meta+arrow keys). On a
 1920x1080 60 Hz display (no variable refresh) the setting stays out of the
-way, as it should (it acts only above 61 Hz). An earlier build of the same
+way (it acts only above 61 Hz). An earlier build of the same
 blending, started by environment variables, was played in a window at 175
 Hz; that is where the pause menu's speed was found. The toolkit's own tests
 pass (13 binaries, the overlay's 264 settings checks among them).
@@ -455,8 +453,8 @@ Original marker and High refresh at host:90, Single Event Silver Lake with
 the autopilot, ~3000 pictures a run, one build: at each swap the racers
 ranked by distance from the marker's camera point as `sub_0018EA50` ranks
 them (`BO3_HIREFRESH_MARKS`). A pair of racers whose order changes and
-changes back within three pictures is a rank swap from the picture timing,
-not from the race; a marker that changes look and back within 30 pictures
+changes back within three pictures is a rank swap that the picture timing causes;
+a marker that changes look and back within 30 pictures
 is the flicker:
 
 | Arm | runs | pair order changes | changed back in 3 pictures | look back in 30 |
@@ -465,10 +463,10 @@ is the flicker:
 | 90 Hz, racers blended at the draw only (`BO3_HIREFRESH_RACERS=draw`) | 4 | 24-145 | 7-111 | 1-23 |
 | 90 Hz, every racer and the camera point at the frame sync | 3 | 16-47 | 0-3 | 0-3 |
 
-Before, the player's distance from the camera point went 4.78, 5.01, 5.24
-over each three pictures at a steady chase camera (the car blended, the
-point at its step); now it holds at 5.32. Each racer's move from picture
-to picture is now as even as the player's.
+Before the fix, the player's distance from the camera point went 4.78, 5.01,
+5.24 over each three pictures at a steady chase camera (the car blended, the
+point at its step); with it the distance holds at 5.32. Each racer's move from picture
+to picture is as even as the player's.
 
 ## The latency
 

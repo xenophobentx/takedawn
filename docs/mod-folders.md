@@ -2,13 +2,14 @@
 
 A mod folder holds files that replace files on the disc. The game reads the
 folder's copy instead of the disc's; a file the folder does not have is read
-from the disc as before. Nothing is written to the game data, and switching a
+from the disc. Nothing is written to the game data, and switching a
 folder off brings the original files back.
 
 This is for people making or trying mods of the game's own files: a track's
 textures or props in its `static.dat`, a menu file, a race's data. It does not
-add anything the game cannot already load: no new tracks, cars or menu entries,
-and no textures larger than the ones they replace.
+add anything the game cannot already load: no new tracks, cars or menu entries.
+A replaced file keeps the size its format allows; to show a texture larger than
+the original, use a [texture pack](#texture-packs).
 
 Every build has it: Windows, Linux and the Steam Deck, macOS and Android
 (`src/game/modfs.c`: the Win32 file API on Windows, POSIX elsewhere). The rules
@@ -16,23 +17,40 @@ below are the same on all of them.
 
 ## Turning it on
 
-Set `TAKEDAWN_MODS` to the folder before starting the game. Several folders are
-separated by `;` on every system (not `:`, which is part of a path there), up
-to eight. The first folder named wins when two have the same file.
+Put mods in the default mods folder; the game reads it at the start when it
+exists, with nothing to set (BO-327: a Steam Deck in Game Mode has no shell to
+set a variable from). The settings' Mods page names it on its first line:
 
-Unset, there is no mod folder and nothing changes. Files are looked up when the
+| Where | The default mods folder |
+|---|---|
+| Linux and the Steam Deck | `~/.local/share/takedawn/mods` |
+| macOS | `~/Library/Application Support/Takedawn/mods` |
+| Windows | `%APPDATA%\Takedawn\mods` |
+| Portable mode (docs/windows.md) | `data/mods` next to the program |
+| Android | `mods` in the app's files folder (below) |
+
+Make the folder if it is not there yet. Each mod is a folder of its own in it,
+with a `mod.toml` (Manifests, below); loose files there work too, as in any
+mod folder.
+
+`TAKEDAWN_MODS` names more folders, read before the default one. Several are
+separated by `;` on every system (not `:`, which is part of a path there), up
+to eight. The first folder named wins when two have the same file. Set but
+empty (`TAKEDAWN_MODS=`), it turns the default folder off.
+
+With neither, there is no mod folder and nothing changes. Files are looked up when the
 game opens them, so a change takes effect at the next start of the game (a
 track's files at the next load of that track at the earliest). A relative path
 is taken from the folder the game starts in.
 
-**Windows** (Command Prompt):
+Windows (Command Prompt):
 
 ```
 set TAKEDAWN_MODS=D:\Burnout3Mods\Fixes;D:\Burnout3Mods\MyTrackMod
 Takedawn.exe
 ```
 
-**Linux**, from a shell:
+Linux, from a shell:
 
 ```
 TAKEDAWN_MODS="$HOME/takedawn-mods/MyTrackMod" ./burnout3
@@ -43,7 +61,7 @@ The installer's launcher (`burnout3.sh`, `tools/install/linux.py`) also takes
 `TAKEDAWN_MODS=/home/me/takedawn-mods/MyTrackMod` there sets it for every
 start.
 
-**Steam Deck**, with the native Linux build added to Steam: the game's
+Steam Deck, with the native Linux build added to Steam: the game's
 Properties, Launch Options:
 
 ```
@@ -56,7 +74,7 @@ home folder and an SD card SteamOS formatted are case-sensitive (ext4): that is
 handled, see Layout. The Windows build under Proton is the Windows case: its
 paths are Wine's (`Z:\home\deck\...`).
 
-**macOS**: a program started from the Finder or the Dock does not get a shell's
+macOS: a program started from the Finder or the Dock does not get a shell's
 variables, so start the game's own executable in the bundle from Terminal:
 
 ```
@@ -70,8 +88,8 @@ under `~/Library/Application Support/Takedawn` (the save folder) is a good
 place; folders the system guards (Desktop, Documents, Downloads) may need
 Terminal to be allowed to read them.
 
-**Android**: no variable is needed. A folder named `mods` in the app's files
-folder is the mod folder when it exists:
+Android: no variable is needed. A folder named `mods` in the app's files
+folder is the default mods folder:
 
 ```
 /sdcard/Android/data/io.github.xenophobentx.takedawn/files/
@@ -82,8 +100,8 @@ folder is the mod folder when it exists:
 
 It is reached the same way as the game data (adb, or USB file transfer); the
 app asks for no permission for it. A `TAKEDAWN_MODS=...` line in `env.txt`
-there names other folders instead (folders the app may read: its own), and an
-empty `TAKEDAWN_MODS=` turns the `mods` folder off.
+there names more folders, read before it (folders the app may read: its own),
+and an empty `TAKEDAWN_MODS=` turns the `mods` folder off.
 
 ## Layout
 
@@ -168,7 +186,7 @@ entries is not searched for mods (the log says so), and at most 64 mods are
 taken, valid or not: the folders in order, in each the subfolders by name
 (byte order); the log names the first one left out. A `mod.toml` directly in
 the folder `TAKEDAWN_MODS` names is not a manifest: that folder's own files stay
-loose files, as before. A mod's subfolder is not read as part of its folder's
+loose files. A mod's subfolder is not read as part of its folder's
 loose files, even when it has the name of a folder on the disc. A subfolder
 that is not taken as a mod (past the 64, or in a folder that is not searched)
 is part of the loose files, like any other folder; so, on Windows, is a mod's
@@ -257,7 +275,7 @@ FIRST MOD, WITH A DESCRIPTION.
   many mods are installed and how many are on.
 
 `TAKEDAWN_MODS_MENU=0` hides the page. Without a mod folder there is no MODS
-line, and the Settings menu is as before.
+line, and the Settings menu has its usual lines.
 
 The page needs four marks in the generated code (`si_items`, `si_select`,
 `mm_flow_sel`, `mm_flow_back`, config/patches.json). The build checks that
@@ -284,6 +302,186 @@ mod without a list share, is not reported. With more than 1024 different files
 in those lists, mods with a list are compared by their lists alone and the
 others not, and the log says so.
 
+### The Mods tab of the settings (BO-316, BO-327)
+
+The Takedawn settings (F1, or Back and Start on a pad) have a Mods tab before
+System (`src/game/modstab.c`, on the toolkit's host page, `overlay.h`
+`xbox_OverlaySetHostPage`). Its first line names the default mods folder
+("Mods folder: ~/.local/share/takedawn/mods", the table above), the second
+says how many mods are installed and in use, or, with none, "No mods are
+installed. Put each mod in its own folder in the mods folder, then start the
+game again." A third line names the first `TAKEDAWN_MODS` folder when the
+variable names any. Then one row for each mod with its name, version and
+author from `mod.toml` and a switch, with the toolkit's NEXT START tag after
+the name (lit while a saved change waits for the next start); a mod that cannot
+be used is dimmed and says why in the help line. A mod turned on or off is
+saved to the mod list at once (BO-338): there is no Apply row. A note under the
+list says "Restart the game to use the saved mods." while a change waits, and
+the line naming `TAKEDAWN_MODS`'s folders is an advanced row (the page's "Show
+advanced settings" switch). Under the list, the "Sharper menu pictures" rows
+(BO-311, `upscale.c`: Upscale menu pictures with AI, Remove the upscaled menu
+pictures), which are on this page instead of the Graphics page: they make a
+mod of their own. "Reset this page to the defaults" (with mods installed) switches every
+mod that can be used back on and saves the list, as a reset does on the other
+pages; it asks once more first.
+
+It is the same list and the same choices as the MODS page: one state, kept in
+`modsmenu.c` and used by both through `src/game/modsmodel.h`. A mod turned on
+or off in the tab shows on the MODS page (which redraws its lines at its next
+frame) and the other way round. The tab saves the choice as it is made; the
+MODS page keeps its APPLY line, which saves its choices to the mod list as
+above (used from the next start). A choice made there and not applied is saved
+by the next change in the tab, and the tab says so under the list.
+
+Where a change is put to use without a restart (the generated packs of the
+upscaler, BO-311), there is one place to wire it: `bo3_mods_set_apply_hook`
+(modsmodel.h). Both views call the same apply, which saves and then calls the
+hook with the number of mods changed; a hook that returns 1 has put them to
+use, and the apply line then says APPLIED instead of that a restart is needed.
+The tab lists whatever modfs reports (`bo3_modfs_mod`), so a pack modfs lists
+shows in both views with nothing more to do. `tools/headless/modstab_scene.sh`
+drives it (WINDOW=1).
+
+## Texture packs
+
+A mod can carry a `textures` folder of PNG files. A texture the game loads
+that has a file in a pack is drawn from the PNG instead, at the PNG's own
+size. Dolphin and PCSX2 load texture packs the same way: a file is named by
+the content of the texture it replaces, so no disc file is touched.
+
+```
+MyPack/
+    mod.toml
+    textures/
+        pack.toml                          <- optional
+        7f43ae6699b33558.png               <- a texture
+        81ad2f599a7fe2fe-708d8ee4b91dfab8.png   <- a paletted (P8) texture
+```
+
+A pack is a mod like any other: it is listed on the MODS page, turned on and
+off there (APPLY, then restart) and ordered by its id. A mod can hold both
+files (`files`) and textures. A mod folder's own `textures` folder, beside the
+mods, is a pack too. The folder is named `textures`; on a volume that folds
+case any spelling works, elsewhere give it once, in any case.
+
+### Names
+
+`<hash>.png` is 16 hexadecimal digits: the hash of the texture's bytes in the
+game's memory (level 0, as the console stores it). A paletted texture (P8) is
+`<hash>-<palette>.png`: the game recolours one set of indices with several
+palettes, and each palette is its own picture. A P8 texture with no file for
+its palette uses `<hash>.png` if there is one. Hex digits and `.png` may be
+in either case. Any other name (`readme.txt`, `.png.bak`) is ignored.
+
+The game writes these names for you (see Making a pack).
+
+### Size, mips and filtering
+
+The PNG can be any size up to 8192 by 8192 (and at most 8192 by 4096 in
+area). The scale is read for each texture from the PNG against the original:
+2x, 3x, 4x, a PNG that is 4x wide and 2x high, a PNG smaller than the original.
+Different textures in one pack can have different scales.
+
+- The levels below the PNG are made when it is loaded (a 2x2 average of each
+  channel). A texture the game draws with one level gets the levels down to its
+  own size, so a small picture still looks right.
+- The game's filtering, wrapping and coordinates stay as they are. The game
+  limits how far a texture may be blurred; that limit moves down with the
+  scale, so a PNG 4x as large starts two levels up.
+- A texture an alpha-tested draw uses (trees, fences) gets levels that keep as
+  many texels above the test as level 0 has, as the game's own textures do
+  (the setting is `alpha_mips`).
+
+### Alpha
+
+`textures/pack.toml` sets how a pack's alpha is chosen. Both keys are
+optional; anything else in the file is ignored.
+
+```toml
+alpha = "auto"       # auto (default), original or png
+compress = "auto"    # auto (default) or off
+```
+
+- `auto`: the PNG's alpha when the file has an alpha channel; a file without
+  one takes the original's alpha, scaled up smoothly to the PNG's size.
+- `original`: always the original's alpha, scaled up the same way. The file's
+  alpha channel is ignored. Use it for art from an upscaler that cannot make
+  alpha.
+- `png`: the file's alpha; a file without it is opaque.
+
+The colours under an alpha of 0 are never changed. The game uses some alpha
+as a mask (shine on a car, a cut-out) and still reads the colour there, so
+whatever your tool left under it is what the game draws.
+
+### Which mod wins
+
+A texture can be in more than one pack. The first pack in file order wins,
+the order used for replaced files: each mod folder named in `TAKEDAWN_MODS`
+in turn, in it its own `textures` folder, then its mods by id. A pack that is
+off is not looked at.
+
+### Made on this computer
+
+The game also takes the folder `generated-mods` in its per-user data folder as
+a mod folder, after the ones `TAKEDAWN_MODS` names (and alone when that is not
+set). "Sharper menu pictures" ([upscale-art.md](upscale-art.md)) writes its
+texture pack there, as the mod `takedawn.ai-upscaled-art`; it is on the MODS
+page like any other. `TAKEDAWN_GENERATED_MODS` names another folder, an empty
+value turns it off.
+
+### Making a pack
+
+Run the game with the dump switch to get every texture as a pack file:
+
+```
+RECOMP_DEBUG=texrep_dump=/path/to/dump ./burnout3
+```
+
+On Windows set `RECOMP_DEBUG` the same way before `Takedawn.exe`, on a Mac
+start the executable inside the app from Terminal (see Turning it on).
+Each texture the game loads is written once as a PNG with the name a pack
+uses (`<hash>.png`, or `<hash>-<palette>.png` for P8), as the game decoded
+it, before any other change. Play to the screens you want; a track's textures
+are written when the track loads. `index.tsv` in the same folder has a line
+for each file: hash, palette hash (0 if none), width, height, the format
+number, levels. `texrep_dump_mips` also writes the game's own lower levels as
+`<name>_m<level>.png`; they are not part of a pack.
+
+Edit or upscale the PNGs and put the ones you changed in a mod's `textures`
+folder, with the same names. Files you leave out are not replaced. The dumped
+files are the game's own pictures: keep them on your machine.
+
+The dump covers every texture the game loads from its memory, from the HUD to
+road signs. Video frames, screen copies and cube maps cannot be replaced and
+are not written. A texture the game reads as signed data (water bumps) is
+written, but a pack does not replace it.
+
+### Loading and memory
+
+The PNGs are read, scaled, mipped and compressed by worker threads, so the
+game does not stop for them. A texture shows the original until its
+replacement is ready, which is a moment on first sight. The index of file
+names is read at the start.
+
+Big pictures are compressed to BC1 (no alpha) or BC3 (alpha) when the graphics
+card can read those formats, which makes them a quarter to an eighth of the
+size. A pack of 4x art for every menu and loading picture is about 840 MB raw
+and about 210 MB compressed. Compressed results are kept in a `texpack` folder
+beside the shader cache, up to 4 GB, so the next start does not decode the PNG
+again. Pictures under 128 by 128, and packs with `compress = "off"`, stay
+uncompressed.
+
+What the graphics card keeps for packs is capped: 1 GB, 256 MB on a Steam Deck
+and on Android. Over it, the pack texture used longest ago goes back to the
+original and is loaded again if it is used again. `RECOMP_DEBUG=texpack_cap_mb=<n>`
+sets the cap, `texpack_swap_mb=<n>` the bytes a frame may upload (24 by
+default), `texpack_compress=0` turns compression off, `texpack_log` prints a
+line for each texture, and `texpack=<folder>[;<folder>]` loads packs without
+the mod system.
+
+Android drivers mostly cannot read BC textures, so a pack there stays
+uncompressed and the cap matters more.
+
 ## What is refused
 
 The disc's own file is read instead when:
@@ -304,9 +502,11 @@ The disc's own file is read instead when:
 These rules are the same on every system, so a mod folder that works on one
 works on the others.
 
-A folder whose full path is not plain ASCII is ignored (on Windows the path is
-read in the guest's code page; elsewhere, in the same way, a `\` in it is not
-allowed either). A folder that does not exist is ignored. On Windows a folder
+A folder's own path may hold any letters (a user name with an accent). On
+Windows, where the toolkit reads the path in the guest's code page, such a
+folder is used by its short 8.3 name; on a volume with short names turned off
+it is ignored. Elsewhere a `\` or a control character in it is not allowed. A
+folder that does not exist is ignored. On Windows a folder
 must be on a drive letter (`C:\...`): a network share (`\\server\share\...`)
 and a path written with `\\?\` or `\\.\` are ignored.
 
@@ -336,7 +536,7 @@ in every build:
 [MOD] mod ignored (mod.toml: id is missing): D:\Burnout3Mods\MyTrackMod\broken
 ```
 
-With diagnostic logging on (the settings' Advanced > Diagnostic logging, then
+With diagnostic logging on (the settings' System > Diagnostic logging, then
 a restart; or `RECOMP_LOG_DIAG=1`), each replaced file is written too, once:
 
 ```
@@ -355,13 +555,14 @@ files folder and logcat (tag `takedawn`).
 ## How it works
 
 `bo3_modfs_init` (called after the soundtrack is set up) reads
-`TAKEDAWN_MODS` and, if a folder was taken, chains a function onto the
+`TAKEDAWN_MODS`, then takes the default mods folder (`bo3_modfs_default_dir`,
+set by `main.c`) when it exists, and, if a folder was taken, chains a function onto the
 toolkit's `xbox_PathRedirectHook`. For a `D:\` or `\Device\CdRom0\` path whose
 file a folder has, it returns the file's host path: `\\?\<path>` on Windows,
 the absolute path elsewhere. The toolkit's path translation hands either to the
 host unchanged. Every other path goes on down the chain. The result buffer is
-per thread. With the variable unset (and, on Android, no `mods` folder), the
-hook is not installed.
+per thread. With the variable unset and no default mods folder, the hook is
+not installed.
 
 On Windows each part is checked with `GetFileAttributesA`. Elsewhere the lookup
 walks from the mod folder down with directory descriptors (`openat` with
@@ -377,7 +578,7 @@ the file without touching the disk. A lookup through a mod that has it checks
 the path from the mod folder down, the mod's subfolder and `files` included,
 in the same way as a loose file. The mods and their lists do not change while
 the game runs (`modfs.h`), so reading them takes no lock; the only lock is the
-one that keeps each "[MOD] ... -> ..." line to once, as before. The saved mod
+one that keeps each "[MOD] ... -> ..." line to once. The saved mod
 list has a lock of its own, so saving it never holds a lookup up. Mods that
 are off have no place in the lookup. The
 mod list's file is named by `main.c` (`bo3_modfs_state_file`) and changed
@@ -422,3 +623,23 @@ Linux code; the Windows build under Proton neither), macOS or Android; on
 Android the `mods` folder default on a real device. A passing test does not
 rule out the check-then-open window in "What is refused". Files other than
 `static.dat` in a race are not checked.
+
+Texture packs (2026-10-29), a test pack of 42 PNGs (40 loading screens at 4x
+with red and blue swapped, two P8 car pictures at 4x and 2x, one of them a PNG
+without alpha), the front-end tour of `tools/headless/fe_scene.sh` (main menu
+to the race loading screen), out-of-box settings:
+
+- Vulkan on Linux (Ubuntu, AMD integrated GPU, RADV), headless, and Metal on a
+  Mac (Apple M5): the car pictures are swapped in a flip after first sight
+  (128x64 to 512x256 and 256x128, BC3), a loading screen about ten flips after
+  (512x256 to 2048x1024, BC1, 1.3 MB). The screens show the pack's colours,
+  the car pictures keep their cut-out shapes. With the mod off on the MODS
+  page's list, the log has no texture pack line and the original pictures
+  are drawn. The names `texrep_dump` wrote on Linux matched the names worked
+  out from the disc's files for the 17 pack textures that run drew, including both
+  P8 pictures.
+- A cap of 1.4 MB sent the two car pictures back to the original when the
+  loading screen needed the room. A second run on the same cache folder read
+  two of three results from the disk cache instead of the PNGs.
+- Not checked: Windows and Android (they build the same code), the Steam
+  Deck, a full pack of all 252 menu and loading pictures in play.

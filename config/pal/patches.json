@@ -1,5 +1,5 @@
 {
-  "about": "PAL (Europe) twin of config/patches.json, written by tools/region/port_config.py: each va translated to the PAL default.xbe and checked to be the same instruction; each note starts with the NTSC-U address it came from and keeps its NTSC-U addresses. Opt-in guest patches (tools.recomp --patches, regen.sh). After each listed load (or store) the generated code calls RECOMP_PATCH_U32 / RECOMP_PATCH_F32, which keeps the title's value unless the setting reads 'when' (src/game/main.c enables game.speed_units: RECOMP_SPEED_UNITS=kmh, BO-79; and display.hud_fix: RECOMP_GFX_HUD_FIX=1, BO-89; both on the overlay's Display page and in settings.toml). The display.hud_fix values are expressions of 'aspect' (16/9 or 4/3, the picture the title was set up for): W = 480*aspect is the 640x480 layout's width at the picture's true shape, (640 - W)/2 its left edge, s = (4/3)/aspect the squeeze that undoes the anamorphic stretch; 'vis_x0' / 'vis_x1' are the frame columns the window shows of the picture as presented (the presenter's overscan crop and 16:10 fill), 'ref_x0' / 'ref_x1' those a 4:3 picture shows in the same window: the HUD's margins are kept from the visible edges at what they are in 4:3. The arithmetic (layout width 480*aspect, offset (640 - width)/2, HUD origin 320*(1 - s)) is that of the PS2 widescreen fix: ThirteenAG/WidescreenFixesPack, source/Burnout3.PCSX2F.WidescreenFix (MIT licence); the Xbox sites were found in this build, with Nahelam's PS2 symbol list (PS2-Game-Mods, Burnout 3 Takedown/Research/SLES_525.85.txt) as the guide to the names. display.ultrawide (RECOMP_DISPLAY_ULTRAWIDE=21:9|32:9|window, BO-94): the camera's aspect and field-of-view factor and the marks that tell the host a stage is set up, drew a frame, and a frame ended; 'aspect' is then the stage's wide aspect, 'frame_aspect' the shown frame's, 'fe_squeeze' the factor that keeps the front-end scene's 16:9 shape over a wide frame. graphics.bloom and graphics.motion_blur (RECOMP_GFX_BLOOM, RECOMP_GFX_MOTION_BLUR, BO-101, strengths 0 to 1 in tenths since BO-212; overlay Graphics page): the title's own bloom and blur, full strength (1) as shipped; at \"0\" the title's own conditions for drawing them read false, between 0 and 1 the bloom's weight in the frame pass and the blur's opacity are times 'bloom_strength' / 'blur_strength' (docs/effects.md). graphics.vehicle_detail (RECOMP_GFX_VEHICLE_DETAIL=far|farthest, BO-112; overlay Graphics page): the distances at which the title swaps a vehicle's model for a simpler one, times 'vehicle_lod_scale' (2 or 4); as shipped at 'original' (docs/draw-distance.md). graphics.scenery_detail (RECOMP_GFX_SCENERY_DETAIL=far, BO-177; overlay Graphics page): the distance at which a track prop with two models (the pine trees above all) swaps its detailed model for its simple one, times 'scenery_lod_scale'; as shipped at 'original' (docs/draw-distance.md). graphics.crash_60fps (RECOMP_GFX_CRASH_60FPS=1, BO-111; overlay Graphics page): the title's 30 Hz phases, the crash and takedown cameras, at 60: where a one-player stage's update chooses the rate, its 'a crash camera is on' byte reads 0 and the title takes its own full-rate path (docs/crash60.md); off as shipped. graphics.split_60fps (RECOMP_GFX_SPLIT_60FPS=1, BO-116; overlay Graphics page): two-player split screen, which the title runs at its half rate from the stage's set-up to its end, at 60: the request the set-up stores is stored as 0 (docs/split-screen.md); off as shipped. audio.split_music (RECOMP_AUDIO_SPLIT_MUSIC=1, BO-116; overlay Audio page): the title's music manager keeps EA GAMES TRAX silent while more than one player plays; where it compares the player count for that, the count reads 1 (docs/split-screen.md); off as shipped, and off the audio path is the title's own. game.race_clock (RECOMP_GAME_RACE_CLOCK=1, BO-159; overlay Graphics page): a one-player stage starts its simulation stepper in the mode that runs one step a frame whatever the time, and switches to its wall-clock mode only at the end of the first crash camera; the start stores the wall-clock mode instead, so a host below 60 keeps real time from the start (docs/race-clock.md); off as shipped.",
+  "about": "PAL (Europe) twin of config/patches.json, written by tools/region/port_config.py: each va translated to the PAL default.xbe and checked to be the same instruction; each note starts with the NTSC-U address it came from and keeps its NTSC-U addresses. Opt-in guest patches (tools.recomp --patches, regen.sh). After each listed load (or store) the generated code calls RECOMP_PATCH_U32 / RECOMP_PATCH_F32, which keeps the title's value unless the setting reads 'when' (src/game/main.c enables game.speed_units: RECOMP_SPEED_UNITS=kmh, BO-79; and display.hud_fix: RECOMP_GFX_HUD_FIX=1, BO-89; both on the overlay's Display page and in settings.toml). The display.hud_fix values are expressions of 'aspect' (16/9 or 4/3, the picture the title was set up for): W = 480*aspect is the 640x480 layout's width at the picture's true shape, (640 - W)/2 its left edge, s = (4/3)/aspect the squeeze that undoes the anamorphic stretch (the front-end scene's: (4/3)/base_aspect, the title's own picture, with the full-frame decoration drawn where the title puts it: fe_dx / fe_dw, BO-222); 'vis_x0' / 'vis_x1' are the frame columns the window shows of the picture as presented (the presenter's overscan crop and 16:10 fill), 'ref_x0' / 'ref_x1' those a 4:3 picture shows in the same window: the HUD's margins are kept from the visible edges at what they are in 4:3. The arithmetic (layout width 480*aspect, offset (640 - width)/2, HUD origin 320*(1 - s)) is that of the PS2 widescreen fix: ThirteenAG/WidescreenFixesPack, source/Burnout3.PCSX2F.WidescreenFix (MIT licence); the Xbox sites were found in this build, with Nahelam's PS2 symbol list (PS2-Game-Mods, Burnout 3 Takedown/Research/SLES_525.85.txt) as the guide to the names. display.ultrawide (RECOMP_DISPLAY_ULTRAWIDE=21:9|32:9|window, BO-94): the camera's aspect and field-of-view factor and the marks that tell the host a stage is set up, drew a frame, and a frame ended; 'aspect' is then the stage's wide aspect, 'frame_aspect' the shown frame's, 'fe_squeeze' the factor that keeps the front-end scene's 16:9 shape over a wide frame. graphics.bloom and graphics.motion_blur (RECOMP_GFX_BLOOM, RECOMP_GFX_MOTION_BLUR, BO-101, strengths 0 to 1 in tenths since BO-212; overlay Graphics page): the title's own bloom and blur, full strength (1) as shipped; at \"0\" the title's own conditions for drawing them read false, between 0 and 1 the bloom's weight in the frame pass and the blur's opacity are times 'bloom_strength' / 'blur_strength' (docs/effects.md). graphics.vehicle_detail (RECOMP_GFX_VEHICLE_DETAIL=far|farthest, BO-112; overlay Graphics page): the distances at which the title swaps a vehicle's model for a simpler one, times 'vehicle_lod_scale' (2 or 4); as shipped at 'original' (docs/draw-distance.md). graphics.scenery_detail (RECOMP_GFX_SCENERY_DETAIL=far, BO-177; overlay Graphics page): the distance at which a track prop with two models (the pine trees above all) swaps its detailed model for its simple one, times 'scenery_lod_scale'; as shipped at 'original' (docs/draw-distance.md). graphics.crash_60fps (RECOMP_GFX_CRASH_60FPS=1, BO-111; overlay Graphics page): the title's 30 Hz phases, the crash and takedown cameras, at 60: where a one-player stage's update chooses the rate, its 'a crash camera is on' byte reads 0 and the title takes its own full-rate path (docs/crash60.md); off as shipped. graphics.split_60fps (RECOMP_GFX_SPLIT_60FPS=1, BO-116; overlay Graphics page): two-player split screen, which the title runs at its half rate from the stage's set-up to its end, at 60: the request the set-up stores is stored as 0 (docs/split-screen.md); off as shipped. audio.split_music (RECOMP_AUDIO_SPLIT_MUSIC=1, BO-116; overlay Audio page): the title's music manager keeps EA GAMES TRAX silent while more than one player plays; where it compares the player count for that, the count reads 1 (docs/split-screen.md); off as shipped, and off the audio path is the title's own. display.rival_marker (RECOMP_GFX_RIVAL_MARKER=farther, BO-241; overlay Display page): where the marker over a rival changes from its arrow to its race position, 35 checked every 30 steps as shipped; at farther the position below rival_near (60), the arrow past rival_far (75), checked every step (docs/rival-marker.md). game.race_clock (RECOMP_GAME_RACE_CLOCK=1, BO-159; overlay Graphics page): a one-player stage starts its simulation stepper in the mode that runs one step a frame whatever the time, and switches to its wall-clock mode only at the end of the first crash camera; the start stores the wall-clock mode instead, so a host below 60 keeps real time from the start (docs/race-clock.md); off as shipped.",
   "patches": [
     {
       "va": "0x00059DA7",
@@ -73,7 +73,7 @@
           "0x0054FCA4"
         ]
       },
-      "note": "(NTSC-U 0x001C17A3) sub_001C17A0, the 2D scene's root sync (PS2 CGt2dScene::Render's CGt2dFrame::Sync of the root, with the identity space): copies the root frame's local position to its world position (x here), then syncs the children (sub_001C1670: world = parent origin + parent scale * local). Three scenes use it; edi is the scene, and the patch is for the two HUD scenes only (CB3HUDManager at 0x54F900, one CB3HUD of 0x70 bytes per player from +0x10, its CGt2dScene at +4: 0x54F914, 0x54F984; rendered by sub_000536C0). The front-end scene (0x557A20: menus, loading screen, race intro, results) keeps its root, and the EA Trax scene (0x45BAD0) its origin. Origin x = 320*(1 - s): with the scale below, the HUD's 2D space is squeezed by s about the screen centre. PS2 counterpart: hudOrigin, written to the two HUD frames (0x6682B0, 0x669B30). Latch use: follows the choice the layout rectangle was built with."
+      "note": "(NTSC-U 0x001C17A3) sub_001C17A0, the 2D scene's root sync (PS2 CGt2dScene::Render's CGt2dFrame::Sync of the root, with the identity space): copies the root frame's local position to its world position (x here), then syncs the children (sub_001C1670: world = parent origin + parent scale * local). Three scenes use it; edi is the scene, and the patch is for the two HUD scenes only (CB3HUDManager at 0x54F900, one CB3HUD of 0x70 bytes per player from +0x10, its CGt2dScene at +4: 0x54F914, 0x54F984; rendered by sub_000536C0). The front-end scene (0x557A20: menus, loading screen, race intro, results) and the EA Trax scene (0x45BAD0) have patches of their own at this site (below). Origin x = 320*(1 - s): with the scale below, the HUD's 2D space is squeezed by s about the screen centre. PS2 counterpart: hudOrigin, written to the two HUD frames (0x6682B0, 0x669B30). Latch use: follows the choice the layout rectangle was built with."
     },
     {
       "va": "0x001C1AC3",
@@ -622,49 +622,49 @@
     {
       "va": "0x0002F4BD",
       "kind": "load_f32",
-      "setting": "display.ultrawide",
-      "when": "!off",
+      "setting": "display.widescreen",
+      "when": "!0",
       "expr": "aspect",
       "note": "(NTSC-U 0x0002F3AD) sub_0002F380, the one-player camera set-up (called by the stage set-ups and the front end): in the title's widescreen mode the viewport's aspect is 16/9 (0x3B18EC, this its only use), stored to the viewport record at +0x104. The picture's real aspect instead. PS2 counterpart: the fix's aspect globals 0x4E0C70 / 0x4E0C7C."
     },
     {
       "va": "0x0002F4CB",
       "kind": "load_f32",
-      "setting": "display.ultrawide",
-      "when": "!off",
-      "expr": "loaded * aspect / (16 / 9)",
-      "note": "(NTSC-U 0x0002F3BB) sub_0002F380: the widescreen field-of-view factor, 1.2 (4:3 has 1.0): the horizontal view grows with it and the vertical is factor/aspect, 0.9 of 4:3's at 16:9. Scaled with the aspect, so the vertical view stays what 16:9 has and the picture only gains at the sides (hor+)."
+      "setting": "display.widescreen",
+      "when": "!0",
+      "expr": "loaded * fov_aspect / (16 / 9)",
+      "note": "(NTSC-U 0x0002F3BB) sub_0002F380: the widescreen field-of-view factor, 1.2 (4:3 has 1.0): the horizontal view grows with it and the vertical is factor/aspect, 0.9 of 4:3's at 16:9. Scaled with fov_aspect, the picture's aspect but at least 16/9: wider than 16:9 (display.ultrawide) the vertical view stays what 16:9 has and the picture gains at the sides (hor+); at 16:10 (display.aspect, BO-271) the factor stays, the horizontal view is 16:9's and the picture gains above and below (vert+). On whenever the title is in its widescreen mode; at 16:9 without ultrawide both values are the title's own."
     },
     {
       "va": "0x0002F5D2",
       "kind": "load_f32",
-      "setting": "display.ultrawide",
-      "when": "!off",
+      "setting": "display.widescreen",
+      "when": "!0",
       "expr": "2 * aspect",
       "note": "(NTSC-U 0x0002F4C2) sub_0002F480, the two-player camera set-up, one above the other in widescreen: each half's aspect, 32/9 (0x3B18E8). PS2 counterpart: 0x4E0C80 = aspect * 2. Not exercised yet."
     },
     {
       "va": "0x0002F5E0",
       "kind": "load_f32",
-      "setting": "display.ultrawide",
-      "when": "!off",
-      "expr": "loaded * aspect / (16 / 9)",
+      "setting": "display.widescreen",
+      "when": "!0",
+      "expr": "loaded * fov_aspect / (16 / 9)",
       "note": "(NTSC-U 0x0002F4D0) sub_0002F480, one above the other: the field-of-view factor, 1.62. Not exercised yet."
     },
     {
       "va": "0x0002F62D",
       "kind": "load_f32",
-      "setting": "display.ultrawide",
-      "when": "!off",
+      "setting": "display.widescreen",
+      "when": "!0",
       "expr": "aspect / 2",
       "note": "(NTSC-U 0x0002F51D) sub_0002F480, side by side in widescreen: each half's aspect, 8/9 (0x3B18D8). Not exercised."
     },
     {
       "va": "0x0002F63B",
       "kind": "load_f32",
-      "setting": "display.ultrawide",
-      "when": "!off",
-      "expr": "loaded * aspect / (16 / 9)",
+      "setting": "display.widescreen",
+      "when": "!0",
+      "expr": "loaded * fov_aspect / (16 / 9)",
       "note": "(NTSC-U 0x0002F52B) sub_0002F480, side by side: the field-of-view factor, 0.75. Not exercised."
     },
     {
@@ -952,7 +952,7 @@
       "note": "(NTSC-U 0x00030531) In sub_000303D0's draw, after `mov eax, ebx` and `mov ecx, edi`, before the call to sub_000315C0, which sets the vertex streams from the level header in eax (stream 0 its + 0x48, stride 0x18; stream 1 its + 0x54, stride 8). BO3_SOFTBODY_TRAFFIC=1 puts a hit traffic vehicle's own copy of that header in eax (src/game/softbody.c)."
     },
     {
-      "va": "0x0012FDC4",
+      "va": "0x0012FDC2",
       "kind": "mark",
       "name": "sb_impact",
       "note": "(NTSC-U 0x0012FA62) sub_0012FA40, a car's impact entry (the damage writer chain: sub_0012E4D0 to sub_00128FE0, which writes the panel matrices at car + 0x590), after the frame is set and `mov [esi+0x10], ebx`: [ebp+8] the car's damage state (car + 0x2440 points at it), [ebp+0x10] the physics body with its world matrix, [ebp+0x28] the hit's direction, [ebp+0x2C] its strength. Found by a write watch on the panel matrices during a Crash (RECOMP_WATCH). graphics.softbody starts a dent there (src/game/softbody.c)."
@@ -1070,6 +1070,132 @@
       "kind": "mark",
       "name": "tut_film",
       "note": "(NTSC-U 0x0006BF9B) sub_0006BC40 (the front-end state that plays a mode's training film, TrD_xxx / TrC_xxx), the `push 0` before its call of sub_00086F70 (film id [0x463C48], caption string [0x463C4C], ...): the byte argument that becomes the film page's 'skippable' flag (page 0x55CB88 + 0xC). The title pushes 0 here, so no button skips the film; the mark makes it 1, and A or START leave through the page's own exit (src/game/tutorial.c)."
+    },
+    {
+      "va": "0x00078157",
+      "kind": "mark",
+      "name": "mq_items",
+      "note": "(NTSC-U 0x00077F27) sub_00077DC0 (the main menu's set-up; page object 0x559390), `mov word ptr [edi + 2], 5`: the count stored in the list widget's pair (edi = page + 0x14), right before the widget's call (sub_000F0EA0, 0x77F2D) with its arguments already pushed: esp+0x14 the items (page + 0x18, five of 8 bytes), esp+0x2C the local that holds the descriptions (page + 0x40) for sub_000CA090. The page ends at 0x5593E4, where the pause menu's starts, so there is no room for a sixth line in place: the items and descriptions go to a block of our own with QUIT as the sixth, the count becomes 6, and the two stack slots take the block. src/game/mainquit.c, BO-301."
+    },
+    {
+      "va": "0x0007839B",
+      "kind": "mark",
+      "name": "mq_select",
+      "note": "(NTSC-U 0x0007816B) sub_00078160 (the main menu's input; edi the page), after the call of sub_00017790 (A taken), al the answer. With the cursor (0x5593A4) on the sixth line the answer becomes 0, so the title does not read the greyed byte of a line it does not have (page + 0x1C + 5 * 8 is a description pointer), and the game is closed the way the overlay's Quit game does. src/game/mainquit.c, BO-301."
+    },
+    {
+      "va": "0x000A650F",
+      "kind": "mark",
+      "name": "xl_prompt",
+      "note": "(NTSC-U 0x000A61BF) Online page prompt setup: after the prompt object is pushed, esp+4 is the flags argument. Replace the Sign out bit with the title's localized Back bit before its prompt bar is built."
+    },
+    {
+      "va": "0x000A67C2",
+      "kind": "mark",
+      "name": "xl_back",
+      "note": "(NTSC-U 0x000A6472) After the online page reads B, before it opens sign-out confirmation: take the confirmation's Yes path directly, without constructing a modal."
+    },
+    {
+      "va": "0x000783BD",
+      "kind": "mark",
+      "name": "xl_notice",
+      "note": "(NTSC-U 0x0007818D) sub_00078160 (the main menu's A; edi the page), after `mov [edi + 4], eax` (eax the line; the flags of `cmp eax, 3` are still held), before `cmp byte [0x57C6E5], 0`: on the XBOX LIVE line the notice-shown byte is set as the notice's own branch sets it, so the title takes its own second-visit exit (0x7843F, the same writes the notice's close makes in sub_00078300) and the Xbox Live notice (string slot 0xA0A or 0xA0B by the 50/60 Hz byte, 60 Hz / 50 Hz players cannot be joined) never opens. src/game/xboxlive.c xl_notice."
+    },
+    {
+      "va": "0x000A65EB",
+      "kind": "mark",
+      "name": "xl_items",
+      "note": "(NTSC-U 0x000A629B) sub_000A6140 (the Xbox Live page's set-up; page object 0x55DF50), the `mov edx, [0x56ED94]` right before the list widget's call (sub_000F0EA0, 0xA62C0) with its arguments about to be pushed: eax the pair (page + 4, the cursor and the count, 6, or 5 when MEM8(0x57C390) == 0) and ecx the items (page + 8, six of 8 bytes: label pointer, two flag bytes, two spare). The page has no room for more lines, so the mark copies the title's items into a block of our own, adds CREATE GAME and JOIN WITH CODE after them, makes the count eight and replaces ecx with the block, which the widget is then pushed. src/game/xboxlive.c, BO-352."
+    },
+    {
+      "va": "0x0006EB2E",
+      "kind": "mark",
+      "name": "xl_select",
+      "note": "(NTSC-U 0x0006E98E) sub_0006E950 (the Xbox Live page's input, the 'select' event), the `movzx eax, word ptr [0x55DF54]` that reads the cursor: the mark is before the read, so the cursor can still be changed in the page's pair (0x55DF54). With the cursor on CREATE GAME or JOIN WITH CODE the online navigator starts with that intent, and the pair is set to 6 so the title's own switch (whose cursor-5 case is the hidden 'sign out') is a no-op (src/game/xboxlive.c, BO-352)."
+    },
+    {
+      "va": "0x000AA833",
+      "kind": "mark",
+      "name": "qp_tick",
+      "note": "(NTSC-U 0x000AA4E3) sub_000AA4D0, the Quick Match page's tick (page object 0x5628E0), right after `mov ebx, ecx` at its start: ebx is the page. QUICK PLAY (src/game/quickplay.c, Takedawn Online step 3) reads the page's state byte (+0x1942), its results-ready flag (+0x1940) and the count of results it kept (+0x1920); when the search came back with none it does what the page's own A branch of NO GAMES FOUND does, without that screen: the room list request (sub_001BC090) and state 8."
+    },
+    {
+      "va": "0x000D4A54",
+      "kind": "mark",
+      "name": "xl_bar",
+      "note": "(NTSC-U 0x000D4704) sub_000D4700 (the front end's prompt bar, object 0x550CB0), right after `mov eax, [esp+8]` loaded the flags: eax the flags, [esp+4] the object. On the online path's pages (Quick Match, lobby select, room, create pages; src/game/xboxlive.c) the Friends bit 0x40 is cleared, as xl_prompt does on the online page. Takedawn Online step 3b."
+    },
+    {
+      "va": "0x0006DC99",
+      "kind": "mark",
+      "name": "xl_leave",
+      "note": "(NTSC-U 0x0006DAF9) sub_0006DAC0's leave case (the lobby state's way back to the room), right after `push 0xF8535FC2` (the target hash's low word, the top of the stack for sub_000146E0): src/game/xboxlive.c turns it into the online page's hash (F8512871, same high word) when the game lobby screen is in its 'leaving' state 0x0A (B, Yes). Takedawn Online step 3b."
+    },
+    {
+      "va": "0x0006DFD1",
+      "kind": "mark",
+      "name": "xl_gone",
+      "note": "(NTSC-U 0x0006DE31) sub_0006DE20, the lobby's way back to the room once its message box is answered (the host has gone: \"This game session is no longer available\"), right after `push 0xF8535FC2` (the target hash's low word, the top of the stack for sub_000146E0): src/game/xboxlive.c turns it into the online page's hash, as xl_leave does for a player who left. BO-356."
+    },
+    {
+      "va": "0x000A64EF",
+      "kind": "mark",
+      "name": "xl_head",
+      "note": "(NTSC-U 0x000A619F) sub_000A6140 (the Xbox Live page's set-up), right after `push edx` pushed the page title's text for the title widget's setter (sub_000C9240, ecx 0x5509C8): [esp] is the text. While the page is built as JOIN WITH CODE's code entry the page is titled JOIN WITH CODE (a string of ours). The build's first point: a build the title makes itself (the player came back to the page) is the four lines, or the code entry again when a join by code came back without a game. src/game/xboxlive.c, Takedawn Online step 5."
+    },
+    {
+      "va": "0x000A6615",
+      "kind": "mark",
+      "name": "xl_desc",
+      "note": "(NTSC-U 0x000A62C5) sub_000A6140 (the Xbox Live page's set-up), right after the list widget's call (sub_000F0EA0) returned: the page gets the title's description line under the list (the widget 0x550C38, set up with sub_000CA090 as the main menu and the Quick Match page do: eax the widget, ebx the descriptions, the pair and a flag on the stack, xmm0 [0x3B17E4]; a widget left up is released first with sub_000CAD90, the title's way), with our texts: the server's counts and what the line does, or the code entry's hint and message. src/game/xboxlive.c and onlinedesc.c, Takedawn Online step 5."
+    },
+    {
+      "va": "0x0006D3EE",
+      "kind": "mark",
+      "name": "cr_step",
+      "note": "(NTSC-U 0x0006D23E) sub_0006D100 (the create state), its Back case, right after `mov eax, [ecx+0x18]` (the page step): with CREATE GAME straight from the online page there is no name page to go back to, so step 1 (the mode page) takes the branch step 0 takes: eax is rewritten (quickplay.c cr_step)."
+    },
+    {
+      "va": "0x0006D404",
+      "kind": "mark",
+      "name": "cr_back",
+      "note": "(NTSC-U 0x0006D254) sub_0006D100, the Back case's way out, right after `push 0xF8535FC2` (the target hash's low word, the top of the stack): a game that CREATE GAME started from the online page goes back there, through the same transition (xboxlive.c xl_cr_back)."
+    },
+    {
+      "va": "0x000B36A2",
+      "kind": "mark",
+      "name": "nd_list",
+      "note": "(NTSC-U 0x000B34A2) sub_000B3340 (SELECT GAMERTAG's list, built again after a sign-in error), after `mov byte [esi+0x188], 0` (the second fixed row's flag), before the list widget (sub_000E2D80): the gamertags move up into rows 0.., the row count and the cursor with them, so CREATE NEW ACCOUNT and MANAGE ACCOUNTS (the Xbox Dashboard's account pages) are not listed. src/game/nodash.c."
+    },
+    {
+      "va": "0x000B37D4",
+      "kind": "mark",
+      "name": "nd_list",
+      "note": "(NTSC-U 0x000B35D4) sub_000B34F0 (SELECT GAMERTAG's tick, its list built when the gamertags changed), after `mov byte [ebp+0x188], 0`, before the list widget: as at 0xB34A2. src/game/nodash.c."
+    },
+    {
+      "va": "0x000B38DC",
+      "kind": "mark",
+      "name": "nd_pick",
+      "note": "(NTSC-U 0x000B36DC) sub_000B34F0, SELECT GAMERTAG's A, after `mov ax, [ebp+0x2CC]` (the cursor): with the account rows not listed the cursor counts from the first gamertag; two are added (ax and the page) so the title's row test, gamertag name and index read the gamertag the player sees. src/game/nodash.c."
+    },
+    {
+      "va": "0x000B47A6",
+      "kind": "mark",
+      "name": "nd_answer",
+      "note": "(NTSC-U 0x000B45A6) sub_000B4590, after `call sub_000CD2A0` (the answer to \"Continuing to the Xbox Dashboard ...\"): YES (4) is taken as NO (5), the title's way back to its page, since YES is XLaunchNewImage (sub_001CFF88) and there is no dashboard. src/game/nodash.c."
+    },
+    {
+      "va": "0x000B538C",
+      "kind": "mark",
+      "name": "nd_signin",
+      "note": "(NTSC-U 0x000B518C) sub_000B50C0 (the sign-in error state, flow +0x948), the box's A, after the flag writes before `cmp eax, -0xC`: eax -0xC, so an error the title does not know takes the known errors' way (0xB50F2, flow +0x260) instead of XLaunchNewImage (network settings). src/game/nodash.c."
+    },
+    {
+      "va": "0x00070E76",
+      "kind": "mark",
+      "name": "nd_mu",
+      "note": "(NTSC-U 0x00070CD6) sub_00070CB0 (the memory unit check at boot, flow +0x4F0), after `call sub_000D1660` (the answer): in step 4 (go to the Xbox Dashboard) YES (0) is taken as the other answer (1, back to step 3). src/game/nodash.c."
     }
   ]
 }

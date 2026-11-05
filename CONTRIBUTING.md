@@ -1,6 +1,6 @@
 # Contributing to Takedawn
 
-Thank you for looking. This page says how to report a bug, where a fix
+This page says how to report a bug, where a fix
 belongs, what must never be committed and where code may come from.
 
 ## Reporting a bug
@@ -59,8 +59,8 @@ Before you open a pull request:
   [docs/testing.md](docs/testing.md) lists them, with the scratch profile to
   use, the game's built-in AI driver for unattended races and the other test
   tools;
-- say what you did not check. An honest "not tested on Windows" is more
-  useful than silence.
+- say what you did not check. "Not tested on Windows" is a useful thing to
+  write.
 
 ## Rules for what lands
 
@@ -70,7 +70,7 @@ Before you open a pull request:
   caches. All of these contain the game.
 - Screenshots and recordings belong in the issue or the pull request. The
   only pictures in the repository are the README's, in `docs/screenshots/`:
-  frames of the port running, taken by us. No logos, box art, title-screen
+  frames of the port running, taken by me. No logos, box art, title-screen
   art or files taken from the game.
 - Do not edit generated C by hand. If it is wrong, fix the recompiler or the
   data in `config/`.
@@ -101,8 +101,8 @@ compatible with MIT: MIT, BSD, zlib, Apache-2.0 or public domain.
   to understand how the hardware behaves is fine. Carrying its code or its
   structure across is not. If you saw a fix elsewhere, describe the bug and it
   can be written fresh.
-- Do not copy from a project that has no licence file. No licence means no
-  permission.
+- Do not copy from a project that has no licence file, since no licence means
+  no permission.
 - If something came from elsewhere, say so in the pull request with a link,
   keep any copyright header, and add the component to
   [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

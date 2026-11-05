@@ -4,11 +4,53 @@ The toolkit's side (the strategies, the overlay graph, the traces) is in the
 toolkit's `docs/runtime/present-timing.md`. This page has what was measured
 with this game and how to measure it again.
 
-Setting: `display.present_timing = legacy | auto` (F1 > Display > Frame
-presentation; `RECOMP_PRESENT_TIMING`). The default on macOS is `auto` since
-0.2.1 (BO-239); before, it was `legacy`. A stored setting still wins, so a
-player who picked `legacy` keeps it. Windows, Linux and Android have no
-such setting in effect (their presenters do not read it).
+Setting: `display.present_timing = legacy | auto | aimed` (F1 > Display >
+Frame presentation; `RECOMP_PRESENT_TIMING`). The default on macOS is `auto`.
+Since BO-236 (0.3) `auto` on macOS 14 and later presents from a display link
+(below); on macOS 13 it is `aimed`, which was `auto` in 0.2.1 (BO-239). A
+`legacy` stored by 0.2.x moves to `auto` once on macOS 14 and later (it was
+mostly the #42 workaround; chosen again afterwards, it stays). Windows, Linux
+and Android have no such setting in effect (their presenters do not read it).
+
+## The display link (BO-236, 0.3)
+
+GitHub #42 covered two problems. With `legacy` (two drawables) in fullscreen, macOS
+gave a drawable back only once the next frame was on the glass, so two
+drawables held the window to every other refresh: 30 fps on the reporter's
+60 Hz external LG, and about 96 of 120 pictures on a second reporter's
+ProMotion MacBook Pro with High refresh on (his `legacy` was stored; so was
+mine). With `aimed`, a quarter of the frames handed over with a time
+showed a refresh late on the LG in fullscreen, whatever the time, and the
+skip rule turned each into a drop.
+
+`auto` now runs a `CAMetalDisplayLink`: each refresh it names gets the newest
+finished frame in its own drawable, presented plainly; the title's vblank,
+and the High refresh grid, sit 4 ms before each refresh's commit deadline.
+`legacy` gets a third drawable in fullscreen, above 60 Hz and on a variable
+display. How it works and its knobs: the toolkit's
+`docs/runtime/present-timing.md`.
+
+Measured on my Mac (MacBook Air M5, macOS 26.7.1) with the PG32UCDP
+at 4K "looks like 1920x1080", 120 Hz fixed, the release's out-of-box settings
+(16:9, render scale 3, SMAA, linear filter), 2026-10-30:
+
+| Case | On-glass intervals | Vblank to glass p50 | Press to glass p50 / p95 |
+|---|---|---|---|
+| menus, fullscreen (link at 60) | 1515 of 1515 at 2 refreshes, 0.00 % uneven | 20.7 ms, flat | |
+| menus, window (link at 60) | 0.81 % uneven | 20.7 ms | |
+| race, High refresh 120, fullscreen | 4602 of 4702 at 1 refresh, the rest the title's 60 fps; 0.04 % uneven, 0 skipped | 20.7 ms, flat | 41.2 / 49.1 ms (pause menu, 59 presses) |
+
+Press to glass is at the Xerenge estimate (about 41 ms) and under the console
+model (48 mid-screen). At 120 Hz the link shows a frame two refreshes after
+its commit deadline (16.67 ms), so it is a few ms later than `aimed`'s target
+there; I chose the link as the default at 120 Hz anyway (2026-10-30).
+At 60 Hz the link is 1 ms earlier than `aimed` (20.7 against 21.7 ms).
+
+A boot on the PG32UCDP switched to 59.94 Hz crashed in D3D's init (SIGBUS at
+the NV2A registers): on macOS only the guest's RAM was reserved before the
+Metal window's surfaces were made, and one of them sat where the register
+apertures go. The toolkit now reserves the whole 4 GB guest window first, as
+on Linux (BO-236).
 
 ## Why `auto` is the macOS default (GitHub #42, BO-239)
 
@@ -93,7 +135,7 @@ What holds in every run:
 
 Two things `auto` does worse:
 
-- **It drops frames where `legacy` queues them.** When a frame misses its
+- It drops frames where `legacy` queues them. When a frame misses its
   refresh (the compositor missed one, or the frame was picked up late),
   `auto` skips one frame to get back in step; `legacy` shows every frame and
   keeps the added frame of latency. In Maximum (busy-wait) that was 17 frames
@@ -102,7 +144,7 @@ Two things `auto` does worse:
   come from the 5 ms phase being too short for a present pass that competes
   with two spinning cores (`RECOMP_PRESENT_PHASE=8` would cost 3 ms of
   latency) has not been measured.
-- **When the machine cannot hold 60 fps it is clearly worse.** Maximum in
+- When the machine cannot hold 60 fps it is clearly worse. Maximum in
   fullscreen did not hold 60 in either mode on this shared machine (`legacy`:
   153 of 869 frames at 33 ms, shown evenly). The `auto` run there skipped 124
   frames of 913 and picked 237 up too late for their refresh (32% of the
@@ -112,7 +154,7 @@ Two things `auto` does worse:
 In a window a frame cannot be shown at the refresh right after its vblank:
 with the vblank 10 ms before a refresh and the frame committed 0.3 ms after
 the vblank, it was still shown one refresh later (the pacer raised its depth
-from 0 to 1 by itself). 
+from 0 to 1 by itself).
 
 ## Not measured yet
 
@@ -121,13 +163,11 @@ from 0 to 1 by itself).
   (`RECOMP_PRESENT_DEPTH=0`, where the compositor may be bypassed); the phase
   at 5 against 8 ms in Maximum.
 
-- The 120 Hz monitor (PG32UCDP), fixed and with VRR on, windowed and
-  fullscreen: the owner's A/B (`play-glass.sh legacy|new [fullscreen]` in the
-  session's scratch folder) writes the traces and prints these numbers.
-  Expected at fixed 120 Hz: 13.3 ms from vblank to glass, every frame two
-  refreshes.
-- The variable-refresh strategy itself (`timed`), on any display.
-- A ProMotion built-in panel.
+- The display link on a variable-refresh display and on a ProMotion panel
+  (the #42 reporters' test build), on the built-in panel, and at 60 Hz on
+  the PG32UCDP after the guest-window fix.
+- `aimed` at 120 Hz on the PG32UCDP (I dropped it: the link is the
+  default there).
 - Vulkan on any host (Linux, Windows, Android, MoltenVK): presentation there
   is unchanged and the overlay says "not available". A measurement from
   `VK_KHR_present_wait` is on the toolkit branch `bo3/glass-vulkan`; it has

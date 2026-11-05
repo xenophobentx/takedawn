@@ -480,6 +480,81 @@ static void test_esc(void)
     }
 }
 
+/* The gate (GitHub #52, #111). A title frame in play, with one thing changed. */
+static bo3_ctl_title in_play(void)
+{
+    bo3_ctl_title t;
+
+    memset(&t, 0, sizeof t);
+    t.paused_by = 0xFFFFFFFFu;
+    t.state = 4;                /* the chase camera */
+    t.phase = 2;
+    return t;
+}
+
+static void test_gate(void)
+{
+    bo3_ctl_title t = in_play();
+
+    CHECK(bo3_ctl_driving(&t), "in play");
+
+    /* The results byte left by an earlier event: the next one still drives. */
+    t = in_play();
+    t.results = 1;
+    CHECK(bo3_ctl_driving(&t), "stale results byte, in play");
+    t.state = 0x40;
+    CHECK(bo3_ctl_driving(&t), "stale results byte, crash camera");
+    t = in_play();
+    t.results = 1;
+    t.phase = 1;
+    t.countdown = 0x40900000u;  /* 4.5 s */
+    CHECK(bo3_ctl_driving(&t), "stale results byte, the countdown");
+
+    /* The results of this event: a menu, also with the phase set back. */
+    t = in_play();
+    t.state = BO3_CTL_STATE_RESULTS;
+    t.results = 1;
+    CHECK(!bo3_ctl_driving(&t), "results up, phase 2");
+    t.phase = 0;
+    t.countdown = 0x40400000u;
+    CHECK(!bo3_ctl_driving(&t), "results up, phase set back for a retry");
+    t = in_play();
+    t.state = BO3_CTL_STATE_RESULTS;
+    t.phase = 3;
+    CHECK(!bo3_ctl_driving(&t), "results camera on its way, phase 3");
+
+    t = in_play();
+    t.state = 0x100;            /* the replay behind the results */
+    t.results = 1;
+    t.no_pause = 1;
+    CHECK(!bo3_ctl_driving(&t), "the replay, phase 2");
+
+    /* The other words. */
+    t = in_play(); t.paused_by = 0;
+    CHECK(!bo3_ctl_driving(&t), "paused");
+    t = in_play(); t.module_step = 6;
+    CHECK(!bo3_ctl_driving(&t), "leaving the module");
+    t = in_play(); t.no_pause = 1;
+    CHECK(!bo3_ctl_driving(&t), "no pause");
+    /* An online race's pause menu: nobody is paused, the race goes on, and
+     * the menu takes A and the d-pad (the PS2 layout and the touch race
+     * layout must be off). Closing it gives the car back. */
+    t = in_play(); t.online_menu = 1;
+    CHECK(!bo3_ctl_driving(&t), "online pause menu, paused_by -1");
+    t.phase = 1; t.countdown = 0x40400000u;
+    CHECK(!bo3_ctl_driving(&t), "online pause menu over the countdown");
+    t = in_play(); t.online_menu = 0;
+    CHECK(bo3_ctl_driving(&t), "online pause menu closed");
+    t = in_play(); t.intro = 1;
+    CHECK(!bo3_ctl_driving(&t), "fly-by or captions");
+    t = in_play(); t.phase = 3;
+    CHECK(!bo3_ctl_driving(&t), "finished");
+    t = in_play(); t.phase = 1; t.countdown = 0xBF800000u;
+    CHECK(!bo3_ctl_driving(&t), "before the countdown, -1");
+    t = in_play(); t.phase = 1; t.countdown = 0;
+    CHECK(!bo3_ctl_driving(&t), "before the countdown, 0");
+}
+
 int main(void)
 {
     test_table();
@@ -487,6 +562,7 @@ int main(void)
     test_handover();
     test_chain();
     test_esc();
+    test_gate();
     printf("bo3_controls: %d checks, %d failed\n", g_checks, g_fail);
     return g_fail ? 1 : 0;
 }

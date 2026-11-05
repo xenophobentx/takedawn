@@ -166,7 +166,7 @@ public class ReportActivity extends Activity {
             Os.setenv("RECOMP_RENDER_SHADER_CACHE", new File(getFilesDir(), "graphics").getAbsolutePath(), true);   // BO-208
             Os.setenv("RECOMP_ANDROID_LIB_DIR", getApplicationInfo().nativeLibraryDir, true);
             System.loadLibrary("SDL2");
-            System.loadLibrary("main");
+            System.loadLibrary(StartActivity.library(this));
             return nativeBugReport(note(page));
         } catch (Throwable e) {
             Log.e(GameActivity.TAG, "bug report: " + e);

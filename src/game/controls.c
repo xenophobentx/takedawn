@@ -34,9 +34,15 @@
 #include "input_map.h"
 #include "keyboard.h"
 #include "touch_pad.h"                 /* the on-screen controls (BO-189) */
+#include "react.h"                    /* the quick reactions (BO-352) */
+#include "onlinenav.h"                 /* the player's online navigator (BO-352) */
+#include "onlinebrand.h"               /* replace the loaded service names before menus build */
+#include "headfont.h"                  /* the heading font's W, the TAKEDAWN ONLINE heading */
+#include "xboxlive.h"                  /* the Xbox Live menu's code picker (BO-352) */
 #include "platform/recomp_env.h"
 #include "platform/recomp_patch.h"
 #include "recomp_types.h"
+#include "race_module.h"
 
 extern RECOMP_TLS uint32_t g_ebx, g_esi;
 extern ptrdiff_t g_xbox_mem_offset;
@@ -45,63 +51,53 @@ extern ptrdiff_t g_xbox_mem_offset;
 #define M32(va) (*(uint32_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 
 /* The title's state (docs/controls.md has the evidence for each). */
-#define CTL_PADS        BO3_VA(0x004AE20Cu, 0x004AE52Cu)     /* the pad manager's four records */
-#define CTL_MODULE      BO3_VA(0x004D5370u, 0x004D5690u)     /* the current module ([app + 0x2E1D0], app 0x4A71A0) */
-#define CTL_VT_GAME     BO3_VA(0x003A9ACCu, 0x003AA078u)     /* the game module's vtable (the front end's: 0x3A9E7C) */
-#define CTL_VT_GAME2    BO3_VA(0x003A939Cu, 0x003A9BDCu)     /* the two-player stage's (docs/split-screen.md) */
-#define CTL_PAUSED_BY   BO3_VA(0x004D537Cu, 0x004D569Cu)     /* the player who paused, -1 while not paused */
-#define CTL_MODULE_STEP BO3_VA(0x004D53B4u, 0x004D56D4u)     /* the module switch: 4 and 5 coming up, 6 leaving */
-#define CTL_P1          BO3_VA(0x004D0738u, 0x004D0A58u)     /* player 1's race record; player 2's is CTL_P_SIZE on */
+#define CTL_PADS        BO3_VA(0x004AE20Cu, 0x004AE52Cu, 0x004AE5CCu)     /* the pad manager's four records */
+#define CTL_MODULE      BO3_VA(0x004D5370u, 0x004D5690u, 0x004D5730u)     /* the current module ([app + 0x2E1D0], app 0x4A71A0) */
+#define CTL_PAUSED_BY   BO3_VA(0x004D537Cu, 0x004D569Cu, 0x004D573Cu)     /* the player who paused, -1 while not paused */
+#define CTL_MODULE_STEP BO3_VA(0x004D53B4u, 0x004D56D4u, 0x004D5774u)     /* the module switch: 4 and 5 coming up, 6 leaving */
+#define CTL_P1          BO3_VA(0x004D0738u, 0x004D0A58u, 0x004D0AF8u)     /* player 1's race record; player 2's is CTL_P_SIZE on */
 #define CTL_P_SIZE      0x0C50u
-#define CTL_P_RESULTS   0x00u           /* byte: the event is over for the player, results up */
-#define CTL_P_STATE     0x08u           /* the camera: 4 chase, 0x40 crash, 0x400 fly-by (logged only) */
+#define CTL_P_RESULTS   0x00u           /* byte: the results camera has reached its end; stale when that camera is not running */
+#define CTL_P_STATE     0x08u           /* the camera: 4 chase, 0x40 crash, 0x400 fly-by, 0x2000 results */
 #define CTL_P_INTRO     0x2Fu           /* byte: a crash event's fly-by or captions are up */
-#define CTL_PHASE       BO3_VA(0x0073B51Cu, 0x0073B82Cu)     /* player 1's event: 1 before the GO, 2 in play, 3 finished */
+#define CTL_PHASE       BO3_VA(0x0073B51Cu, 0x0073B82Cu, 0x0073B8CCu)     /* player 1's event: 1 before the GO, 2 in play, 3 finished */
 #define CTL_E_SIZE      0x27E0u         /* the event records of player 1 and 2 are this far apart */
-#define CTL_COUNTDOWN   BO3_VA(0x0073B520u, 0x0073B830u)     /* float: 0, then -1, until the countdown begins; then its length */
-#define CTL_NO_PAUSE    BO3_VA(0x00752D33u, 0x00753043u)     /* byte: the title takes no pause now */
+#define CTL_COUNTDOWN   BO3_VA(0x0073B520u, 0x0073B830u, 0x0073B8D0u)     /* float: 0, then -1, until the countdown begins; then its length */
+#define CTL_NO_PAUSE    BO3_VA(0x00752D33u, 0x00753043u, 0x007530E3u)     /* byte: the title takes no pause now */
+#define CTL_ONLINE_MENU BO3_VA(0x004AED88u, 0x004AF0A8u, 0x004AF148u)     /* byte: an online race's pause menu is up */
 
 static bo3_ctl_port s_port[4];
 static int s_scripted_too;              /* BO3_CTL_SCRIPTED */
 static FILE *s_log;                     /* BO3_CTL_LOG */
 static uint32_t (*s_flips)(void);
 
-/* The title is taking driving input now.
- *
- * The game module runs and is not being left, nobody has paused, and the
- * player's event is in play: phase 2 (from the GO to the finish, crashes
- * included: the impact time, the aftertouch and the crashbreaker are driving
- * controls), or the countdown before it (the boost start is on the
- * accelerator): phase 0 or 1 with the countdown's length set. Not before: a
- * crash event's fly-by and captions take A to go on. Not after: phase 3 is
- * the finish, and the results byte stays up while the title sets the phase
- * back for a retry. CTL_NO_PAUSE is the title's own "Start does not pause
- * now" (the stage update tests it beside the paused player, sub_00026050 at
- * 0x26609): set over the results. */
+/* The title is taking driving input now, for this player (bo3_ctl_driving
+ * has the rule). */
 static int ctl_driving_for(unsigned player)
 {
-    uint32_t mod = M32(CTL_MODULE), phase, cd, vt;
+    uint32_t mod = M32(CTL_MODULE), rec;
+    bo3_ctl_title t;
 
-    if (mod < 0x10000u || mod >= 0x04000000u)
-        return 0;
-    vt = M32(mod);
-    if (vt != CTL_VT_GAME && vt != CTL_VT_GAME2)
+    if (mod < 0x10000u || mod >= 0x04000000u || !bo3_race_module_vt(M32(mod)))
         return 0;
     /* One pad at a time plays the one-player stage (and Party Crash, which
      * passes it on): the first player's records whichever port it is on. Only
      * the two-player stage has a second player with a pad of their own. */
-    if (vt == CTL_VT_GAME)
+    if (M32(mod) != BO3_VT_GAME_2P)
         player = 0;
+    rec = CTL_P1 + player * CTL_P_SIZE;
     /* Quitting from the pause menu clears the paused player a second before
      * the module changes: the module is on its way out then. */
-    if (M32(CTL_PAUSED_BY) != 0xFFFFFFFFu || M32(CTL_MODULE_STEP) == 6 || M8(CTL_NO_PAUSE))
-        return 0;
-    if (M8(CTL_P1 + player * CTL_P_SIZE + CTL_P_INTRO)
-     || M8(CTL_P1 + player * CTL_P_SIZE + CTL_P_RESULTS))
-        return 0;
-    phase = M32(CTL_PHASE + player * CTL_E_SIZE);
-    cd = M32(CTL_COUNTDOWN + player * CTL_E_SIZE);
-    return phase == 2 || (phase < 2 && cd != 0xBF800000u && cd != 0);
+    t.paused_by = M32(CTL_PAUSED_BY);
+    t.module_step = M32(CTL_MODULE_STEP);
+    t.no_pause = M8(CTL_NO_PAUSE);
+    t.online_menu = M8(CTL_ONLINE_MENU);
+    t.intro = M8(rec + CTL_P_INTRO);
+    t.results = M8(rec + CTL_P_RESULTS);
+    t.state = M32(rec + CTL_P_STATE);
+    t.phase = M32(CTL_PHASE + player * CTL_E_SIZE);
+    t.countdown = M32(CTL_COUNTDOWN + player * CTL_E_SIZE);
+    return bo3_ctl_driving(&t);
 }
 
 /* Player 1's event: what the menus, the touch controls and Esc go by. */
@@ -117,14 +113,15 @@ static int ctl_driving(void)
 static void ctl_log_frame(void)
 {
     static const struct { uint32_t va; const char *name; } w[] = {
-        { CTL_MODULE, "module" }, { BO3_VA(0x004D536Cu, 0x004D568Cu), "time_stopped" }, { CTL_PAUSED_BY, "paused_by" },
-        { BO3_VA(0x004D538Cu, 0x004D56ACu), "4D538C" }, { BO3_VA(0x004D5390u, 0x004D56B0u), "4D5390" }, { CTL_MODULE_STEP, "module_step" },
+        { CTL_MODULE, "module" }, { BO3_VA(0x004D536Cu, 0x004D568Cu, 0x004D572Cu), "time_stopped" }, { CTL_PAUSED_BY, "paused_by" },
+        { BO3_VA(0x004D538Cu, 0x004D56ACu, 0x004D574Cu), "4D538C" }, { BO3_VA(0x004D5390u, 0x004D56B0u, 0x004D5750u), "4D5390" }, { CTL_MODULE_STEP, "module_step" },
         { CTL_P1 + CTL_P_RESULTS, "p1_results" }, { CTL_P1 + CTL_P_STATE, "p1_state" },
         { CTL_P1 + 0x2Cu, "p1_intro_word" }, { CTL_PHASE, "p1_phase" },
-        { CTL_COUNTDOWN, "p1_countdown" }, { BO3_VA(0x00752D30u, 0x00753040u), "752D30" },
+        { CTL_COUNTDOWN, "p1_countdown" }, { BO3_VA(0x00752D30u, 0x00753040u, 0x007530E0u), "752D30" },
         { CTL_PHASE + CTL_E_SIZE, "p2_phase" }, { CTL_COUNTDOWN + CTL_E_SIZE, "p2_countdown" },
         { CTL_P1 + CTL_P_SIZE + CTL_P_RESULTS, "p2_results" },
         { CTL_P1 + CTL_P_SIZE + 0x2Cu, "p2_intro_word" },
+        { CTL_ONLINE_MENU, "online_menu" },
     };
     enum { N = sizeof w / sizeof w[0] };
     static uint32_t last[N + 1];
@@ -164,6 +161,10 @@ static void ctl_pad(void)
 
     if (!g_xbox_mem_offset || port > 3u || rec != CTL_PADS + port * 0x20u)
         return;
+    if (port == 0) {
+        bo3_onlinebrand_apply();
+        bo3_headfont_apply();
+    }
     if (s_log && port == 0)
         ctl_log_frame();
     if (M32(rec) != 2 || !M32(rec + 4))         /* no pad open on this port */
@@ -175,7 +176,7 @@ static void ctl_pad(void)
     usb = (int)port - 2;
     if (usb == 0) {
         int esc = (xbox_InputSources(0) & XBOX_INPUT_SRC_KEYS)
-               && xbox_FramebufferKeyDown(XBOX_VK_ESCAPE)
+               && xbox_InputKeyActionHeld(XBOX_KEYACT_BACK)     /* Esc, or the key it was moved to */
                && (g->wButtons & XBOX_GAMEPAD_BACK);
         int was = s_port[port].esc_start;
 
@@ -184,7 +185,18 @@ static void ctl_pad(void)
             fprintf(s_log, "E %u Esc %s\n", s_flips ? s_flips() : 0,
                     s_port[port].esc_start ? "is Start" : "released");
     }
+    /* BO-352: a quick reaction on the menu pad (the title's port 2) */
+    if (usb == 0)
+        bo3_react_pad(g);
     scheme = xbox_InputControlScheme();
+    /* BO-352: the online navigator writes its press into the menu player's
+     * pad (the title's port 2) and clears every other button except B, so
+     * the player's own presses do not mix in and B still cancels. Nothing
+     * unless a navigator is running. */
+    bo3_onlinenav_pad(port, g);
+    /* BO-352: the Xbox Live code picker's left/right (xboxlive.c). Nothing
+     * unless the picker is up. */
+    bo3_xboxlive_pad(port, g);
     if (!scheme && !s_port[port].ps2 && !s_port[port].latch && !s_log && !s_scripted_too)
         return;                                 /* the Xbox layout: nothing to do */
 

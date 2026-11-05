@@ -1,7 +1,7 @@
 /*
  * hirefresh.c - pictures between the simulation's steps.
  *
- * graphics.high_refresh (overlay Graphics page, "High refresh rate";
+ * graphics.high_refresh (overlay Display page, "High refresh rate";
  * RECOMP_GFX_HIGH_REFRESH): frames at the display's refresh rate, the
  * simulation at its own 60 steps a second. Active while the game is in its
  * running state (the game object's state, 0x4D53B4, is 5: the front end,
@@ -17,7 +17,7 @@
  * xbox_DisplayRate: its measured refresh, else the display mode's), or
  * RECOMP_FLIP_PACING=host:<Hz> for a run without a display; the toolkit
  * holds each flip to a host grid at it, on the display's refreshes
- * (xbox_FlipHostRate, flip_grid.h). Nine wraps (recomp/recomp_manual.c).
+ * (xbox_FlipHostRate, flip_grid.h). Thirteen wraps (recomp/recomp_manual.c).
  *
  * 1. The steps of a frame. CB3Game::Update (sub_000165F0) runs the steps
  *    in the word at 0x4D53AC (game object 0x4A71A0 + 0x2E20C), which the
@@ -86,8 +86,10 @@
  *    (the BO-275 audit), each put to once a step: the game's random
  *    generator (game + 0x2AE38, 0x4D1FD8) and the profile's time played
  *    (*(0x3C838C) + 0x18), both at the top of CB3Game::Update (bo3_update);
- *    the race audio manager sub_0013EF40 (bo3_race_audio); the effects
- *    clock at 0x5A9A00 that the race-end flash runs on (bo3_fx_clock).
+ *    the race audio manager sub_0013EF40 (bo3_race_audio) and with it the
+ *    audio world's update sub_001CA530 (bo3_audio_world: the two hand the
+ *    streamed sounds over to each other, BO-297); the effects clock at
+ *    0x5A9A00 that the race-end flash runs on (bo3_fx_clock).
  *
  * Not blended: what is not on a frame (particles, skid marks, the
  * deformed car body's vertices), which moves once a step.
@@ -107,23 +109,24 @@
 #endif
 
 #include "recomp_types.h"
+#include "race_module.h"
 #include "platform/recomp_env.h"
 #include "kernel/kernel_pacing.h"
 #include "platform/host_time.h"
 #include "region.h"
 
 #define STEP_S       (1.0 / 60.0)
-#define TIMER        BO3_VA(0x4D5338u, 0x4D5658u)     /* the stepper's timer object */
-#define FRAME_STEPS  BO3_VA(0x4D53ACu, 0x4D56CCu)     /* steps this frame's Update runs */
-#define HALF_ASKED   BO3_VA(0x4D538Du, 0x4D56ADu)     /* the half rate asked for */
-#define HALF_RATE    BO3_VA(0x4D538Eu, 0x4D56AEu)     /* the half rate in force */
-#define PLAYERS      BO3_VA(0x73A1C0u, 0x73A4D0u)     /* players at once: 2 in split screen */
-#define STAGE        BO3_VA(0x4D5370u, 0x4D5690u)     /* the stage; its mode object at + 0x1B8, 0 in the front end */
-#define STEP_COUNT   BO3_VA(0x4A1EB4u, 0x4A21D4u)     /* global step counter */
-#define GAME_STATE   BO3_VA(0x4D53B4u, 0x4D56D4u)     /* the game object's state, 5 running */
-#define DIRTY_HEAD   BO3_VA(0x75935Cu, 0x75967Cu)     /* RenderWare's dirty frame list */
-#define RACERS       BO3_VA(0x64B38Cu, 0x64B69Cu)     /* the racer table, 0x30 a racer */
-#define RACERS_N     BO3_VA(0x73A19Cu, 0x73A4ACu)
+#define TIMER        BO3_VA(0x4D5338u, 0x4D5658u, 0x4D56F8u)     /* the stepper's timer object */
+#define FRAME_STEPS  BO3_VA(0x4D53ACu, 0x4D56CCu, 0x4D576Cu)     /* steps this frame's Update runs */
+#define HALF_ASKED   BO3_VA(0x4D538Du, 0x4D56ADu, 0x4D574Du)     /* the half rate asked for */
+#define HALF_RATE    BO3_VA(0x4D538Eu, 0x4D56AEu, 0x4D574Eu)     /* the half rate in force */
+#define PLAYERS      BO3_VA(0x73A1C0u, 0x73A4D0u, 0x73A570u)     /* players at once: 2 in split screen */
+#define STAGE        BO3_VA(0x4D5370u, 0x4D5690u, 0x4D5730u)     /* the stage; its mode object at + 0x1B8, 0 in the front end */
+#define STEP_COUNT   BO3_VA(0x4A1EB4u, 0x4A21D4u, 0x4A2274u)     /* global step counter */
+#define GAME_STATE   BO3_VA(0x4D53B4u, 0x4D56D4u, 0x4D5774u)     /* the game object's state, 5 running */
+#define DIRTY_HEAD   BO3_VA(0x75935Cu, 0x75967Cu, 0x75971Cu)     /* RenderWare's dirty frame list */
+#define RACERS       BO3_VA(0x64B38Cu, 0x64B69Cu, 0x64B73Cu)     /* the racer table, 0x30 a racer */
+#define RACERS_N     BO3_VA(0x73A19Cu, 0x73A4ACu, 0x73A54Cu)
 #define FRAME_LTM    0x50u
 #define FRAME_CHILD  0x98u
 #define FRAME_NEXT   0x9Cu
@@ -163,6 +166,7 @@ static double   s_pic_dt;          /* the picture's time since the last, s */
 static uint32_t s_swaps;           /* the title's swaps issued (sub_00350DB0) */
 static int      s_in_update;       /* inside the title's Update (its steps, then the render) */
 static uint32_t s_upd_steps;       /* the steps this Update runs */
+static uint32_t s_updates;         /* Updates so far, active or not: a picture's number */
 
 /* What a diagnostic log says every 10 s, only when something was off: frames
  * found elsewhere within a step, and the pictures between steps whose view
@@ -172,6 +176,7 @@ static const char *const k_own[OWN_N] = { "car", "rival", "traffic", "camera", "
 static struct {
     unsigned ovr[OWN_N], owned[OWN_N];
     unsigned skips, pics, cam_off, upd[5], periods;
+    unsigned cube_drawn, cube_skipped, cube_moved;  /* the reflection cube (bo3_reflection_cube) */
     uint32_t skip_va, cam_va;
     float    skip_d;
     double   t0;
@@ -540,8 +545,8 @@ static void dbg_truth(void)
 {
     static uint32_t last = ~0u;
     FILE *f = dbg_file();
-    uint32_t cam = MEM32(BO3_VA(0x4D6200u, 0x4D6520u) + 0x58u), frame, step = MEM32(STEP_COUNT);
-    const float *c = (const float *)(uintptr_t)XBOX_PTR(BO3_VA(0x0073A1D0u, 0x0073A4E0u) + 0x10u), *m;
+    uint32_t cam = MEM32(BO3_VA(0x4D6200u, 0x4D6520u, 0x4D65C0u) + 0x58u), frame, step = MEM32(STEP_COUNT);
+    const float *c = (const float *)(uintptr_t)XBOX_PTR(BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u) + 0x10u), *m;
     if (!f || step == last || MEM32(GAME_STATE) != 5)
         return;
     last = step;
@@ -560,9 +565,9 @@ static void dbg_truth(void)
  * sub_00018650). At 60 an Update is a step. Here: an Update with no step
  * leaves both as they were (nothing else touched them in such a picture,
  * BO-275), one with n steps advances them n times. */
-#define GAME_RNG     BO3_VA(0x4D1FD8u, 0x4D22F8u)     /* game + 0x2AE38: x, then y */
-#define PLAYED_PTR   BO3_VA(0x3C838Cu, 0x3C86ACu)     /* + 0x18: the profile's time played */
-#define PLAYED_DT    BO3_VA(0x4AE1FCu, 0x4AE51Cu)     /* game + 0x705C: what it gains an Update */
+#define GAME_RNG     BO3_VA(0x4D1FD8u, 0x4D22F8u, 0x4D2398u)     /* game + 0x2AE38: x, then y */
+#define PLAYED_PTR   BO3_VA(0x3C838Cu, 0x3C86ACu, 0x3C874Cu)     /* + 0x18: the profile's time played */
+#define PLAYED_DT    BO3_VA(0x4AE1FCu, 0x4AE51Cu, 0x4AE5BCu)     /* game + 0x705C: what it gains an Update */
 static struct { uint32_t x, y, played_at; float played; int have; } s_pu;
 
 static uint32_t played_at(void)
@@ -611,12 +616,58 @@ static void per_update_after(int steps)
     s_pu.have = 0;
 }
 
+/* BO3_LOCKSTEP=1, a test switch (gate G2 of docs/research/perf-plan-fable.md,
+ * BO-282.2), off unless set and only with High refresh off: two runs of a
+ * scripted race compute the same race, so two builds can be compared by
+ * their results and saves. Without it a run is not repeatable: the menus'
+ * presses and the loads take as many pictures as the machine needs, the
+ * game's random generator (GAME_RNG above) is stepped once an Update, and a
+ * picture the host was late with runs two steps in one Update (the
+ * generator once). With it every Update runs exactly one step (the
+ * simulation is paced by the pictures, not the clock), and the generator is
+ * held at a fixed seed until player 1's race begins (the stage running,
+ * the car's phase 1, the rolling start), so the race starts from the same
+ * numbers. Nothing else is touched. */
+#define LS_CAR1      BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u)   /* player 1's CB3PlayerCar (autopilot.c) */
+#define LS_PHASE     0x134Cu       /* 1 before the GO, 2 in play, 3 finished */
+#define LS_SEED_X    0x2545F491u
+#define LS_SEED_Y    0x6C078965u
+
+static int lockstep_on(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("BO3_LOCKSTEP");
+        on = e && *e == '1';
+        if (on)
+            fprintf(stderr, "[LOCKSTEP] on: one step an Update, the random generator held until the race\n");
+    }
+    return on;
+}
+
+static void lockstep_update(void)
+{
+    static int live;
+    uint32_t mod = MEM32(STAGE), ph = MEM32(LS_CAR1 + LS_PHASE);
+    int now = mod >= 0x10000u && mod < 0x04000000u && bo3_race_module_vt(MEM32(mod)) && ph >= 1u && ph <= 3u;
+
+    MEM32(FRAME_STEPS) = 1u;
+    if (!now) {
+        MEM32(GAME_RNG) = LS_SEED_X;
+        MEM32(GAME_RNG + 4u) = LS_SEED_Y;
+    }
+    if (now != live)
+        fprintf(stderr, "[LOCKSTEP] race %s at step %u\n", now ? "begins" : "over", MEM32(STEP_COUNT));
+    live = now;
+}
+
 void bo3_update(bo3_hirefresh_fn title_fn)
 {
     uint64_t now = xbox_HostNowNs(), pic;
     double rate = wanted_rate(), dt;
     int steps, was = s_active, max = 4;
 
+    s_updates++;
     restore_blends();
     bo3_hraudit_begin();
     dbg_truth();
@@ -628,6 +679,8 @@ void bo3_update(bo3_hirefresh_fn title_fn)
     if (rate <= 0.0) {
         s_active = 0;
         s_rate = 0.0;
+        if (lockstep_on())
+            lockstep_update();
         title_fn();
         return;
     }
@@ -668,6 +721,7 @@ void bo3_update(bo3_hirefresh_fn title_fn)
     s_steps_end = MEM32(STEP_COUNT) + (uint32_t)steps;
     s_upd_steps = (uint32_t)steps;
     s_diag.upd[steps > 4 ? 4 : steps]++;
+    xbox_PictureSteps((uint32_t)steps);   /* BO-282.6/.7: the walker's per-picture view */
     s_in_update = 1;
     bo3_hraudit_picture(steps);
     per_update_before(steps);
@@ -1029,7 +1083,7 @@ static int mat_affine_inv(const float *m, float *o)
  * (BO-241). So the view matrix follows its camera's blend: V' = B^-1 M V
  * (M the camera's true LTM, B its blend: the view window part, M V, is
  * kept), put back with the blends. */
-#define VIEW_PTR     BO3_VA(0x4D6520u, 0x4D6840u)
+#define VIEW_PTR     BO3_VA(0x4D6520u, 0x4D6840u, 0x4D68E0u)
 #define VIEW_CAMERA  0x58u
 
 static void blend_view(void)
@@ -1103,7 +1157,7 @@ static int view_at_step(void)
  * (in more than a tenth of them) or frames were skipped (above). */
 static void diag_swap(void)
 {
-    uint32_t cam = MEM32(BO3_VA(0x4D6200u, 0x4D6520u) + VIEW_CAMERA), frame;
+    uint32_t cam = MEM32(BO3_VA(0x4D6200u, 0x4D6520u, 0x4D65C0u) + VIEW_CAMERA), frame;
     double now = host_s();
     rec_t *r;
 
@@ -1141,9 +1195,11 @@ static void diag_swap(void)
     if (s_diag.skips || s_diag.cam_off * 10u > s_diag.pics || ++s_diag.periods >= 6) {
         hr_log("[HIREFRESH] 10 s: Updates by steps 0/1/2/3/4+ %u/%u/%u/%u/%u; %u frames found elsewhere"
                " within a step (last %08x, %.1f units); the view's camera not blended in %u of %u"
-               " pictures between steps (frame %08x)\n",
+               " pictures between steps (frame %08x); reflection cube drawn %u, kept %u"
+               " (from another point %u)\n",
                s_diag.upd[0], s_diag.upd[1], s_diag.upd[2], s_diag.upd[3], s_diag.upd[4],
-               s_diag.skips, s_diag.skip_va, s_diag.skip_d, s_diag.cam_off, s_diag.pics, s_diag.cam_va);
+               s_diag.skips, s_diag.skip_va, s_diag.skip_d, s_diag.cam_off, s_diag.pics, s_diag.cam_va,
+               s_diag.cube_drawn, s_diag.cube_skipped, s_diag.cube_moved);
         s_diag.periods = 0;
     }
     {
@@ -1183,7 +1239,7 @@ static void poke(uint32_t step)
     if (at < 0 || s_swaps + 1u < (uint32_t)at)
         return;
     at = -1;
-    cam = MEM32(BO3_VA(0x4D6200u, 0x4D6520u) + 0x58u);
+    cam = MEM32(BO3_VA(0x4D6200u, 0x4D6520u, 0x4D65C0u) + 0x58u);
     if (cam < 0x10000u || cam >= 0x08000000u || (frame = MEM32(cam + 4u)) < 0x10000u || frame >= 0x08000000u)
         return;
     m = ltm(frame);
@@ -1298,7 +1354,7 @@ static void trace_car(uint32_t mat, const float *m)
     FILE *f = trace_file();
     double now;
 
-    if (!f || mat != BO3_VA(0x0073A1D0u, 0x0073A4E0u) + 0x10u)
+    if (!f || mat != BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u) + 0x10u)
         return;
     now = host_s();
     if (last_sw == s_swaps && last_flip_step == MEM32(STEP_COUNT))
@@ -1344,7 +1400,7 @@ static int owner_of(uint32_t mat)
     uint32_t n = MEM32(RACERS_N), i, cam;
     rec_t *r;
 
-    if (mat == BO3_VA(0x0073A1D0u, 0x0073A4E0u) + 0x10u || mat == BO3_VA(0x0073A1D0u, 0x0073A4E0u) + 0x27E0u + 0x10u)
+    if (mat == BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u) + 0x10u || mat == BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u) + 0x27E0u + 0x10u)
         return OWN_CAR;
     if (n > 8)
         n = 8;
@@ -1353,9 +1409,9 @@ static int owner_of(uint32_t mat)
         if (obj >= 0x10000u && obj < 0x08000000u && MEM32(obj + 0x204u) == mat)
             return OWN_RIVAL;
     }
-    if (mat == BO3_VA(0x4D6200u, 0x4D6520u))
+    if (mat == BO3_VA(0x4D6200u, 0x4D6520u, 0x4D65C0u))
         return OWN_VIEW;
-    cam = MEM32(BO3_VA(0x4D6200u, 0x4D6520u) + 0x58u);
+    cam = MEM32(BO3_VA(0x4D6200u, 0x4D6520u, 0x4D65C0u) + 0x58u);
     if (cam >= 0x10000u && cam < 0x08000000u && MEM32(cam + 4u) + FRAME_LTM == mat)
         return OWN_CAMERA;
     r = rec_find(mat - FRAME_LTM);
@@ -1415,7 +1471,7 @@ static int blend_matrix(uint32_t mat, uint32_t step)
             return 0;
     } else {
         capture_from(key, truth, step);
-        if (mat == BO3_VA(0x0073A1D0u, 0x0073A4E0u) + 0x10u)
+        if (mat == BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u) + 0x10u)
             s_dbg_car_why = why_not(r, g, step);
         if (!at_take(r, ours ? r->cur : g) || !blend_now(r, step, m))
             return 0;
@@ -1446,10 +1502,10 @@ static int blend_matrix(uint32_t mat, uint32_t step)
 static void dbg_swap(void)
 {
     FILE *f = dbg_file();
-    uint32_t cp = MEM32(BO3_VA(0x4D6200u, 0x4D6520u) + 0x68u);
+    uint32_t cp = MEM32(BO3_VA(0x4D6200u, 0x4D6520u, 0x4D65C0u) + 0x68u);
     if (f && MEM32(GAME_STATE) == 5 && cp >= 0x10000u && cp < 0x08000000u)
     {
-        uint32_t car = BO3_VA(0x0073A1D0u, 0x0073A4E0u), o = MEM32(car + 0x1198u);
+        uint32_t car = BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u), o = MEM32(car + 0x1198u);
         int ok = o >= 0x10000u && o < 0x08000000u;
         fprintf(f, "V %u %u %.4f %d %d %u %.3f %.3f %.3f W %u %08x %.4f %.4f %.4f %.4f %u\n", s_swaps, MEM32(STEP_COUNT), s_lag / STEP_S, s_active,
                 s_dbg_car_drawn, MEM8(car + 0x18F8u), MEMF(cp + 0x30u), MEMF(cp + 0x34u), MEMF(cp + 0x38u),
@@ -1490,7 +1546,7 @@ static void camrel_probe(uint32_t mat, uint32_t step)
 
     f = dbg_file();
     on = f != NULL;
-    if (!on || mat != BO3_VA(0x0073A1D0u, 0x0073A4E0u) + 0x10u || last_sw == s_swaps)
+    if (!on || mat != BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u) + 0x10u || last_sw == s_swaps)
         return;
     v = MEM32(VIEW_PTR);
     if (v < 0x10000u || v >= 0x08000000u)
@@ -1535,7 +1591,7 @@ static void camrel_probe(uint32_t mat, uint32_t step)
  * (sign changes, range): whether a sway is the simulation's, the picture's
  * or the player's own steering. */
 #define HIT_LAT  0.3f
-#define HIT_PAD  BO3_VA(0x004AE20Cu, 0x004AE52Cu)      /* the pad manager's records of 0x20 (state 2: open); + 22 the stick's X */
+#define HIT_PAD  BO3_VA(0x004AE20Cu, 0x004AE52Cu, 0x004AE5CCu)      /* the pad manager's records of 0x20 (state 2: open); + 22 the stick's X */
 static struct {
     uint32_t last_step, step0;
     int      have, win;
@@ -1549,7 +1605,7 @@ static struct {
 
 static void hit_update(void)
 {
-    const float *c = (const float *)(uintptr_t)XBOX_PTR(BO3_VA(0x0073A1D0u, 0x0073A4E0u) + 0x10u);
+    const float *c = (const float *)(uintptr_t)XBOX_PTR(BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u) + 0x10u);
     {
         /* BO3_HIREFRESH_WOBBLE=<s> (test aid): at that race time (car +
          * 0x10DC, the car's clock, a step's time a step) the title's
@@ -1560,9 +1616,9 @@ static void hit_update(void)
             const char *e = getenv("BO3_HIREFRESH_WOBBLE");
             at = e && *e ? (float)atof(e) : -1.0f;
         }
-        if (at > 0.0f && MEM32(GAME_STATE) == 5 && MEMF(BO3_VA(0x0073A1D0u, 0x0073A4E0u) + 0x10DCu) >= at) {
-            MEMF(BO3_VA(0x0073A1D0u, 0x0073A4E0u) + 0x1598u) = MEMF(BO3_VA(0x0073A1D0u, 0x0073A4E0u) + 0x10DCu);
-            hr_log("[HIREFRESH] wobble: started at car time %.3f\n", MEMF(BO3_VA(0x0073A1D0u, 0x0073A4E0u) + 0x10DCu));
+        if (at > 0.0f && MEM32(GAME_STATE) == 5 && MEMF(BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u) + 0x10DCu) >= at) {
+            MEMF(BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u) + 0x1598u) = MEMF(BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u) + 0x10DCu);
+            hr_log("[HIREFRESH] wobble: started at car time %.3f\n", MEMF(BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u) + 0x10DCu));
             at = -1.0f;
         }
     }
@@ -1653,7 +1709,7 @@ static void hit_picture(uint32_t mat)
     rec_t *rc, *rf;
     int cb, fb, k;
 
-    if (!s_hit.win || mat != BO3_VA(0x0073A1D0u, 0x0073A4E0u) + 0x10u || last_sw == s_swaps)
+    if (!s_hit.win || mat != BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u) + 0x10u || last_sw == s_swaps)
         return;
     last_sw = s_swaps;
     cam = MEM32(MEM32(VIEW_PTR) + VIEW_CAMERA);
@@ -1716,7 +1772,7 @@ void bo3_draw_vehicle(bo3_hirefresh_fn title_fn)
             const char *e = getenv("BO3_HIREFRESH_OVR");
             ovr = e && *e ? atoi(e) : 0;
         }
-        if (ovr && mat != BO3_VA(0x0073A1D0u, 0x0073A4E0u) + 0x10u) {
+        if (ovr && mat != BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u) + 0x10u) {
             memcpy(keep, g, sizeof keep);
             g[13] += 0.5f;
             blend_matrix(mat, step);
@@ -1731,7 +1787,7 @@ void bo3_draw_vehicle(bo3_hirefresh_fn title_fn)
     trace_car(mat, (const float *)(uintptr_t)XBOX_PTR(mat));
     camrel_probe(mat, step);
     hit_picture(mat);
-    if (mat == BO3_VA(0x0073A1D0u, 0x0073A4E0u) + 0x10u)
+    if (mat == BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u) + 0x10u)
         s_dbg_car_drawn++;
     title_fn();
 }
@@ -1874,7 +1930,7 @@ static void marks_probe(void)
 {
     static FILE *f;
     static int on = -1;
-    uint32_t v = BO3_VA(0x4D6200u, 0x4D6520u), cam, frame, n, i;
+    uint32_t v = BO3_VA(0x4D6200u, 0x4D6520u, 0x4D65C0u), cam, frame, n, i;
     float vm[16], vold[16], mt[16], bl[16], bi[16], p[16], vr[16];
     float w, h;
     rec_t *r, *rv;
@@ -1918,18 +1974,18 @@ static void marks_probe(void)
          * sub_0018EA50): the looks of its slots (the i-th nearest racer from
          * the view's camera: 1 the position, 0 the arrow), its 30-step
          * counter, its mode. */
-        uint32_t mo = BO3_VA(0x735550u, 0x735860u), cp = MEM32(v + 0x68u);
+        uint32_t mo = BO3_VA(0x735550u, 0x735860u, 0x735900u), cp = MEM32(v + 0x68u);
         if (cp >= 0x10000u && cp < 0x08000000u)
             fprintf(f, "S %u %u %u %u %u %u %u %u counter %u mode %u cam %.3f %.3f %.3f\n", s_swaps,
                     MEM32(mo), MEM32(mo + 4u), MEM32(mo + 8u), MEM32(mo + 12u), MEM32(mo + 16u),
                     MEM32(mo + 20u), MEM32(mo + 0x1Cu), MEM32(mo + 0x18u), MEM32(mo + 0x20u),
                     MEMF(cp + 0x30u), MEMF(cp + 0x34u), MEMF(cp + 0x38u));
     }
-    n = MEM32(BO3_VA(0x73A19Cu, 0x73A4ACu));
+    n = MEM32(BO3_VA(0x73A19Cu, 0x73A4ACu, 0x73A54Cu));
     if (n > 8)
         n = 8;
     for (i = 0; i < n; i++) {
-        uint32_t obj = MEM32(BO3_VA(0x64B38Cu, 0x64B69Cu) + i * 0x30u), mp, k;
+        uint32_t obj = MEM32(BO3_VA(0x64B38Cu, 0x64B69Cu, 0x64B73Cu) + i * 0x30u), mp, k;
         int kc = -1, blended;
         const float *q;
         float a[3], c[3];
@@ -1942,7 +1998,7 @@ static void marks_probe(void)
         if (mp < 0x10000u || mp >= 0x08000000u)
             continue;
         for (k = 0; k < 8; k++)
-            if (mp == BO3_VA(0x73A1D0u, 0x73A4E0u) + k * 0x27E0u + 0x10u)
+            if (mp == BO3_VA(0x73A1D0u, 0x73A4E0u, 0x73A580u) + k * 0x27E0u + 0x10u)
                 kc = (int)k;
         rc = rec_find(mp - FRAME_LTM);
         blended = rc && rc->put_gen == s_put_gen
@@ -2009,6 +2065,110 @@ void bo3_player_frame(bo3_hirefresh_fn title_fn)
 }
 
 
+/* The car's reflection cube, sub_0003FA20 (stdcall, ret 12: the cube's
+ * object 0x4D6170, a point, the player), called once a picture by the
+ * stage render sub_001AE340 (0x1AE397, return 0x1AE39C) before the main
+ * view, the point the player's at stage + 0x12B810 + player x 0x27E0. While
+ * either word at 0x73A190 / 0x73A194 is set it draws six axis-aligned
+ * faces around the point (a view each: Clear, the world, the sky bits, the
+ * sun sprite) and puts the main target back; with both 0 (the title's "no
+ * reflections") it only puts the target back, sub_0034CBF0(obj + 0x890,
+ * *(obj + 0x868)), and returns. Nothing reads the faces on the CPU, and the
+ * backends copy a face into the cube only when it was drawn again (its
+ * gen), so faces not drawn keep the last ones. The faces are ~45 % of a
+ * race picture's draws.
+ *
+ * The point is a step's value: the steps write it and nothing here blends
+ * it (the blends are on RenderWare frames and the vehicles' matrices). It
+ * did not move in any picture with no step (the "from another point"
+ * counter, 0 in every BO-282.1 run), so such a picture drew the faces from
+ * the same point again, as the title does at 60. With High refresh in
+ * force they are drawn once a step: a picture with no step right after a
+ * picture that drew or kept them at this step takes the title's own
+ * no-reflection path (the words are not touched: they are read in ~70
+ * places). Kept faces counted "from another point" if the point moved
+ * after all (it should stay 0). Any other picture, High refresh off, at 60,
+ * split screen: as shipped. BO3_HIREFRESH_CUBE=picture: drawn every
+ * picture (the build before, for an A/B). */
+#define CUBE_ON_A    BO3_VA(0x0073A190u, 0x0073A4A0u, 0x0073A540u)     /* the title's gate: either word set */
+#define CUBE_ON_B    BO3_VA(0x0073A194u, 0x0073A4A4u, 0x0073A544u)
+#define CUBE_RET     BO3_VA(0x001AE39Cu, 0x001AE69Cu, 0x001AE73Cu)   /* the stage render's call */
+extern void BO3_SUB(sub_0034CBF0, sub_0034CEF0, sub_0034CF90)(void);
+static struct {
+    uint32_t upd;                  /* s_updates of the last call drawn or kept, 0 none */
+    uint32_t step;                 /* the step count the faces were drawn at */
+    uint32_t obj, player;
+    uint32_t pt[4];                /* the point they were drawn from */
+} s_cube;
+
+static int cube_per_picture(void)
+{
+    static int v = -1;
+    if (v < 0) {
+        const char *e = getenv("BO3_HIREFRESH_CUBE");
+        v = e && !strcmp(e, "picture");
+        if (v)
+            fprintf(stderr, "[HIREFRESH] reflection cube drawn every picture (BO3_HIREFRESH_CUBE=picture)\n");
+    }
+    return v;
+}
+
+void bo3_reflection_cube(bo3_hirefresh_fn title_fn)
+{
+    uint32_t obj = MEM32(g_esp + 4u), pt = MEM32(g_esp + 8u), player = MEM32(g_esp + 12u), frame;
+    uint32_t step = MEM32(STEP_COUNT);
+    int on = (MEM32(CUBE_ON_A) | MEM32(CUBE_ON_B)) != 0;
+
+    if (!s_active || !s_in_update || MEM32(g_esp) != CUBE_RET || !on
+            || pt < 0x10000u || pt >= 0x08000000u || cube_per_picture()) {
+        s_cube.upd = 0;
+        title_fn();
+        return;
+    }
+    if (s_upd_steps != 0 || s_cube.upd == 0 || s_cube.upd + 1u != s_updates
+            || s_cube.step != step || s_cube.obj != obj || s_cube.player != player) {
+        s_cube.upd = s_updates;
+        s_cube.step = step;
+        s_cube.obj = obj;
+        s_cube.player = player;
+        memcpy(s_cube.pt, (const void *)(uintptr_t)XBOX_PTR(pt), sizeof s_cube.pt);
+        s_diag.cube_drawn++;
+        title_fn();
+        return;
+    }
+    /* Kept: the faces of this step's picture before. */
+    s_cube.upd = s_updates;
+    s_diag.cube_skipped++;
+    if (memcmp(s_cube.pt, (const void *)(uintptr_t)XBOX_PTR(pt), 12))
+        s_diag.cube_moved++;
+    /* The title's gate path (0x3FA20-0x3FA56), instruction for
+     * instruction: its frame, the three saves, the call with its two
+     * arguments, the restores and ret 12. */
+    g_esp -= 4u;
+    MEM32(g_esp) = g_ebp;              /* push ebp */
+    frame = g_esp;                     /* mov ebp, esp */
+    g_ebp = frame;
+    g_seh_ebp = frame;
+    g_esp = (g_esp & 0xFFFFFFF0u) - 0x64u;
+    g_esp -= 4u; MEM32(g_esp) = g_ebx;
+    g_esp -= 4u; MEM32(g_esp) = g_esi;
+    g_esp -= 4u; MEM32(g_esp) = g_edi;
+    g_eax = obj;                       /* mov eax, [ebp + 8] */
+    g_ecx = MEM32(obj + 0x868u);
+    g_esp -= 4u; MEM32(g_esp) = g_ecx;
+    g_eax = obj + 0x890u;
+    g_esp -= 4u; MEM32(g_esp) = g_eax;
+    g_ebp = frame;
+    g_seh_ebp = frame;
+    g_esp -= 4u; MEM32(g_esp) = BO3_VA(0x0003FA4Eu, 0x0003F99Eu, 0x0003FC5Eu);
+    BO3_SUB(sub_0034CBF0, sub_0034CEF0, sub_0034CF90)();                    /* ret 8 */
+    g_edi = MEM32(g_esp); g_esp += 4u;
+    g_esi = MEM32(g_esp); g_esp += 4u;
+    g_ebx = MEM32(g_esp); g_esp += 4u;
+    g_esp = frame + 4u;                /* mov esp, ebp; pop ebp (the title's is a local) */
+    g_esp += 16u;                      /* ret 12 */
+}
+
 /* 3. The HUD's update runs once a step: as shipped (its call is only
  * counted for the BO-275 audit). */
 void bo3_hud_update(bo3_hirefresh_fn title_fn)
@@ -2060,6 +2220,52 @@ void bo3_race_audio(bo3_hirefresh_fn title_fn)
     }
 }
 
+/* 4. The audio world's update, sub_001CA530 (eax = 0x40B310; four
+ * arguments, the last the frame's time; ret 16), called by sub_000170B0
+ * once a frame right after the race audio manager (0x17136; return
+ * 0x1713B). It runs every sound source's update: the volume and pitch from
+ * its bus, the bus fades (sub_001CDBC0, by the time given) and the
+ * streamed sounds' states (+ 0x170, sub_001CB7E0). The streams hand over
+ * to the race audio manager's stream player (sub_0014C880 ->
+ * sub_00150E80, object 0x40F270) through those states: when a stream has
+ * been stopped (6) the player picks the next file (the junction's
+ * crash1.rws at an impact in Crash mode, the drone under Impact Time; the
+ * playlist tracks\crash%d.rws otherwise) and clears its "started" byte
+ * (+ 0x8DB), and it starts that file once the source is idle (0, 1, 4).
+ * The source leaves 6 for 4 in this update. As shipped the player always
+ * runs before this in the same frame, so it sees every 6; with the manager
+ * once a step (bo3_race_audio) and this once a picture, a picture with no
+ * step moved the source from 6 to 4 unseen, the player kept its "started"
+ * byte and never started another stream: from the first crash on, no
+ * Impact Time drone and no crash music until a restart (BO-297, GitHub #41).
+ * So this runs with the manager: not at all in a picture with no step (its
+ * ret 16 emulated), once with the frame's time after one or more steps, as
+ * shipped. Its other work moves only by the time given, which is 0 in a
+ * picture with no step. Other call sites, High refresh off: as shipped.
+ * BO3_HRAUDIO_WORLD=picture: once a picture (the build before the fix, for
+ * an A/B). */
+static int audio_world_per_picture(void)
+{
+    static int v = -1;
+    if (v < 0) {
+        const char *e = getenv("BO3_HRAUDIO_WORLD");
+        v = e && !strcmp(e, "picture");
+        if (v)
+            fprintf(stderr, "[HIREFRESH] audio world once a picture (BO3_HRAUDIO_WORLD=picture)\n");
+    }
+    return v;
+}
+
+void bo3_audio_world(bo3_hirefresh_fn title_fn)
+{
+    if (s_active && s_in_update && s_upd_steps == 0 && MEM32(g_esp) == BO3_VA(0x0001713Bu, 0x000171FBu, 0x000171FBu)
+            && !audio_world_per_picture()) {
+        g_esp += 20;                   /* its ret 16: nothing run */
+        return;
+    }
+    title_fn();
+}
+
 /* 4. The effects manager's clock, 0x5A9A00 (+ 4 a duration, + 8 a mode:
  * 1 a flash up and down, 2 a fade out), advanced and drawn by sub_00188750
  * (eax = the manager) once a picture from the effects render
@@ -2072,8 +2278,8 @@ void bo3_race_audio(bo3_hirefresh_fn title_fn)
  * picture's time (the clock lerped like the cars, a step behind at most)
  * and the mode is what the title's own rule (off once t reaches the
  * duration) gives at the steps' time: the step logic reads only that. */
-#define FX_STEPS     BO3_VA(0x4D53ACu, 0x4D56CCu)
-#define FX_STEP_DT   BO3_VA(0x4AE1FCu, 0x4AE51Cu)
+#define FX_STEPS     BO3_VA(0x4D53ACu, 0x4D56CCu, 0x4D576Cu)
+#define FX_STEP_DT   BO3_VA(0x4AE1FCu, 0x4AE51Cu, 0x4AE5BCu)
 void bo3_fx_clock(bo3_hirefresh_fn title_fn)
 {
     uint32_t m = g_eax, steps0, mode0;
@@ -2138,11 +2344,11 @@ void bo3_fx_clock(bo3_hirefresh_fn title_fn)
  * leaves them at the steps' clock (the A/B arm), =ab takes the two in turn,
  * 15 steps each; BO3_HIREFRESH_SPARKLOG=<file> writes a line a push for
  * player 1 (the history after it) and what the draws put in the push buffer. */
-#define RACE_CLOCK   BO3_VA(0x60EA20u, 0x60ED30u)     /* the race clock, s; moves at the steps */
-#define STEP_TIME    BO3_VA(0x60EA1Cu, 0x60ED2Cu)     /* a step's time on that clock */
-#define FRAME_TIME   BO3_VA(0x4D53B0u, 0x4D56D0u)     /* the frame's steps x STEP_TIME */
-#define SPARK_HIST   BO3_VA(0x5492B0u, 0x5495D0u)     /* the streaks' history, 0x5A0 a player */
-#define SPARK_LIFE   BO3_VA(0x418EFCu, 0x41922Cu)     /* the first spark descriptor's life (+ 0x5C) */
+#define RACE_CLOCK   BO3_VA(0x60EA20u, 0x60ED30u, 0x60EDD0u)     /* the race clock, s; moves at the steps */
+#define STEP_TIME    BO3_VA(0x60EA1Cu, 0x60ED2Cu, 0x60EDCCu)     /* a step's time on that clock */
+#define FRAME_TIME   BO3_VA(0x4D53B0u, 0x4D56D0u, 0x4D5770u)     /* the frame's steps x STEP_TIME */
+#define SPARK_HIST   BO3_VA(0x5492B0u, 0x5495D0u, 0x549670u)     /* the streaks' history, 0x5A0 a player */
+#define SPARK_LIFE   BO3_VA(0x418EFCu, 0x41922Cu, 0x4192CCu)     /* the first spark descriptor's life (+ 0x5C) */
 
 static struct {
     int      valid;
@@ -2300,7 +2506,7 @@ static void spark_log_draw(uint32_t sys, float now)
 /* With BO3_HIREFRESH_SPARKLOG, "Q <swap> <bytes>": what the draw wrote
  * into D3D's push buffer (its put pointer, the word the pointer at 0x35FB48
  * points at), 160 bytes a spark quad plus the draw's own state. */
-#define D3D_PUSH BO3_VA(0x35FB48u, 0x35FE48u)
+#define D3D_PUSH BO3_VA(0x35FB48u, 0x35FE48u, 0x35FEE8u)
 
 void bo3_spark_draw(bo3_hirefresh_fn title_fn)
 {

@@ -106,6 +106,64 @@ static inline void bo3_ctl_mirror(XBOX_GAMEPAD *g)
     g->bAnalogButtons[XBOX_BUTTON_Y] = t;
 }
 
+/* The title's camera states are bits of the player record's state word; this
+ * one is the results camera, which follows the track from the crash. */
+#define BO3_CTL_STATE_RESULTS 0x2000u
+
+/* What the gate goes by for one player, as the title has it this frame. */
+typedef struct bo3_ctl_title {
+    uint32_t paused_by;     /* the player who paused, -1 while not paused */
+    uint32_t module_step;   /* the module switch: 6 leaving */
+    uint32_t state;         /* the record's camera bits */
+    uint32_t phase;         /* the event: 1 before the GO, 2 in play, 3 finished */
+    uint32_t countdown;     /* its float's bits: 0, then -1, until it begins */
+    uint8_t no_pause;       /* the title takes no pause now */
+    uint8_t intro;          /* a crash event's fly-by or captions are up */
+    uint8_t results;        /* the results camera has reached its end */
+    uint8_t online_menu;    /* an online race's pause menu is up (the race goes on) */
+} bo3_ctl_title;
+
+/*
+ * The title is taking driving input now, with the game module current.
+ *
+ * Nobody has paused, the module is not being left, and the player's event is
+ * in play: phase 2 (from the GO to the finish, crashes included: the impact
+ * time, the aftertouch and the crashbreaker are driving controls), or the
+ * countdown before it (the boost start is on the accelerator): phase 0 or 1
+ * with the countdown's length set. Not before: a crash event's fly-by and
+ * captions take A to go on. Not after: phase 3 is the finish, and the
+ * replay behind the results sets the phase back and loops. no_pause is the
+ * title's own "Start does not pause now" (the stage update tests it beside
+ * the paused player, sub_00026050 at 0x26609): set over the results.
+ *
+ * The results byte only means something while the results camera runs, which
+ * is how the title reads it (sub_00167DC0). That camera clears it on the way
+ * in and sets it at the end of its path, and nothing else writes it: not the
+ * replay that follows, not the end of the event, not the next event's start.
+ * So it stays 1 into every later event until a press skips that camera at
+ * the end of one (GitHub #52, #111). The rest of the results are off by
+ * phase 3 and then no_pause.
+ *
+ * An online race is not paused for anyone: Start there opens the pause menu
+ * (RESUME, RETIRE, AUDIO, CONTROLLERS, QUIT TO LOBBY, ...) while the race
+ * goes on, and paused_by stays -1. The title marks that menu with a byte of
+ * its own instead (online_menu, 0x4AED88: set where the race opens it,
+ * sub_0002A5D0 at 0x2A6D4; cleared when it closes, sub_000674A0 at 0x674D0)
+ * and the car's input reader tests it beside no_pause (sub_00117870 at
+ * 0x11796E): the car takes no input then. Without it the PS2 layout stayed
+ * on over that menu and made A the accelerator, and the touch controls kept
+ * the race layout, so no line of the menu could be chosen.
+ */
+static inline int bo3_ctl_driving(const bo3_ctl_title *t)
+{
+    if (t->paused_by != 0xFFFFFFFFu || t->module_step == 6 || t->no_pause || t->online_menu)
+        return 0;
+    if (t->intro || (t->results && (t->state & BO3_CTL_STATE_RESULTS)))
+        return 0;
+    return t->phase == 2
+        || (t->phase < 2 && t->countdown != 0xBF800000u && t->countdown != 0);
+}
+
 /*
  * One read of one pad. ps2: the PS2 layout holds for this read (the setting
  * is ps2 and the title is taking driving input). Otherwise *g is left as it

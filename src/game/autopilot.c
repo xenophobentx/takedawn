@@ -51,21 +51,23 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <stdlib.h>
 
 #include "platform/recomp_env.h"
 #include "platform/recomp_patch.h"
 #include "recomp_types.h"
+#include "race_module.h"
 
 extern RECOMP_TLS uint32_t g_eax, g_ecx, g_edx, g_esi, g_esp;
 extern ptrdiff_t g_xbox_mem_offset;
-extern void BO3_SUB(sub_00179760, sub_00179A00)(void);
+extern void BO3_SUB(sub_00179760, sub_00179A00, sub_00179AA0)(void);
 
 #define AP_M8(va)  (*(uint8_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 #define AP_M16(va) (*(int16_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 #define AP_M32(va) (*(uint32_t *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 #define AP_MF(va)  (*(float *)((uintptr_t)g_xbox_mem_offset + (uint32_t)(va)))
 
-#define AP_CAR1         BO3_VA(0x0073A1D0u, 0x0073A4E0u)     /* the world (0x60EA00) + 0x12B7D0: player 1's CB3PlayerCar */
+#define AP_CAR1         BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u)     /* the world (0x60EA00) + 0x12B7D0: player 1's CB3PlayerCar */
 #define AP_CAR_AI       0x27D8u         /* byte: the AI drives this player car */
 #define AP_CAR_PLAYER   0x27D0u         /* the player index */
 #define AP_CAR_PHASE    0x134Cu         /* 1 before the GO, 2 in play, 3 finished */
@@ -75,15 +77,15 @@ extern void BO3_SUB(sub_00179760, sub_00179A00)(void);
 #define AP_CAR_TIME     0x10DCu         /* float: the race time, s */
 #define AP_CAR_LAPS     0x10E4u         /* the laps done */
 #define AP_CAR_BEST     0x110Cu         /* float: the best lap, s */
-#define AP_RACERS       BO3_VA(0x0073A19Cu, 0x0073A4ACu)     /* the number of cars racing */
-#define AP_CTLS         BO3_VA(0x004AE724u, 0x004AEA44u)     /* the four controller records */
+#define AP_RACERS       BO3_VA(0x0073A19Cu, 0x0073A4ACu, 0x0073A54Cu)     /* the number of cars racing */
+#define AP_CTLS         BO3_VA(0x004AE724u, 0x004AEA44u, 0x004AEAE4u)     /* the four controller records */
 #define AP_CTL_SIZE     0x188u
 #define AP_CTL_ACTIVE   0x184u          /* float: the time of its last input */
-#define AP_NOW          BO3_VA(0x004AE200u, 0x004AE520u)     /* float: the clock sub_00019A10 stamps it with */
-#define AP_MODULE       BO3_VA(0x004D5370u, 0x004D5690u)     /* the current module */
-#define AP_VT_GAME      BO3_VA(0x003A9ACCu, 0x003AA078u)     /* the game module's vtable */
-#define AP_PAUSED_BY    BO3_VA(0x004D537Cu, 0x004D569Cu)     /* -1 while not paused */
-#define AP_MODULE_STEP  BO3_VA(0x004D53B4u, 0x004D56D4u)     /* 6: the module is being left */
+#define AP_NOW          BO3_VA(0x004AE200u, 0x004AE520u, 0x004AE5C0u)     /* float: the clock sub_00019A10 stamps it with */
+#define AP_MODULE       BO3_VA(0x004D5370u, 0x004D5690u, 0x004D5730u)     /* the current module */
+#define AP_PAUSED_BY    BO3_VA(0x004D537Cu, 0x004D569Cu, 0x004D573Cu)     /* -1 while not paused */
+#define AP_MODULE_STEP  BO3_VA(0x004D53B4u, 0x004D56D4u, 0x004D5774u)     /* 6: the module is being left */
+#define AP_STEPS        BO3_VA(0x004A1EB4u, 0x004A21D4u, 0x004A2274u)     /* the global step counter */
 
 static int s_driving;       /* the autopilot drove the last update */
 static uint32_t s_phase;    /* player 1's phase at the last update */
@@ -95,11 +97,60 @@ static int ap_in_play(uint32_t car)
 {
     uint32_t mod = AP_M32(AP_MODULE);
 
-    if (mod < 0x10000u || mod >= 0x04000000u || AP_M32(mod) != AP_VT_GAME)
+    if (mod < 0x10000u || mod >= 0x04000000u || !bo3_race_module_vt(AP_M32(mod)))
         return 0;
     if (AP_M32(AP_PAUSED_BY) != 0xFFFFFFFFu || AP_M32(AP_MODULE_STEP) == 6)
         return 0;
     return AP_M32(car + AP_CAR_PHASE) == 2;
+}
+
+/* BO3_STEPHASH=<file>, a test switch for gate G2 (BO-282.2): a line a step
+ * while player 1 races (phase 1 to 3), "<step> <phase> <racers> <car>",
+ * FNV-1a 64 of the racer table (0x64B38C, 0x30 bytes a racer, as many as
+ * race) and of player 1's car matrix (car + 0x10, 16 floats), and the game's
+ * random generator, so two runs that drift apart show the step where they
+ * begin to; the first two steps also dump the racer table ("D" lines). */
+#define AP_RACER_TAB    BO3_VA(0x0064B38Cu, 0x0064B69Cu, 0x0064B73Cu)
+#define AP_RACER_SIZE   0x30u
+#define AP_CAR_MATRIX   0x10u
+
+static uint64_t ap_fnv(uint32_t va, uint32_t n, uint64_t h)
+{
+    const uint8_t *p = (const uint8_t *)((uintptr_t)g_xbox_mem_offset + va);
+    while (n--) { h ^= *p++; h *= 0x100000001B3ull; }
+    return h;
+}
+
+static void ap_stephash(uint32_t car, uint32_t phase)
+{
+    static FILE *f;
+    static int tried;
+    static uint32_t last = ~0u;
+    static int s_dumped;
+    uint32_t step = AP_M32(AP_STEPS), n = AP_M32(AP_RACERS);
+
+    if (!tried) {
+        const char *e = getenv("BO3_STEPHASH");
+        tried = 1;
+        if (e && *e && (f = fopen(e, "w")) != NULL)
+            setvbuf(f, NULL, _IOLBF, 0);    /* a run ends from outside */
+    }
+    if (!f || phase < 1 || phase > 3 || step == last)
+        return;
+    last = step;
+    if (n > 8)
+        n = 8;
+    fprintf(f, "%u %u %016llx %016llx %08x%08x\n", step, phase,
+            (unsigned long long)ap_fnv(AP_RACER_TAB, n * AP_RACER_SIZE, 0xCBF29CE484222325ull),
+            (unsigned long long)ap_fnv(car + AP_CAR_MATRIX, 64, 0xCBF29CE484222325ull),
+            AP_M32(BO3_VA(0x004D1FD8u, 0x004D22F8u, 0x004D2398u)), AP_M32(BO3_VA(0x004D1FDCu, 0x004D22FCu, 0x004D239Cu)));     /* the game's random generator */
+    if (++s_dumped <= 2) {          /* the racer table itself, for the field that differs */
+        uint32_t k;
+        fprintf(f, "D");
+        for (k = 0; k < n * AP_RACER_SIZE; k += 4)
+            fprintf(f, "%s%08x", k % AP_RACER_SIZE ? " " : " | ", AP_M32(AP_RACER_TAB + k));
+        fprintf(f, "\n");
+    }
 }
 
 static void ap_update(void)
@@ -109,10 +160,11 @@ static void ap_update(void)
     if (car != AP_CAR1 || !g_xbox_mem_offset || AP_M32(car + AP_CAR_PLAYER) != 0)
         return;
     phase = AP_M32(car + AP_CAR_PHASE);
+    ap_stephash(car, phase);
     if (phase == 3 && s_phase == 2 && s_driving)
-        fprintf(stderr, "[AUTOPILOT] result place %d/%u time %.3f s best lap %.3f s laps %u (flip %u)\n",
+        fprintf(stderr, "[AUTOPILOT] result place %d/%u time %.3f s best lap %.3f s laps %u step %u (flip %u)\n",
                 AP_M16(car + AP_CAR_PLACE), AP_M32(AP_RACERS), AP_MF(car + AP_CAR_TIME),
-                AP_MF(car + AP_CAR_BEST), AP_M32(car + AP_CAR_LAPS), ap_flip());
+                AP_MF(car + AP_CAR_BEST), AP_M32(car + AP_CAR_LAPS), AP_M32(AP_STEPS), ap_flip());
     s_phase = phase;
     if (!ap_in_play(car)) {
         s_driving = 0;
@@ -141,7 +193,7 @@ static void ap_update(void)
         AP_M32(car + AP_CAR_AI_RESET + 0xC) = 0;
         g_eax = car + AP_CAR_DRIVER;
         PUSH32(g_esp, 0);               /* the return address its ret takes */
-        BO3_SUB(sub_00179760, sub_00179A00)();
+        BO3_SUB(sub_00179760, sub_00179A00, sub_00179AA0)();
         g_eax = a; g_ecx = c; g_edx = d; g_esp = sp;
     }
     if (!s_driving)

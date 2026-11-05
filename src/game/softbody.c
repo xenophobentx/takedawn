@@ -73,7 +73,7 @@ extern int xbox_ContiguousFree(uint32_t va);
 #define SB_CAR_PANELS  0x590u    /* 16 panel slots (matrices) of the title's damage */
 #define SB_CAR_WRECK   0x3D0u    /* 4 while it drives, 1 or 0 once it wrecked (to the respawn or the results) */
 #define SB_CAR_PHASE   0x134Cu   /* 1 before the GO, 2 in play, 3 finished (autopilot.c) */
-#define SB_MUSIC_OUTER BO3_VA(0x00411BE0u, 0x00411F10u) /* the music manager's outer state (0x4115E8 + 0x5F8):
+#define SB_MUSIC_OUTER BO3_VA(0x00411BE0u, 0x00411F10u, 0x00411FB0u) /* the music manager's outer state (0x4115E8 + 0x5F8):
                                     * 6 in a crash mode, 5 in any other stage
                                     * (docs/split-screen.md) */
 #define SB_BGV_MAGIC   0x17u
@@ -127,7 +127,7 @@ extern int xbox_ContiguousFree(uint32_t va);
 #define SB_MASS_K_MAX 1.8f
 #define SB_HITS     32           /* recent hits kept, to pair the two cars of a crash */
 #define SB_FX_MAX   6            /* tears that throw sparks, a car a flip */
-#define SB_FX_MGR   BO3_VA(0x005A9A00u, 0x005A9D10u)  /* the title's effects manager (PS2 gEffectsManager) */
+#define SB_FX_MGR   BO3_VA(0x005A9A00u, 0x005A9D10u, 0x005A9DB0u)  /* the title's effects manager (PS2 gEffectsManager) */
 #define SB_WR_AMP   0.06f        /* wrinkles: a squashed sheet goes out along its normal this far at most ... */
 #define SB_WR_SCALE 0.07f        /* ... in a value noise of this cell size */
 #define SB_ROOF_Y   -0.6f        /* a hit from above (d's y below this): the ground under a car on its roof ... */
@@ -1352,7 +1352,7 @@ static void car_fx(sb_car *c, int b)
  * and two velocities (float4s, 16-aligned), the plane's normal (its own
  * (0, 1, 0)), the count (a float; AL set: seven times as many more) and
  * P's height above the road. From a mark, so every register goes back. */
-extern void BO3_SUB(sub_00182920, sub_00182C20)(void);
+extern void BO3_SUB(sub_00182920, sub_00182C20, sub_00182CC0)(void);
 extern RECOMP_TLS uint32_t g_ebx, g_ecx, g_edx, g_edi, g_seh_ebp;
 extern RECOMP_TLS int g_fp_top;
 
@@ -1375,14 +1375,14 @@ static void fx_sparks(const float *P, const float *V, float count, float h, int 
     PUSH32(g_esp, u);
     memcpy(&u, &count, 4);
     PUSH32(g_esp, u);
-    PUSH32(g_esp, BO3_VA(0x0040A8C0u, 0x0040ABF0u));     /* the title's own up: (0, 1, 0, 0) */
+    PUSH32(g_esp, BO3_VA(0x0040A8C0u, 0x0040ABF0u, 0x0040AC90u));     /* the title's own up: (0, 1, 0, 0) */
     PUSH32(g_esp, buf + 0x10);
     PUSH32(g_esp, buf + 0x10);
     PUSH32(g_esp, buf);
     PUSH32(g_esp, SB_FX_MGR);
     PUSH32(g_esp, 0);               /* the return address its ret takes */
     g_eax = (g_eax & ~0xFFu) | (burst ? 1u : 0u);
-    BO3_SUB(sub_00182920, sub_00182C20)();
+    BO3_SUB(sub_00182920, sub_00182C20, sub_00182CC0)();
     g_eax = a; g_ecx = cx; g_edx = d; g_ebx = bx; g_esi = si; g_edi = di; g_ebp = bp; g_esp = sp;
     g_seh_ebp = sb; g_fp_top = ft;
     g_xmm0 = x0; g_xmm1 = x1; g_xmm2 = x2; g_xmm3 = x3; g_xmm4 = x4; g_xmm5 = x5; g_xmm6 = x6; g_xmm7 = x7;
@@ -1392,7 +1392,7 @@ static void fx_sparks(const float *P, const float *V, float count, float h, int 
  * velocity; the manager, the position, the first velocity, the plane's
  * normal, the count (0..24, a float), the height, a lighting pair (its own
  * for a car is about 0.34, 0.66) and a flag): bits of metal and gravel. */
-extern void BO3_SUB(sub_001834E0, sub_001837E0)(void);
+extern void BO3_SUB(sub_001834E0, sub_001837E0, sub_00183880)(void);
 
 static void fx_debris(const float *P, const float *V, float count, float h)
 {
@@ -1419,13 +1419,13 @@ static void fx_debris(const float *P, const float *V, float count, float h)
     PUSH32(g_esp, u);
     memcpy(&u, &count, 4);
     PUSH32(g_esp, u);
-    PUSH32(g_esp, BO3_VA(0x0040A8C0u, 0x0040ABF0u));
+    PUSH32(g_esp, BO3_VA(0x0040A8C0u, 0x0040ABF0u, 0x0040AC90u));
     PUSH32(g_esp, buf + 0x10);
     PUSH32(g_esp, buf);
     PUSH32(g_esp, SB_FX_MGR);
     PUSH32(g_esp, 0);
     g_eax = buf + 0x20;
-    BO3_SUB(sub_001834E0, sub_001837E0)();
+    BO3_SUB(sub_001834E0, sub_001837E0, sub_00183880)();
     g_eax = a; g_ecx = cx; g_edx = d; g_ebx = bx; g_esi = si; g_edi = di; g_ebp = bp; g_esp = sp;
     g_seh_ebp = sb; g_fp_top = ft;
     g_xmm0 = x0; g_xmm1 = x1; g_xmm2 = x2; g_xmm3 = x3; g_xmm4 = x4; g_xmm5 = x5; g_xmm6 = x6; g_xmm7 = x7;
@@ -2040,7 +2040,7 @@ static void car_tick(sb_car *c, uint32_t flip)
         static int fxtest = -1;
         if (fxtest < 0)
             fxtest = getenv("BO3_SOFTBODY_FXTEST") ? atoi(getenv("BO3_SOFTBODY_FXTEST")) : 0;
-        if (fxtest && c->car == BO3_VA(0x0073A1D0u, 0x0073A4E0u) && c->nmot) {
+        if (fxtest && c->car == BO3_VA(0x0073A1D0u, 0x0073A4E0u, 0x0073A580u) && c->nmot) {
             const float *M = c->mot[0];
             float P[3], V[3];
             int a;

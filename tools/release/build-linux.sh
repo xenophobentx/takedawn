@@ -41,13 +41,17 @@ source "$REPO/tools/release/pins.env"
 
 WITH_SETUP="${TAKEDAWN_SETUP:-1}"
 for a in "$@"; do case "$a" in --no-setup-window) WITH_SETUP=0 ;; *) die "unknown option $a" ;; esac; done
-assert_gen
+assert_gen_all
 B="$WORK/linux"
 HOST="${TAKEDAWN_LINUX_HOST:-}"
 LDIR="${TAKEDAWN_LINUX_DIR:-takedawn-build/release}"
 [ -n "$HOST" ] || [ "$(uname -s)" = Linux ] || die "set TAKEDAWN_LINUX_HOST: the Linux build needs a Linux machine with podman"
 t0=$(date +%s)
 remote() { if [ -n "$HOST" ]; then ssh "$HOST" "$@"; else bash -c "$*"; fi; }
+# The container program on the build machine: podman, or TAKEDAWN_LINUX_CONTAINER
+# (a path there; anything that takes podman's "run" and "pull" and "image
+# inspect", such as a wrapper around docker).
+CT="${TAKEDAWN_LINUX_CONTAINER:-podman}"
 RDEST="${HOST:+$HOST:}$LDIR"
 NAME="Takedawn-$VERSION$PKG_TAG-linux-x86_64.AppImage"
 
@@ -64,6 +68,9 @@ mkdir -p "$STAGE/glyphs"
     "$STAGE/glyphs/bo3_glyph_art.c" "$STAGE/glyphs/bo3_glyph_art.h" > "$B/glyphs.log" 2>&1 \
     || { tail -5 "$B/glyphs.log" >&2; die "the button prompts could not be rendered (TAKEDAWN_PYTHON with resvg_py, or resvg)"; }
 sed -e "s/@VERSION@/$VERSION/g" -e "s/@DISC@/$DISC_NAME/g" "$REPO/tools/release/linux/README.txt" > "$STAGE/README.txt"
+# The menu pictures' upscaler and its models (BO-311), into the AppDir's
+# usr/bin/upscaler by in-container.sh.
+stage_upscaler linux "$STAGE/upscaler" "$STAGE/upscaler/models"
 HAVE_SETUP=no; QTSRC=""
 if [ "$WITH_SETUP" = 1 ]; then
     # The setup window is built in the container against a Qt that is built
@@ -89,7 +96,12 @@ say "copying the sources and the generated code to ${HOST:+the build machine, }$
 remote "mkdir -p $LDIR/src/game $LDIR/src/toolkit $LDIR/out $LDIR/stage" || die "cannot reach the Linux machine"
 git -C "$REPO" ls-files -z | rsync -a --from0 --files-from=- "$REPO/" "$RDEST/src/game/"
 git -C "$TOOLKIT" ls-files -z | rsync -a --from0 --files-from=- "$TOOLKIT/" "$RDEST/src/toolkit/"
-rsync -a --delete "$GEN/" "$RDEST/src/game/src/game/recomp/gen/"
+# every program's generated code (gen, gen.pal, gen.pal-ensv)
+for r in $PKG_REGIONS; do
+    use_region "$r"
+    rsync -a --delete "$GEN/" "$RDEST/src/game/src/game/recomp/$(basename "$GEN")/"
+done
+use_region "${PKG_REGIONS%% *}"; assert_gen
 rsync -a --delete "$STAGE/" "$RDEST/stage/"
 # SDL: the pinned sources, built once in the container (linux/build-sdl.sh).
 fetch_pin() {  # <url> <sha256> -> path in the cache
@@ -110,7 +122,7 @@ rsync -a "$REPO/tools/release/linux/build-sdl.sh" "$RDEST/sdl-sniper/$SKEY/build
 rsync -a --delete "$REPO/tools/release/linux/patches/" "$RDEST/sdl-sniper/$SKEY/src/patches/"
 sdl_build="if [ ! -f sdl-sniper/$SKEY/done ]; then
     echo 'building SDL $SDL3_VERSION and sdl2-compat $SDL2COMPAT_VERSION in the container (once)'
-    podman run --rm --security-opt label=disable -e JOBS=${LINUX_JOBS:-8} -e NICE=$NICE \\
+    $CT run --rm --security-opt label=disable -e JOBS=${LINUX_JOBS:-8} -e NICE=$NICE \\
         -v \"\$PWD/sdl-sniper/$SKEY/src\":/sdlsrc:ro -v \"\$PWD/sdl-sniper/$SKEY/prefix\":/sdlout \\
         -v \"\$PWD/sdl-sniper/$SKEY/build\":/sdlbuild -v \"\$PWD/sdl-sniper/$SKEY/build-sdl.sh\":/build-sdl.sh:ro \\
         '$SNIPER_SDK_IMAGE' sh /build-sdl.sh && touch sdl-sniper/$SKEY/done
@@ -127,7 +139,7 @@ if [ -n "$QTSRC" ]; then
     qt_mount="-v \"\$PWD/qt-sniper/$QT_VERSION-$QKEY/prefix\":/qt:ro"
     qt_build="if [ ! -f qt-sniper/$QT_VERSION-$QKEY/done ]; then
     echo 'building Qt $QT_VERSION in the container (once; about a quarter of an hour)'
-    podman run --rm --security-opt label=disable -e JOBS=${LINUX_JOBS:-8} -e NICE=$NICE \\
+    $CT run --rm --security-opt label=disable -e JOBS=${LINUX_JOBS:-8} -e NICE=$NICE \\
         -v \"\$PWD/qt-sniper/$QT_VERSION-$QKEY/src\":/qtsrc:ro -v \"\$PWD/qt-sniper/$QT_VERSION-$QKEY/prefix\":/qtout \\
         -v \"\$PWD/qt-sniper/$QT_VERSION-$QKEY/build\":/qtbuild -v \"\$PWD/qt-sniper/$QT_VERSION-$QKEY/build-qt.sh\":/build-qt.sh:ro \\
         '$SNIPER_SDK_IMAGE' sh /build-qt.sh && touch qt-sniper/$QT_VERSION-$QKEY/done
@@ -135,17 +147,21 @@ fi"
 fi
 remote "printf '%s\n' '$(build_commit_line "$REPO")' > $LDIR/src/game/BUILD_COMMIT;
         printf '%s\n' '$(build_commit_line "$TOOLKIT")' > $LDIR/src/toolkit/BUILD_COMMIT"
-there="$(remote "cd $LDIR/src/game/src/game/recomp/gen && sha256sum recomp_* | LC_ALL=C sort -k2 | sha256sum | cut -d' ' -f1; sed -n 's/^key //p' regen.stamp")"
-[ "$(printf '%s' "$there" | sed -n 1p)" = "$GEN_TREE" ] || die "the generated files on the build machine are not the stamped tree"
-[ "$(printf '%s' "$there" | sed -n 2p)" = "$GEN_KEY" ] || die "the regen key on the build machine is not $GEN_KEY"
-say "generated code on the build machine: tree and key match ($GEN_KEY)"
+for r in $PKG_REGIONS; do
+    use_region "$r"; assert_gen
+    there="$(remote "cd $LDIR/src/game/src/game/recomp/$(basename "$GEN") && sha256sum recomp_* | LC_ALL=C sort -k2 | sha256sum | cut -d' ' -f1; sed -n 's/^key //p' regen.stamp")"
+    [ "$(printf '%s' "$there" | sed -n 1p)" = "$GEN_TREE" ] || die "$r: the generated files on the build machine are not the stamped tree"
+    [ "$(printf '%s' "$there" | sed -n 2p)" = "$GEN_KEY" ] || die "$r: the regen key on the build machine is not $GEN_KEY"
+    say "$r: generated code on the build machine: tree and key match ($GEN_KEY)"
+done
+use_region "${PKG_REGIONS%% *}"; assert_gen
 
 # ── build, AppDir, AppImage ──────────────────────────────────────────
 script="set -e; cd $LDIR
-podman image exists '$SNIPER_SDK_IMAGE' || podman pull '$SNIPER_SDK_IMAGE'
+$CT image inspect '$SNIPER_SDK_IMAGE' >/dev/null 2>&1 || $CT pull '$SNIPER_SDK_IMAGE'
 $sdl_build
 $qt_build
-podman run --rm --security-opt label=disable -e JOBS=${LINUX_JOBS:-8} -e NICE=$NICE -e BO3_REGION=$BO3_REGION \
+$CT run --rm --security-opt label=disable -e JOBS=${LINUX_JOBS:-8} -e NICE=$NICE -e BO3_REGION=$BO3_REGION -e BO3_REGIONS='$PKG_REGIONS' \
     -v \"\$PWD/src\":/src:ro -v \"\$PWD/stage\":/stage:ro -v \"\$PWD/out\":/out -v \"\$PWD/sdl-sniper/$SKEY/prefix\":/sdl:ro $qt_mount \
     '$SNIPER_SDK_IMAGE' sh /src/game/tools/release/linux/in-container.sh
 command -v mksquashfs >/dev/null || { echo 'mksquashfs (squashfs-tools) is needed on the build machine' >&2; exit 1; }
@@ -158,7 +174,10 @@ cd out
 mkdir -p scratch-home && [ "\$PWD/scratch-home" != "\$HOME" ] || exit 9
 env HOME="\$PWD/scratch-home" XDG_DATA_HOME= XDG_CACHE_HOME= ./$NAME --version > version-mounted.txt 2>version-mounted.err || echo 'NOT RUN mounted (no FUSE?)'
 env HOME="\$PWD/scratch-home" XDG_DATA_HOME= XDG_CACHE_HOME= ./$NAME --appimage-extract-and-run --version > version.txt
-ldd AppDir/usr/bin/takedawn | grep 'not found' | grep -v -E 'libSDL2|libSDL3' && { echo 'a library is missing on this machine' >&2; exit 1; }
+for p in takedawn-pal takedawn-ensv; do
+    env HOME="\$PWD/scratch-home" LD_LIBRARY_PATH=AppDir/usr/lib AppDir/usr/bin/\$p --version > version-\${p#takedawn-}.txt
+done
+ldd AppDir/usr/bin/takedawn AppDir/usr/bin/takedawn-pal AppDir/usr/bin/takedawn-ensv | grep 'not found' | grep -v -E 'libSDL2|libSDL3' && { echo 'a library is missing on this machine' >&2; exit 1; }
 sha256sum $NAME | cut -d' ' -f1 | sed 's/^/RESULT OK /'"
 say "building in the sniper container (this takes a few minutes)"
 if [ -n "$HOST" ] && [ -n "${TESTHOST_LOCK:-}" ] && [ -x "$TESTHOST_LOCK" ]; then
@@ -177,6 +196,15 @@ rsync -a "$RDEST/out/carried.txt" "$B/carried.txt"
 want="$(grep -a '^RESULT OK' "$B/remote.log" | awk '{print $3}')"
 [ "$(sha256_of "$DIST/$NAME")" = "$want" ] || die "the fetched AppImage is not the one built"
 check_version "$B/version.txt" "the AppImage on the build machine"
+for r in $PKG_REGIONS; do
+    use_region "$r"
+    [ -n "$PROG_SUFFIX" ] || continue
+    assert_gen
+    rsync -a "$RDEST/out/version$PROG_SUFFIX.txt" "$B/version$PROG_SUFFIX.txt" \
+        || die "the AppImage has no usr/bin/takedawn$PROG_SUFFIX"
+    check_version "$B/version$PROG_SUFFIX.txt" "usr/bin/takedawn$PROG_SUFFIX on the build machine"
+done
+use_region "${PKG_REGIONS%% *}"; assert_gen
 if rsync -a "$RDEST/out/version-mounted.txt" "$B/version-mounted.txt" 2>/dev/null && [ -s "$B/version-mounted.txt" ]; then
     check_version "$B/version-mounted.txt" "the AppImage, mounted"
 fi

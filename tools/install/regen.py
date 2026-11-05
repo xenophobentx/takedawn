@@ -23,18 +23,32 @@ LAUNCH = ("import os, runpy, sys; "
 STAGES = ("xbe_parser", "disasm", "func_id", "abi_analysis", "recomp")
 
 
+# region (supported.json bo3_region): (config folder, manual file, generated C folder),
+# as regen.sh and the CMake files have them
+REGIONS = {
+    "NTSC-U": ("config", "recomp_manual.c", "gen"),
+    "PAL": (os.path.join("config", "pal"), "recomp_manual_pal.c", "gen.pal"),
+    "PAL-ENSV": (os.path.join("config", "pal-ensv"), "recomp_manual_pal_ensv.c", "gen.pal-ensv"),
+}
+
+
 def inputs(work, region="NTSC-U"):
     """The region's seed list, spin waits and manual file (regen.sh: BO3_REGION)."""
-    cfg = os.path.join(work, "config", "pal") if region == "PAL" else os.path.join(work, "config")
-    manual = "recomp_manual_pal.c" if region == "PAL" else "recomp_manual.c"
+    cfg, manual, _ = REGIONS.get(region, REGIONS["NTSC-U"])
+    cfg = os.path.join(work, cfg)
     return (os.path.join(cfg, "seed_functions.json"), os.path.join(cfg, "spin_waits.json"),
             os.path.join(work, "src", "game", "recomp", manual))
+
+
+def gen_dir(work, region="NTSC-U"):
+    """Where the build (src/game/CMakeLists.txt) takes the region's generated C."""
+    return os.path.join(work, "src", "game", "recomp", REGIONS.get(region, REGIONS["NTSC-U"])[2])
 
 
 def regen(ctx, python, xbe, out, gen_dir, toolkit, work, force_disasm=False, on_stage=None, site=None,
           region="NTSC-U"):
     """Run the pipeline. `ctx` supplies logs/env/nice (see common.run). `region`
-    is the disc's (supported.json bo3_region): NTSC-U or PAL."""
+    is the disc's (supported.json bo3_region): NTSC-U, PAL or PAL-ENSV."""
     env = dict(ctx.env, PYTHONIOENCODING="utf-8", PYTHONDONTWRITEBYTECODE="1")
     if site:
         env["BO3_SITE"] = site

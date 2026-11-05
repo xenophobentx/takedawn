@@ -3,7 +3,7 @@
 The title runs at 60 frames a second and halves that to 30 while a crash or
 takedown camera is on: every platform measured 33.3 ms flips in those phases
 (`docs/windows.md`, `docs/android.md`). One setting keeps them at 60: overlay
-Graphics page, "60 fps crash cameras"; `settings.toml` `[graphics]
+Game page, "60 fps crash cameras"; `settings.toml` `[graphics]
 crash_60fps`; `RECOMP_GFX_CRASH_60FPS=1`. It defaults to off (the console's
 behaviour) on every platform. On is an opt-in guest patch
 (`config/patches.json`; toolkit `docs/pipeline/04-lifting.md`, Guest patches):

@@ -17,6 +17,7 @@
     <key>NSHighResolutionCapable</key><true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
     <key>GCSupportsControllerUserInteraction</key><true/>
+    <key>NSLocalNetworkUsageDescription</key><string>Online play asks your router to open its ports (UPnP) and talks to players on your local network.</string>
     <key>NSHumanReadableCopyright</key><string>MIT licence. Third-party notices: Contents/Resources/licenses.</string>
 </dict>
 </plist>

@@ -6,6 +6,8 @@
 # <folder> holds what build-windows.sh copied: Takedawn\ (the program
 # folder), takedawn.iss, takedawn.ico. This script
 #   1. runs Takedawn.exe --version                      -> version.txt
+#      and each other disc's program's (Takedawn-pal.exe, Takedawn-ensv.exe)
+#                                                       -> version-pal.txt, version-ensv.txt
 #   2. runs Takedawn.exe --install <disc> --check       -> check.txt  (with -Disc)
 #   3. finds Inno Setup's compiler in <folder>\tools\innosetup, fetching the
 #      pinned version in its portable mode when it is not there (no registry
@@ -21,7 +23,6 @@ param(
     [Parameter(Mandatory = $true)][string]$Dir,
     [Parameter(Mandatory = $true)][string]$Version,
     [string]$Disc = "",
-    [string]$Region = "NTSC-U",
     [string]$InnoUrl = "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe",
     [string]$InnoSha256 = "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732"
 )
@@ -77,10 +78,10 @@ function Test-UserDirs([string]$program) {
     $src = "`"$(Join-Path $prof 'notadisc')`""
     $queries = @(@("--version"), @("--help"), @("--data-status"), @("--install", $src, "--check"),
                  @("--bug-report", "--out", "`"$prof`""), @("--no-setup"), @("--build-shaders", "--status"))
-    # The PAL program keeps folders of its own (Takedawn PAL) and leaves the
-    # old name's alone: they are NTSC-U's (docs/pal.md). For it nothing may
+    # The PAL programs keep folders of their own (Takedawn PAL) and leave the
+    # old name's alone: they are NTSC-U's (docs/pal.md). For them nothing may
     # move at all, a real --install included.
-    $pal = ($Region -eq "PAL")
+    $pal = ((Split-Path -Leaf $program) -ne "Takedawn.exe")
     $unmoved = {
         -not (-not (Test-Path (Join-Path $oldSave "settings.toml")) -or -not (Test-Path (Join-Path $oldCache "vk_pipelines.bin")) -or
               -not (Test-Path (Join-Path $oldData "readme.txt")) -or (Test-Path (Join-Path $newSave "settings.toml")) -or
@@ -116,8 +117,16 @@ function Test-UserDirs([string]$program) {
 
 $rc = Run-Captured $exe @("--version") (Join-Path $Dir "version.txt")
 if ($rc -ne 0) { throw "Takedawn.exe --version ended with status $rc" }
-Write-Host "STEP version OK"
+foreach ($tag in @("-pal", "-ensv")) {
+    $other = Join-Path $pkg "Takedawn$tag.exe"
+    if (-not (Test-Path $other)) { throw "the package has no Takedawn$tag.exe" }
+    $rc = Run-Captured $other @("--version") (Join-Path $Dir "version$tag.txt")
+    if ($rc -ne 0) { throw "Takedawn$tag.exe --version ended with status $rc" }
+}
+Write-Host "STEP version OK (3 programs)"
 Test-UserDirs $exe
+Test-UserDirs (Join-Path $pkg "Takedawn-pal.exe")
+Test-UserDirs (Join-Path $pkg "Takedawn-ensv.exe")
 
 if ($Disc -ne "") {
     $rc = Run-Captured $exe @("--install", "`"$Disc`"", "--check") (Join-Path $Dir "check.txt")
@@ -140,7 +149,6 @@ if (-not (Test-Path $iscc)) { throw "ISCC.exe was not found in $inno" }
 $iss = Join-Path $Dir "takedawn.iss"
 $common = @("/Q", "/DPackage=$pkg", "/DVersion=$Version", "/DIcon=$(Join-Path $Dir 'takedawn.ico')", "/O$out")
 $tag = ""
-if ($Region -eq "PAL") { $common += "/DRegion=PAL"; $tag = "-pal" }
 & $iscc @common $iss
 if ($LASTEXITCODE -ne 0) { throw "ISCC failed with status $LASTEXITCODE" }
 Write-Host "STEP setup OK"

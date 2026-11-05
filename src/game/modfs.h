@@ -5,8 +5,9 @@
  * The list is made once, by bo3_modfs_init, before the title runs, and does
  * not change afterwards: readers need no lock and the pointers stay good until
  * the next bo3_modfs_init (only the unit test calls it twice). Order: the
- * folders TAKEDAWN_MODS names, in order; in each, its usable mods by id, then
- * the ones that are not usable by folder name.
+ * folders TAKEDAWN_MODS names, in order, then the default mods folder, then
+ * the folder of mods made on this computer; in each, its usable mods by id,
+ * then the ones that are not usable by folder name.
  *
  * On and off: a mod is on unless the mod list (bo3_modfs_state_file, a
  * mod-list.toml beside settings.toml) names its id as off. A change is saved
@@ -15,6 +16,7 @@
 #ifndef BO3_MODFS_H
 #define BO3_MODFS_H
 
+#include <stddef.h>
 #include "modmanifest.h"
 
 #define BO3_MODFS_MAX_MODS 64
@@ -36,6 +38,23 @@ int bo3_modfs_folder_count(void);      /* mod folders taken (0: none, the mod lo
 int bo3_modfs_mod_count(void);
 const bo3_mod *bo3_modfs_mod(int i);   /* NULL outside 0 .. count - 1 */
 
+/* The folder of mods made on this computer (the upscaled menu pictures,
+ * upscale.h), before bo3_modfs_init: a mod folder after the ones TAKEDAWN_MODS
+ * names, when it is there. NULL or "": none. */
+void bo3_modfs_generated_dir(const char *dir);
+/* The default mods folder (BO-327), before bo3_modfs_init: a mod folder after
+ * the ones TAKEDAWN_MODS names, when it exists, so mods work without a
+ * variable (a Steam Deck in Game Mode has no shell). NULL or "": none; an
+ * empty TAKEDAWN_MODS turns it off. Android: unset means the app's files
+ * folder's mods. bo3_modfs_default_dir_name gives it back ("" for none). */
+void bo3_modfs_default_dir(const char *dir);
+const char *bo3_modfs_default_dir_name(void);
+/* A mod folder's full path as the toolkit will open it, into out (1), or 0
+ * when it cannot take it. Windows: a path that is not plain ASCII becomes its
+ * short 8.3 form (the toolkit reads the path in the guest's code page).
+ * Elsewhere: the path itself (UTF-8 is fine), unless it holds a control
+ * character or a '\'. */
+int bo3_modfs_host_path(const char *full, char *out, size_t n);
 /* The mod list's file, before bo3_modfs_init. NULL or "": none (every mod on,
  * nothing saved). */
 void bo3_modfs_state_file(const char *path);
@@ -51,5 +70,10 @@ int bo3_modfs_enabled_next(const char *id);
 int bo3_modfs_set_enabled(const char *id, int on);
 /* Files more than one place supplies (this session; see the log for which). */
 int bo3_modfs_conflicts(void);
+/* Texture packs (BO-312): the textures/ folders of the places that are on, in
+ * lookup order (a folder's loose textures/ first, then its mods by id): the
+ * i-th one's full path into dir and a name for the log (the mod's id, or
+ * "folder N") into name. 1, or 0 past the last. */
+int bo3_modfs_texture_dir(int i, char *dir, size_t n, char *name, size_t nn);
 
 #endif

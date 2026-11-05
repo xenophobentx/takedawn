@@ -89,15 +89,19 @@ list and is shipped in every package.
 | [SMAA](https://github.com/iryoku/smaa) reference implementation | commit 71c806a | MIT | 2013 Jorge Jimenez, Jose I. Echevarria, Belen Masia, Fernando Navarro, Diego Gutierrez | Anti-aliasing |
 | [Roboto Condensed](https://github.com/googlefonts/RobotoCondensed) Medium, a subset (Latin, Latin Extended, Greek, Cyrillic) | google/fonts commit 69d0549; see the toolkit's `third_party/roboto_condensed/VENDORED.txt` | SIL Open Font License 1.1 | 2011 The Roboto Project Authors | The settings menu's text, and the letters the game's own font lacks. Text: `RobotoCondensed-OFL.txt` |
 | [DejaVu Sans Mono](https://dejavu-fonts.github.io), a subset (Latin Extended, Greek, Cyrillic) | see the toolkit's `third_party/dejavu/VENDORED.txt` | Bitstream Vera Fonts licence with the DejaVu changes (Arev: Tavmjong Bah); public-domain parts | Bitstream, Inc.; the DejaVu authors | The settings menu's letters outside basic Latin. Text: `DejaVu-fonts-LICENSE.txt` |
+| [Anton](https://github.com/googlefonts/AntonFont), the outline of one letter (W), as artwork | google/fonts `ofl/anton/Anton-Regular.ttf` (SHA-256 in `tools/glyphs/headfont.py`) | SIL Open Font License 1.1 | 2020 The Anton Project Authors | The W that the game's heading font lacks, for the TAKEDAWN ONLINE heading (`assets/glyphs/headfont/w.svg`, drawn into the font's atlas at run time). The font itself is not shipped. Text: `assets/glyphs/headfont/Anton-OFL.txt` in the source |
 | [dr_libs](https://github.com/mackron/dr_libs): dr_mp3, dr_flac, dr_wav | commit dfe8377 | Public domain (Unlicense) or MIT No Attribution; dr_mp3 contains minimp3 (lieff, CC0) | David Reid | Decode the player's own music folder (custom music). Not in the Android program's use. Text: `dr_libs-LICENSE.txt` |
 | [stb_vorbis](https://github.com/nothings/stb) | commit 2c980bb | Public domain (Unlicense) or MIT | Sean Barrett | Decodes Ogg Vorbis files of the player's own music folder. Text: `stb_vorbis-LICENSE.txt` |
+| [stb_image, stb_image_write, stb_dxt](https://github.com/nothings/stb) | commit f4a71b1 | Public domain (Unlicense) or MIT | Sean Barrett | Read the PNG files of texture packs, write the texture dump, compress big pack textures. Text: `stb-LICENSE.txt` |
 | [ADPCM-XQ](https://github.com/dbry/adpcm-xq) decoder (through xemu) | | BSD-3-Clause | David Bryant | Decodes the game's ADPCM sound. Text: `ADPCM-XQ-BSD-3-Clause.txt` |
 | AMD FidelityFX CAS (the algorithm) | | MIT | Advanced Micro Devices | Sharpening |
 | Super-xBR (the algorithm, a C version written from the published shaders) | | MIT | 2015 Hyllian (sergiogdb@gmail.com) | Menu and HUD upscaling (`graphics.ui_scale`). Text: in `xboxrecomp-NOTICE.txt` |
-| [FSRCNNX x2 8-0-4-1](https://github.com/igv/FSRCNN-TensorFlow) and [NNEDI3 nns16-win8x4](https://github.com/bjin/mpv-prescalers), as shader files | release 1.1; mpv-prescalers commit b3f0a59d | LGPL-3.0-or-later | 2017-2021 igv; bjin (NNEDI3 by tritical) | Texture upscale (`graphics.texture_upscale`, off by default). Not built into the program: the files sit beside it in `shaders/upscale`, with `COPYING.LESSER`, `COPYING` and a `NOTICE.md` that says where they come from and how to replace them |
+| [FSRCNNX x2 8-0-4-1](https://github.com/igv/FSRCNN-TensorFlow) and [NNEDI3 nns16-win8x4](https://github.com/bjin/mpv-prescalers), as shader files | release 1.1; mpv-prescalers commit b3f0a59d | LGPL-3.0-or-later | 2017-2021 igv; bjin (NNEDI3 by tritical) | Texture upscale (`graphics.texture_upscale`, off by default) and the films' Best mode (`graphics.film_upscale`). Not built into the program: the files sit beside it in `shaders/upscale`, with `COPYING.LESSER`, `COPYING` and a `NOTICE.md` that says where they come from and how to replace them |
+| AMD FidelityFX Super Resolution 1 (EASU and RCAS, as agyild's mpv port runs them on one plane, written as compute shaders) | 1.0.2 | MIT | 2021 Advanced Micro Devices, Inc. | The films' Cheap mode (`graphics.film_upscale`). Text: in `xboxrecomp-NOTICE.txt` |
 | FXAA 3.11 (the algorithm, written from the paper) | | no code taken | NVIDIA (the algorithm) | Anti-aliasing |
 | [glslang](https://github.com/KhronosGroup/glslang) | 16.6.0 on Windows and Android; the Steam Runtime 3 SDK's on Linux | BSD-3-Clause, Apache-2.0 and MIT (Khronos) | | Compiles shaders to SPIR-V for the Vulkan backend. Linked statically on Windows, Linux and Android |
 | [libadrenotools](https://github.com/bylaws/libadrenotools) and its linkernsbypass | commit 8fae8ce | BSD-2-Clause | 2021 Billy Laws | Loads the Turnip driver inside the Android app. Linked into `libmain.so`, plus four small hook libraries |
+| [ncnn](https://github.com/Tencent/ncnn) | 20260526 (its release's full source, built by `tools/android/fetch-deps.sh`) | BSD-3-Clause, with the notices of its parts (zlib for the NEON math functions) | 2017 THL A29 Limited, a Tencent company | Runs the menu pictures' upscale inside the Android app (see the upscaler's section below). Linked into `libmain.so`. Text: `ncnn-LICENSE.txt` |
 
 The toolkit also credits xemu, Cxbx-Reloaded and xboxdevwiki as references for
 hardware behaviour, and Fabian Giesen for the texture unswizzling technique.
@@ -197,18 +201,46 @@ fonts.
 | Unleashed Recompiled | Compiling a known shader list while the logos play |
 | apexJCL's BLiNX 2 project (MIT) | The method of the golden-frame comparison in `tools/headless` |
 
+## The menu pictures' upscaler
+
+"Sharper menu pictures" (the setup window's optional step, or Settings,
+Graphics: see `docs/upscale-art.md`) runs an AI upscaler that every desktop
+package carries: the program unchanged from its makers' release, and the
+models. The Android app carries no program: ncnn is linked into `libmain.so`
+(the table above) and the fast model below is in the APK as
+`assets/upscaler/realesr-general-dn030-x4v3.param` and `.bin`, made by
+`tools/android/fetch-deps.sh` from the same pinned files the same way. Linux and Windows: `upscaler/` beside the program;
+macOS: `Contents/MacOS/realesrgan-ncnn-vulkan` (the arm64 part of the release's
+universal program) and `Contents/Resources/upscaler/models`. The release
+scripts fetch them from the addresses in `tools/release/pins.env` and check
+each against its SHA-256.
+
+| Component | Version | Licence | Copyright | Use |
+|---|---|---|---|---|
+| [realesrgan-ncnn-vulkan](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan), from [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN)'s release v0.2.5.0 (`realesrgan-ncnn-vulkan-20220424-<system>.zip`) | 20220424 | MIT | 2021 Xintao Wang | Runs the models. Text: `realesrgan-ncnn-vulkan-MIT.txt` |
+| [ncnn](https://github.com/Tencent/ncnn), built into that program | | BSD-3-Clause, with the notices of its parts | THL A29 Limited, a Tencent company | Text: `ncnn-LICENSE.txt` |
+| [glslang](https://github.com/KhronosGroup/glslang), built into that program | | BSD-3-Clause and others | The Khronos Group and others | Text: `glslang.txt` |
+| [libwebp](https://github.com/webmproject/libwebp), built into that program | | BSD-3-Clause | Google Inc. | Text: `libwebp-BSD-3-Clause.txt` |
+| [MoltenVK](https://github.com/KhronosGroup/MoltenVK), built into the macOS program | | Apache-2.0 | The Brenwill Workshop Ltd. | Text: `MoltenVK-Apache-2.0.txt` |
+| `vcomp140.dll`, the Microsoft Visual C++ OpenMP runtime (Windows only), from the same archive | | Microsoft Visual Studio licence, Distributable Code | Microsoft Corporation | Text: `vcomp140-Microsoft.txt` |
+| RealESRGAN_x4plus (ncnn files, from the same archive) | | BSD-3-Clause | 2021 Xintao Wang | The model for the pictures. Text: `Real-ESRGAN-BSD-3-Clause.txt` |
+| realesr-general-x4v3 at denoise 0.3: its two ncnn weight files from [upscayl/custom-models](https://github.com/upscayl/custom-models) (commit 500e6a0) blended 0.3 / 0.7 at build time, as Real-ESRGAN's own `-dn` does (`tools/release/upscaler/blend_ncnn.py`) | | BSD-3-Clause (Real-ESRGAN's weights) | 2021 Xintao Wang | The quicker model (newspapers, and every picture at the fast quality; the only one in the Android app). Text: `Real-ESRGAN-BSD-3-Clause.txt` |
+
 ## Licence texts in the packages
 
 `takedawn-LICENSE.txt`, `xboxrecomp-LICENSE.txt` (MIT), `xboxrecomp-NOTICE.txt`
 (the toolkit's attribution file), `xboxrecomp-LGPL-2.1.txt`, `DearImGui-MIT.txt`,
-`SMAA-MIT.txt`, `ADPCM-XQ-BSD-3-Clause.txt`, `dr_libs-LICENSE.txt`, `stb_vorbis-LICENSE.txt`, `DejaVu-fonts-LICENSE.txt`, `RobotoCondensed-OFL.txt`, `SDL2-Zlib.txt`, `SDL3-Zlib.txt`, `sdl2-compat-Zlib.txt`,
+`SMAA-MIT.txt`, `ADPCM-XQ-BSD-3-Clause.txt`, `dr_libs-LICENSE.txt`, `stb_vorbis-LICENSE.txt`, `stb-LICENSE.txt`, `DejaVu-fonts-LICENSE.txt`, `RobotoCondensed-OFL.txt`, `SDL2-Zlib.txt`, `SDL3-Zlib.txt`, `sdl2-compat-Zlib.txt`,
+`realesrgan-ncnn-vulkan-MIT.txt`, `ncnn-LICENSE.txt`, `libwebp-BSD-3-Clause.txt`, `MoltenVK-Apache-2.0.txt`, `vcomp140-Microsoft.txt`, `Real-ESRGAN-BSD-3-Clause.txt` (the menu pictures' upscaler),
 `HIDAPI-BSD-3-Clause.txt`, `glslang.txt`, `Vulkan-Headers.txt`,
 `LLVM-Apache-2.0-with-exceptions.txt`, `MinGW-w64-runtime.txt`,
 `winpthreads.txt`, and with the setup window `Qt-NOTICE.txt`,
 `Qt-LGPL-3.0.txt`, `Qt-GPL-3.0.txt`, `Qt-THIRD-PARTY.txt`. `SOURCE.txt` names the commits of this
 build.
 
-The Android app has one more set, for the parts only it has:
+The Android app has one more set, for the parts only it has (and carries
+`ncnn-LICENSE.txt` and `Real-ESRGAN-BSD-3-Clause.txt` for its upscale also
+in a development build):
 `libadrenotools-BSD-2-Clause.txt`, `linkernsbypass-BSD-2-Clause.txt`,
 `Mesa-license.txt` (Mesa's licence page for the Turnip driver) with
 `Mesa-MIT.txt`, `Mesa-Apache-2.0.txt`, `Mesa-BSL-1.0.txt` and
