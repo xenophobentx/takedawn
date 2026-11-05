@@ -31,6 +31,7 @@
 #include <stddef.h>
 
 #include "controls.h"
+#include "glyphs.h"                    /* the prompts follow the layout (bo3_glyphs_ps2_driving) */
 #include "input_map.h"
 #include "keyboard.h"
 #include "touch_pad.h"                 /* the on-screen controls (BO-189) */
@@ -167,8 +168,11 @@ static void ctl_pad(void)
     }
     if (s_log && port == 0)
         ctl_log_frame();
-    if (M32(rec) != 2 || !M32(rec + 4))         /* no pad open on this port */
+    if (M32(rec) != 2 || !M32(rec + 4)) {       /* no pad open on this port */
+        if (port == 2)
+            bo3_glyphs_ps2_driving(0);
         return;
+    }
     g = (XBOX_GAMEPAD *)((uintptr_t)g_xbox_mem_offset + rec + 0xC);
     /* Esc while driving is Start (bo3_ctl_esc). Keys are the host port 0's,
      * the title's port 2, and only when this read carries a Back: with the
@@ -227,6 +231,11 @@ static void ctl_pad(void)
         fprintf(s_log, "G %u port %u %s (scheme %d driving %d sources %u)\n",
                 s_flips ? s_flips() : 0, port, ps2 ? "ps2" : "xbox", scheme, driving, src);
     bo3_ctl_apply(&s_port[port], g, ps2, nintendo);
+    /* Player 1's pad (the title's port 2) says which prompts the HUD shows:
+     * the game's A and B are the right shoulder and trigger for as long as
+     * this read was given in the PS2 layout. */
+    if (port == 2)
+        bo3_glyphs_ps2_driving(s_port[port].ps2);
     if (s_log) {
         static XBOX_GAMEPAD lraw[4], lout[4];
         if (memcmp(&raw, &lraw[port], sizeof raw) || memcmp(g, &lout[port], sizeof raw)) {

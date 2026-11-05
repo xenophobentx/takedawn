@@ -121,6 +121,47 @@ class FaceLayout(unittest.TestCase):
                 self.assertIn("bo3_glyph_%s_%s" % (fam, name), src)
 
 
+class Ps2Driving(unittest.TestCase):
+    """input.control_scheme = ps2: while driving the game's A is the right shoulder and its B the right
+    trigger (docs/controls.md), and glyphs.c draws them over A_Button and B_Button."""
+
+    def src(self):
+        return open(os.path.join(ROOT, "src", "game", "glyphs.c"), encoding="utf-8").read()
+
+    def test_every_picture_is_drawn_and_wired(self):
+        table = re.search(r"#define PS2_PAIRS\(X\)(.*?)\n#define", self.src(), re.S).group(1)
+        for name in draw.PS2_DRIVING:
+            self.assertTrue(os.path.isfile(os.path.join(ROOT, "assets", "glyphs", "ps2_driving", name + ".svg")), name)
+            self.assertRegex(table, r"\bps2_driving_%s\b" % name)
+
+    def test_labels_are_the_sheets_right_shoulder_and_trigger(self):
+        # the same words the set's own sheet prints on its right shoulder and trigger
+        labels = {v[1]: k for k, v in draw.PS2_DRIVING.items()}
+        for fam in ("playstation", "playstation5", "nintendo_position", "nintendo_label", "steam",
+                    "positional", "positional_swapped", "xbox_modern", "xbox_modern_swapped"):
+            f = draw.FAMILIES[fam]
+            self.assertIn(f["black"], labels, fam)
+            self.assertIn(f["rt"], labels, fam)
+            self.assertEqual(draw.PS2_DRIVING[labels[f["black"]]][0], "shoulder")
+            self.assertEqual(draw.PS2_DRIVING[labels[f["rt"]]][0], "trigger")
+
+    def test_each_set_has_its_twin_in_set_order(self):
+        # PS2_PAIRS: the 15 sets in set order (set 0 first), each with the labels of its family's right
+        # shoulder and trigger (the keyboard keeps its own keys); k_a and k_b take the two columns
+        src = self.src()
+        want = {"rb": "rt", "r1": "r2", "r": "zr"}
+        table = re.search(r"#define PS2_PAIRS\(X\)(.*?)\n#define", src, re.S).group(1)
+        pairs = re.findall(r"X\((\w+), (\w+)\)", table)
+        self.assertEqual(len(pairs), 15)
+        for i, (a, b) in enumerate(pairs):
+            if i == 9:                                      # set 9 is the keyboard
+                self.assertEqual((a, b), ("keyboard_a_button", "keyboard_b_button"))
+                continue
+            self.assertEqual(want[a.replace("ps2_driving_", "")], b.replace("ps2_driving_", ""), i)
+        self.assertIn("PS2_PAIRS(PS2_A)", re.search(r"k_a\[\] = \{(.*?)\};", src, re.S).group(1))
+        self.assertIn("PS2_PAIRS(PS2_B)", re.search(r"k_b\[\] = \{(.*?)\};", src, re.S).group(1))
+
+
 @unittest.skipUnless(build.renderer(), "no SVG renderer")
 class Rendered(unittest.TestCase):
     @classmethod

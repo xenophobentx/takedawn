@@ -279,10 +279,24 @@ held back: the button that confirmed "Resume" may stay down and accelerate.
   is already off, and it stays off (the results byte). Not checked: whether a replay reads
   the pad for anything.
 - The overlay: while it is open the title reads a neutral pad anyway.
-- Button prompts: they show the game's own button, not the PS2 layout's.
-  In Crash mode the Crashbreaker prompt shows B (or Circle), while the PS2
-  layout fires it with R2 / the right trigger. BO-147 tracks prompts that
-  follow the layout while driving.
+
+## Button prompts
+
+While the PS2 layout is in force (the gate above, for player 1's pad) the
+prompts of the game's A and B show the buttons that do it now: Impact Time
+(the game's A, the boost) shows the right shoulder, the Crashbreaker (the
+game's B) the right trigger, each as the pad of the chosen prompt set prints
+it: R1 and R2 (PlayStation, Steam, Positional), R and ZR (Nintendo), RB and
+RT (Xbox, the game's own set included). The game draws both prompts from the
+`A_Button` and `B_Button` textures of `Data/Global.txd`, so `src/game/glyphs.c`
+has a second variant of every prompt set with the shoulder and the trigger
+over those two (`assets/glyphs/ps2_driving`), and `controls.c` picks it on
+the frame the layout is applied and leaves it on the frame it is lifted: the
+captions before a crash event, the pause menu and the results show A and B
+(Continue, Resume) as before. The keyboard set keeps its keys, since the PS2
+layout is never applied to keys. In split screen both players see player 1's
+prompts (the textures are shared). Reported as issue #31 (Impact Time showing
+the cross with the PS2 layout).
 
 ## With the Nintendo face layout
 

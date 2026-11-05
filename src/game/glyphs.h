@@ -25,4 +25,10 @@ void bo3_glyphs_init(void);
  * set v. NULL and *n 0 in a build without the artwork. Static tables. */
 const struct nv2a_texrep_variant *bo3_glyphs_sheets(unsigned *n);
 
+/* Whether the PS2 driving layout is in force for player 1's pad now
+ * (input.control_scheme = ps2 while driving, controls.c): the prompts of
+ * the game's A and B (boost and Impact Time, the Crashbreaker) then show the
+ * right shoulder and the right trigger of the set's pad. Any thread. */
+void bo3_glyphs_ps2_driving(int on);
+
 #endif

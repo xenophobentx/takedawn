@@ -60,23 +60,54 @@ static const struct nv2a_texrep_rect k_dpad_all[] = {
 
 /* variants[set - 1], set = xbox_glyph_set (pad_glyphs.h). The last five are the sets drawn for a pad read
  * by letter: the face layout (Input > Face buttons = Nintendo) makes the game's A the right-hand button,
- * so the prompts show what that button is (pad_glyphs.h has the table). */
-static struct nv2a_texrep_variant k_sheet[] = {
-    ALL(bo3_glyph_playstation_buttons),
-    ALL(bo3_glyph_nintendo_position_buttons),
-    ALL(bo3_glyph_nintendo_label_buttons),
-    ALL(bo3_glyph_steam_buttons),
-    LOWER(bo3_glyph_xbox_modern_buttons),
-    ALL(bo3_glyph_positional_buttons),
-    ALL(bo3_glyph_positional_swapped_buttons),
-    ALL(bo3_glyph_playstation5_buttons),
-    ALL(bo3_glyph_keyboard_buttons),
-    TOP(bo3_glyph_xbox_swapped_buttons),
-    ALL(bo3_glyph_playstation_swapped_buttons),
-    ALL(bo3_glyph_playstation5_swapped_buttons),
-    ALL(bo3_glyph_steam_swapped_buttons),
+ * so the prompts show what that button is (pad_glyphs.h has the table).
+ *
+ * Then the same sets again for the PS2 driving layout (input.control_scheme = ps2, controls.c): variant
+ * PS2_VARIANT(set), set 0 (the game's own) included. While the layout is in force the game's A, boost
+ * and Impact Time, is the right shoulder, and its B, the Crashbreaker, the right trigger; the game draws
+ * those prompts from A_Button and B_Button, so these variants draw the shoulder and the trigger there,
+ * as the set's pad prints them (tools/glyphs/draw.py PS2_DRIVING). The sheet and the d-pad are the set's
+ * own: no prompt the game shows while driving is drawn from them. The keyboard keeps its keys: the PS2
+ * layout is never applied to them. */
+#define SHEETS \
+    ALL(bo3_glyph_playstation_buttons), \
+    ALL(bo3_glyph_nintendo_position_buttons), \
+    ALL(bo3_glyph_nintendo_label_buttons), \
+    ALL(bo3_glyph_steam_buttons), \
+    LOWER(bo3_glyph_xbox_modern_buttons), \
+    ALL(bo3_glyph_positional_buttons), \
+    ALL(bo3_glyph_positional_swapped_buttons), \
+    ALL(bo3_glyph_playstation5_buttons), \
+    ALL(bo3_glyph_keyboard_buttons), \
+    TOP(bo3_glyph_xbox_swapped_buttons), \
+    ALL(bo3_glyph_playstation_swapped_buttons), \
+    ALL(bo3_glyph_playstation5_swapped_buttons), \
+    ALL(bo3_glyph_steam_swapped_buttons), \
     TOP_LOWER(bo3_glyph_xbox_modern_swapped_buttons)
-};
+static struct nv2a_texrep_variant k_sheet[] = { SHEETS, KEEP, SHEETS };
+
+/* The PS2 driving layout's two prompts for each set, in set order (set 0, the game's own, first): the right
+ * shoulder over A_Button and the right trigger over B_Button, as that set's pad prints them. The keyboard
+ * keeps its own keys: the layout never applies to keys, and apply_variant never picks its twin. */
+#define PS2_PAIRS(X) \
+    X(ps2_driving_rb, ps2_driving_rt)           /* the game's own set: an Xbox pad */ \
+    X(ps2_driving_r1, ps2_driving_r2)           /* playstation */ \
+    X(ps2_driving_r, ps2_driving_zr)            /* nintendo_position */ \
+    X(ps2_driving_r, ps2_driving_zr)            /* nintendo_label */ \
+    X(ps2_driving_r1, ps2_driving_r2)           /* steam */ \
+    X(ps2_driving_rb, ps2_driving_rt)           /* xbox_modern */ \
+    X(ps2_driving_r1, ps2_driving_r2)           /* positional */ \
+    X(ps2_driving_r1, ps2_driving_r2)           /* positional_swapped */ \
+    X(ps2_driving_r1, ps2_driving_r2)           /* playstation5 */ \
+    X(keyboard_a_button, keyboard_b_button)     /* keyboard */ \
+    X(ps2_driving_rb, ps2_driving_rt)           /* xbox_swapped */ \
+    X(ps2_driving_r1, ps2_driving_r2)           /* playstation_swapped */ \
+    X(ps2_driving_r1, ps2_driving_r2)           /* playstation5_swapped */ \
+    X(ps2_driving_r1, ps2_driving_r2)           /* steam_swapped */ \
+    X(ps2_driving_rb, ps2_driving_rt)           /* xbox_modern_swapped */
+#define PS2_A(shoulder, trigger) ONE(bo3_glyph_##shoulder),
+#define PS2_B(shoulder, trigger) ONE(bo3_glyph_##trigger),
+
 static struct nv2a_texrep_variant k_a[] = {
     ONE(bo3_glyph_playstation_a_button),
     ONE(bo3_glyph_nintendo_position_a_button),
@@ -91,7 +122,8 @@ static struct nv2a_texrep_variant k_a[] = {
     ONE(bo3_glyph_playstation_swapped_a_button),
     ONE(bo3_glyph_playstation5_swapped_a_button),
     ONE(bo3_glyph_steam_swapped_a_button),
-    ONE(bo3_glyph_xbox_modern_swapped_a_button)
+    ONE(bo3_glyph_xbox_modern_swapped_a_button),
+    PS2_PAIRS(PS2_A)
 };
 static struct nv2a_texrep_variant k_b[] = {
     ONE(bo3_glyph_playstation_b_button),
@@ -107,15 +139,22 @@ static struct nv2a_texrep_variant k_b[] = {
     ONE(bo3_glyph_playstation_swapped_b_button),
     ONE(bo3_glyph_playstation5_swapped_b_button),
     ONE(bo3_glyph_steam_swapped_b_button),
-    ONE(bo3_glyph_xbox_modern_swapped_b_button)
+    ONE(bo3_glyph_xbox_modern_swapped_b_button),
+    PS2_PAIRS(PS2_B)
 };
 
 /* Only the keyboard changes it: arrow keys in place of the triangles. */
-static const struct nv2a_texrep_variant k_dpad[] = {
-    KEEP, KEEP, KEEP, KEEP, KEEP, KEEP, KEEP, KEEP,
-    DPAD(bo3_glyph_keyboard_dpad),
+#define DPADS \
+    KEEP, KEEP, KEEP, KEEP, KEEP, KEEP, KEEP, KEEP, \
+    DPAD(bo3_glyph_keyboard_dpad), \
     KEEP, KEEP, KEEP, KEEP, KEEP
-};
+static const struct nv2a_texrep_variant k_dpad[] = { DPADS, KEEP, DPADS };
+
+#define PS2_VARIANT(set) (XBOX_GLYPH_SET_COUNT + (set))
+#define N_VARIANTS       (2 * XBOX_GLYPH_SET_COUNT - 1)
+_Static_assert(sizeof k_sheet / sizeof k_sheet[0] == N_VARIANTS && sizeof k_a / sizeof k_a[0] == N_VARIANTS
+               && sizeof k_b / sizeof k_b[0] == N_VARIANTS && sizeof k_dpad / sizeof k_dpad[0] == N_VARIANTS,
+               "every texture has each set twice, the second time for the PS2 driving layout");
 
 _Static_assert(XBOX_GLYPH_SET_PLAYSTATION == 1 && XBOX_GLYPH_SET_NINTENDO_POSITION == 2
                && XBOX_GLYPH_SET_NINTENDO_LABEL == 3 && XBOX_GLYPH_SET_STEAM == 4
@@ -139,9 +178,31 @@ static const struct nv2a_texrep_tex k_tex[] = {
     { "dpad",     0x21d72a610f043563ull, NV2A_DXT45, 32, 16, k_dpad, sizeof k_dpad / sizeof k_dpad[0] },
 };
 
+/* The set the pad in use asks for, and whether the PS2 driving layout is in force: written by the input
+ * thread and by the title's thread, read by both, one variant from the two. */
+static volatile int s_set, s_ps2;
+
+static void apply_variant(void)
+{
+    int set = s_set;
+    int v = s_ps2 && set != XBOX_GLYPH_SET_KEYBOARD ? PS2_VARIANT(set) : set;
+
+    if (v != nv2a_texrep_variant())
+        nv2a_texrep_set_variant(v);
+}
+
 static void on_set(int set)
 {
-    nv2a_texrep_set_variant(set);
+    s_set = set;
+    apply_variant();
+}
+
+/* Once a frame from the title's thread, so a variant a set change on the input thread raced is put right a
+ * frame later (apply_variant only acts when the variant differs). */
+void bo3_glyphs_ps2_driving(int on)
+{
+    s_ps2 = on != 0;
+    apply_variant();
 }
 
 /* ── the keyboard set follows the player's keys (BO-267) ──────────────
@@ -253,7 +314,7 @@ void bo3_glyphs_init(void)
 
 const struct nv2a_texrep_variant *bo3_glyphs_sheets(unsigned *n)
 {
-    *n = sizeof k_sheet / sizeof k_sheet[0];
+    *n = XBOX_GLYPH_SET_COUNT - 1;            /* the sets themselves, not their PS2 driving twins */
     return k_sheet;
 }
 
@@ -267,6 +328,11 @@ const struct nv2a_texrep_variant *bo3_glyphs_sheets(unsigned *n)
 {
     *n = 0;
     return 0;
+}
+
+void bo3_glyphs_ps2_driving(int on)
+{
+    (void)on;
 }
 
 #endif

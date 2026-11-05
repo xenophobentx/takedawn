@@ -227,11 +227,11 @@ class Sheet:
                          % (x + 1.2, y + 1.2, w - 2.4, h - 2.4, max(rx - 1.2, 0.5), f))
         self.body.append(text(s, x + w / 2.0, y + h / 2.0, height, stroke, "#101218", gap))
 
-    def small_key(self, x, y, w, h, s, height, stroke, gap=0.2):
+    def small_key(self, x, y, w, h, s, height, stroke, gap=0.2, rx=2.6, rim=1.0):
         """A trigger key, in the 15 pixels the game gives it: dark, a light rim, light letters."""
         f = self.fill(FACE[0], FACE[1], y, y + h)
-        self.body.append('<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" rx="2.6" fill="%s" stroke="#c9ccd6" '
-                         'stroke-width="1"/>' % (x + 0.5, y + 0.5, w - 1.0, h - 1.0, f))
+        self.body.append('<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" rx="%g" fill="%s" stroke="#c9ccd6" '
+                         'stroke-width="%g"/>' % (x + rim / 2.0, y + rim / 2.0, w - rim, h - rim, rx, f, rim))
         self.body.append(text(s, x + w / 2.0, y + h / 2.0, height, stroke, WHITE, gap))
 
     def cap(self, cx, cy, w, h, what, size=None, stroke=1.5, gap=0.25, rx=6.0):
@@ -463,6 +463,30 @@ def dpad(fam):
     return s.svg("Takedawn button prompts: %s, the game's d-pad arrows (32x16)" % fam)
 
 
+# ── the PS2 driving layout's prompts (input.control_scheme = ps2) ──────────────
+# With the PS2 layout, while driving, the game's A (boost, Impact Time) is on the right
+# shoulder and its B (the Crashbreaker) on the right trigger (docs/controls.md). The game
+# draws those two prompts from its A_Button and B_Button textures, so src/game/glyphs.c
+# puts these over them while the layout is in force. A picture depends only on the label
+# the pad prints: the shoulder light, as the sheets draw the shoulders, the trigger dark
+# with a light rim, as the sheets draw the triggers.
+PS2_DRIVING = {
+    "r1": ("shoulder", "R1"), "r2": ("trigger", "R2"),        # PlayStation, Valve, positional
+    "r": ("shoulder", "R"), "zr": ("trigger", "ZR"),          # Nintendo
+    "rb": ("shoulder", "RB"), "rt": ("trigger", "RT"),        # Xbox
+}
+
+
+def ps2_driving(name):
+    kind, label = PS2_DRIVING[name]
+    s = Sheet(32, 32)
+    if kind == "shoulder":
+        s.key(1.0, 6.0, 30.0, 20.0, label, 11.0, 2.6, rx=7.0, gap=0.24)
+    else:
+        s.small_key(3.0, 1.5, 26.0, 29.0, label, 11.0, 2.4, gap=0.22, rx=6.0, rim=1.6)
+    return s.svg("Takedawn button prompts: the PS2 driving layout's %s (32x32, over A_Button or B_Button)" % label)
+
+
 # the families that draw the d-pad as well
 DPAD = ("keyboard",)
 
@@ -477,6 +501,8 @@ def files():
             svg = single(fam, key)
             if svg:
                 out["%s/%s.svg" % (fam, name)] = svg
+    for name in PS2_DRIVING:
+        out["ps2_driving/%s.svg" % name] = ps2_driving(name)
     return out
 
 
