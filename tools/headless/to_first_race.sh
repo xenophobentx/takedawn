@@ -19,7 +19,7 @@ source "$(dirname "$0")/scene_lib.sh"
 SAVES=empty scene_start "$@"
 wait_log 'Titles30[.]xmv' "intro film (Titles30.xmv)"
 press_until start:300 '_FEMain[.]xmv' 60
-wait_flip $(( $(anchor '_FEMain[.]xmv') + 300 ))
+wait_flip $(( $(anchor '_FEMain[.]xmv') + $(flips 300) ))
 press start:600 150         # Select Option: New Profile
 press a:400 150             # the keyboard, cursor on Done
 press a:400 150             # save your profile? No
@@ -34,11 +34,11 @@ press down:200 30
 press right:200 30          # Track: Random > Silver Lake Southbound
 press_until a:400 'CAR1[.]bgv' 150
 note "car select (flip $(anchor 'CAR1[.]bgv'))"
-wait_flip $(( $(anchor 'CAR1[.]bgv') + 200 ))
+wait_flip $(( $(anchor 'CAR1[.]bgv') + $(flips 200) ))
 press a:400 0               # the first car: the training film, the load
 wait_log 'C3_V1.streamed[.]dat' "Silver Lake streamed in"
 wait_log "$(track_re crash1)" "race begins (tracks crash1.rws)"
-wait_flip $(( $(anchor "$(track_re crash1)") + 300 ))
+wait_flip $(( $(anchor "$(track_re crash1)") + $(flips 300) ))
 note "driving (flip $(flip))"
 n=$(( ${RACE_SECS:-40} / 40 )); [ "$n" -lt 1 ] && n=1
 for (( k = 0; k < n; k++ )); do

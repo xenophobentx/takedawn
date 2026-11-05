@@ -32,6 +32,9 @@
 #   SCENE_TIMEOUT=s     the longest any single wait may take (default 900)
 #   SCENE_FLIPS=log     count flips by RECOMP_FLIP_LOG, for a build without
 #                       RECOMP_FLIP_MARK (toolkit before bo3/scenes)
+#   SCENE_RATE=Hz       the flips a second the waits are counted for (see
+#                       flips below; default 60, or with graphics.native_rate
+#                       the rate of RECOMP_FLIP_PACING=host:<Hz>)
 #   STOP_AT_END=1       stop the game when the driver is done
 #   WINDOW=1            run in a window instead of headless (frame-time and
 #                       on-screen checks; the drivers work the same)
@@ -68,8 +71,36 @@ scene_default_saves() {
 # 15 s with it. Offsets into a camera go through this. A settings file that
 # turns the switch on is not seen: give the variable.
 cam_flips() {
-    if [ "${SCENE_CRASH60:-${RECOMP_GFX_CRASH_60FPS:-0}}" = 1 ]; then echo $(( $1 * 2 )); else echo "$1"; fi
+    if [ "${SCENE_CRASH60:-${RECOMP_GFX_CRASH_60FPS:-0}}" = 1 ] || [ "$(scene_rate)" != 60 ]; then
+        echo $(( $1 * 2 )); else echo "$1"; fi
 }
+
+# scene_rate: the flips a second of the run's menus, races and loads. 60 as
+# the title ships them; with graphics.native_rate (the "[SIMRATE] native
+# frame rate" line at boot) the display's rate, which headless is
+# RECOMP_FLIP_PACING=host:<Hz>: a picture is a step there, menus and loads
+# included, so the same wait in seconds takes N/60 times the flips.
+# SCENE_RATE=<Hz> sets it. Decided once, after the first flip, by
+# scene_rate_set, which the waits below call in the driver's own shell (a
+# $(...) is a subshell, where the decision would be lost).
+scene_rate_set() {
+    [ -n "${SCENE_RATE:-}" ] && return
+    [ "$(flip)" -gt 0 ] || return
+    local hz=60 p
+    if grep -aq '\[SIMRATE\] native frame rate' "$D/events.txt" 2>/dev/null; then
+        p=$(sed -n 's/^RECOMP_FLIP_PACING=host:\([0-9]*\).*/\1/p' "$D/env.txt" 2>/dev/null)
+        [ -n "$p" ] && [ "$p" -gt 61 ] && hz=$p
+    fi
+    SCENE_RATE=$hz
+    [ "$hz" != 60 ] && note "native frame rate: waits counted for $hz flips a second"
+    return 0
+}
+scene_rate() { echo "${SCENE_RATE:-60}"; }
+
+# flips <n>: n flips as the title ships them (60 a second), as flips of this
+# run (scene_rate). press, press_until, wait_flips and shot's offset go
+# through it; a driver's own wait_flip $(( a + n )) gives $(flips n).
+flips() { echo $(( ($1 * $(scene_rate) + 30) / 60 )); }
 
 # scene_start <rundir> [KEY=VALUE...]: start the game, return at once.
 scene_start() {
@@ -136,7 +167,7 @@ scene_start() {
     (
         ( tail -n +1 -F "$D/log.txt" 2>/dev/null & echo $! > "$D/tail.pid"; wait ) \
             | grep -a --line-buffered -E \
-            '\[GPU\] flip [0-9]+ |\[FILE\]|PAD: live "|dumped |fb_dump_at|\[AUTOPILOT\]|\[AUDIO-WAV\] t=' \
+            '\[GPU\] flip [0-9]+ |\[FILE\]|PAD: live "|dumped |fb_dump_at|\[AUTOPILOT\]|\[AUDIO-WAV\] t=|\[SIMRATE\] native' \
             >> "$D/events.txt" &
         while kill -0 "$gpid" 2>/dev/null; do sleep 2; done
         sleep 2; kill "$(cat "$D/tail.pid")" 2>/dev/null
@@ -209,7 +240,7 @@ wait_flip() {
 }
 
 # wait_flips <n>: n flips from now.
-wait_flips() { wait_flip $(( $(flip) + $1 )); }
+wait_flips() { scene_rate_set; wait_flip $(( $(flip) + $(flips "$1") )); }
 
 # press <button[:hold]> [flips]: append the press, wait until the runtime
 # has taken it ('PAD: live "<press>"'), then wait <flips> flips (default 45)
@@ -222,7 +253,8 @@ press() {
     wait_count 'PAD: live "' "$PADN"
     local f; f=$(anchor 'PAD: live "' "$PADN")
     note "press $1 (flip $f)"
-    wait_flip $(( f + ${2:-45} ))
+    scene_rate_set
+    wait_flip $(( f + $(flips "${2:-45}") ))
 }
 
 # press_until <button[:hold]> <regex> [flips]: press, and again every
@@ -233,7 +265,7 @@ press_until() {
     until grep -aqE "$2" "$D/events.txt" 2>/dev/null; do
         [ $(( $(date +%s) - t )) -gt "$SCENE_TIMEOUT" ] && die "no '$2' after pressing $1"
         press "$1" 0
-        local f=$(( $(flip) + ${3:-120} ))
+        local f=$(( $(flip) + $(flips "${3:-120}") ))
         until [ "$(flip)" -ge "$f" ] || grep -aqE "$2" "$D/events.txt"; do alive; sleep 0.1; done
     done
     note "log: $2 (flip $(anchor "$2"))"
@@ -250,7 +282,9 @@ press_until() {
 # The game dumps flip N before it prints "[GPU] flip N", so once the flip
 # log is past the window, the files are complete.
 shot() {
-    local name=$1 a=$2 off=$3 tgt=$(( $2 + $3 )) w=${4:-${SHOT_WINDOW:-4}}
+    local name=$1 a=$2 off w=${4:-${SHOT_WINDOW:-4}} tgt
+    scene_rate_set
+    off=$(flips "$3"); tgt=$(( a + off ))
     local now; now=$(flip)
     if [ "${CAPTURE:-0}" != 1 ]; then wait_flip "$tgt"; return; fi
     [ "$now" -ge $(( tgt - w )) ] && die "shot $name: flip $(( tgt - w )) asked for at flip $now"

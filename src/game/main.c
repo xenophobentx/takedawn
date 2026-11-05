@@ -70,6 +70,7 @@ extern void xbox_InputPanicStop(int wait_ms);
 #include "xbox_memory_layout.h"
 #include "usb/ohci.h"
 #include "region.h"                   /* BO3_VA: NTSC-U or PAL addresses */
+#include "simrate.h"                  /* graphics.native_rate, game.loading_min */
 #include "controls.h"                 /* input.control_scheme (BO-106) */
 #include "install.h"                  /* the data root, --install, --version (BO-103) */
 #include "languages.h"                /* the Language row's languages */
@@ -3855,6 +3856,10 @@ int main(int argc, char **argv)
      * a RECOMP_* variable the user set wins over it, it wins over the
      * defaults below (xbox_settings.h). */
     xbox_SettingsInit(BO3_USER_DIR);
+    /* graphics.native_rate (simrate.c, read at start): the simulation at the
+     * display's rate, and the settings it needs on, before anything reads
+     * them. */
+    bo3_sim_settings();
     /* The saved diagnostic_log is in force from here (BO-193); the one line
      * says the state and what decided it. */
     if (!bug_report)
@@ -3977,6 +3982,10 @@ int main(int argc, char **argv)
     if (bo3_steam_art_available())
         xbox_OverlaySetSteamArt(bo3_steam_art_run);
 #endif
+    /* The Display page's Native frame rate and the Game page's Loading
+     * screens (simrate.c): rows of this title's. */
+    xbox_SettingsSetNativeRate(1);
+    xbox_SettingsSetLoadingMin(1);
 #if defined(__ANDROID__)
     xbox_OverlaySetHostRows(3, android_driver_row);
 #endif

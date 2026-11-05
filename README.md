@@ -688,6 +688,7 @@ Under *Frame rate*:
 | Row | Choices | Default and notes |
 |---|---|---|
 | High refresh rate | On, Off | Off. Draws at the display's refresh rate (120, 144 Hz and faster); the game itself keeps its 60 steps a second, and cars and the camera move smoothly between them. Menus, split screen, and crash cameras unless 60 fps crash cameras is on, stay at the game's own rate. Adds up to one 60 Hz step of delay. Needs a fast machine. [Details](docs/high-refresh.md) |
+| Native frame rate (restart) | On, Off | Off. Runs the game itself at the display's refresh rate instead of 60 steps a second: every frame a real step, the controls read as often, menus and loading screens too. Turns on High refresh rate, 60 fps crash cameras and Potato mode. Locked while an online session is active. Needs a machine that holds the display's rate. [Details](docs/native-rate.md) |
 | Frame presentation (Mac only) | Legacy, Auto (display link), Aimed | Auto. On macOS 14 and later Auto hands each frame to the display at its refresh. [Details](docs/present-timing.md) |
 | Frame pacing (Windows, Linux, Steam Deck) | Automatic, Low latency, Smooth | Automatic: Smooth on a Steam Deck, Low latency elsewhere. Smooth keeps one finished frame queued, so a late frame does not repeat the last one. It adds one refresh (16.7 ms at 60 Hz) of delay. On a variable-refresh display, or at a refresh far from 60 Hz, it acts like Low latency |
 | Power mode | Balanced, Battery saver, Auto; on a Mac also Maximum | Balanced. Battery saver uses less power and can show an occasional small dip. Auto watches the frame times and only works harder when frames start to arrive late |
@@ -748,6 +749,7 @@ of the picture.
 | Language | the languages on your disc | Only shown when the disc has more than one: the European disc has German, French and Italian text, speech and films, the US disc English only. Without a choice the game shows what an Xbox set to English would: French on the European disc. From the next start |
 | Widescreen HUD | On, Off | On. With 16:9, keeps the HUD in its 4:3 shape at the edges of the picture, and the menus 4:3 in the middle with the decoration across the screen. From the next race |
 | 4:3 pictures | Blurred sides, Black bars, Stretched | Blurred sides. Shown with Widescreen HUD on. The loading screens, the films behind the menus and the Crash Nav map keep their 4:3 shape, with a blurred, darker copy or dark bars beside them. Stretched spreads them across the screen, as the original does in widescreen |
+| Loading screens | Off, 3, 5, 8, 10 s | Off. Keeps a race's loading screen up at least this long; loading itself is not slowed. [Details](docs/native-rate.md) |
 | Crash Nav map | Full width, 4:3 | Full width. Shown with Widescreen HUD on and 4:3 pictures on Stretched. Full width spreads the map, its route and its markers across the screen like the frame around it. 4:3 keeps the map in the shape of the rest of the menu |
 | Ultrawide | Off, 21:9, 32:9, Window | Off. Needs Aspect ratio 16:9. From the next race |
 | Score board | Original, Smooth | Original, as on the console. Smooth fades the dark plate behind the score together with its text |

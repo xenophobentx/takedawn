@@ -31,7 +31,7 @@ press a:400 90; press right:200 25; press down:200 20; press right:200 25; press
 wait_log 'CAR1[.]bgv' "car select"
 press a:400 0
 wait_log "$(track_re crash1)" "race begins"
-wait_flip $(( $(anchor "$(track_re crash1)") + 900 ))
+wait_flip $(( $(anchor "$(track_re crash1)") + $(flips 900) ))
 press start:300 120
 grep -aq '\[MENU\] pause: TAKEDAWN SETTINGS listed' "$D/log.txt" || bad "not listed in the pause menu"
 press down:200 25; press down:200 25; press down:200 25; press down:200 40
@@ -48,7 +48,7 @@ grep -aq 'open: the title is paused' "$D/log.txt" || bad "the overlay did not op
 sleep 2
 : > "$rd/overlay_toggle"
 f=$(flip); t=$(date +%s)
-until [ "$(flip)" -gt $(( f + 60 )) ]; do
+until [ "$(flip)" -gt $(( f + $(flips 60) )) ]; do
     alive; [ $(( $(date +%s) - t )) -gt 30 ] && { bad "the title did not run on after the overlay closed"; break; }
     sleep 0.25
 done
