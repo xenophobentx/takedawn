@@ -146,7 +146,9 @@ EA's.
   the games that are open, racing or full. Before a QUICK PLAY race everyone
   votes for the track, and after the race the players stay together for the
   next one. Local network play works without the internet.
-  [docs/online.md](docs/online.md) has the details.
+  [docs/online.md](docs/online.md) has the details. The
+  [server's page](https://vps4954.rackhostvps.com/takedawn/) shows how many
+  players are online, the open games, and the last 30 days.
 - All three retail discs in one download: North America, Europe (France,
   Germany, Italy), and Europe and Australia (English, Spanish, Dutch,
   Swedish). Game > Language picks the text, the speech and the films from
