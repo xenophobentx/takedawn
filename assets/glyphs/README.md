@@ -21,6 +21,11 @@ strokes.
 | `xbox_modern/` | Xbox 360 / One / Series pads | LB RB LT RT and a Menu ring; A B X Y stay the game's own |
 | `xbox_swapped/`, `xbox_modern_swapped/`, `playstation_swapped/`, `playstation5_swapped/`, `steam_swapped/` | the same sets when the pad is read by letter: `input.face_layout = nintendo` moves the game's A to the right-hand button, so the prompts show what that button is | the pictures of A and B, and of X and Y, exchanged: B A Y X on the Xbox and Valve pads, circle cross triangle square on the PlayStation ones. The Xbox discs are drawn here in the four Xbox colours (the unswapped Xbox set keeps the game's own) |
 
+`ps2_driving/` holds six single pictures (32x32: R1 R2, R ZR, RB RT), not a set: with the PS2 driving
+layout (`input.control_scheme = ps2`) the game's A and B are the right shoulder and trigger while
+driving, and these are drawn over `A_Button` and `B_Button` then, the labels of the set in use
+(`docs/controls.md`, "Button prompts").
+
 The prompt shows the button that actually triggers the action once the face layout is applied. The table
 of which set draws what, for each pad and layout, is in the toolkit's `src/input/pad_glyphs.h`;
 `tools/glyphs/tests` checks the pictures against it.
