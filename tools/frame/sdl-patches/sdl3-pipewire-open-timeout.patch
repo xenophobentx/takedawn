@@ -1,0 +1,55 @@
+--- a/src/audio/pipewire/SDL_pipewire.c
++++ b/src/audio/pipewire/SDL_pipewire.c
+@@ -71,6 +71,7 @@
+ static void (*PIPEWIRE_pw_thread_loop_unlock)(struct pw_thread_loop *);
+ static void (*PIPEWIRE_pw_thread_loop_signal)(struct pw_thread_loop *, bool);
+ static void (*PIPEWIRE_pw_thread_loop_wait)(struct pw_thread_loop *);
++static int (*PIPEWIRE_pw_thread_loop_timed_wait)(struct pw_thread_loop *, int);
+ static int (*PIPEWIRE_pw_thread_loop_start)(struct pw_thread_loop *);
+ static struct pw_context *(*PIPEWIRE_pw_context_new)(struct pw_loop *, struct pw_properties *, size_t);
+ static void (*PIPEWIRE_pw_context_destroy)(struct pw_context *);
+@@ -166,6 +167,7 @@
+     SDL_PIPEWIRE_SYM(pw_thread_loop_unlock);
+     SDL_PIPEWIRE_SYM(pw_thread_loop_signal);
+     SDL_PIPEWIRE_SYM(pw_thread_loop_wait);
++    SDL_PIPEWIRE_SYM(pw_thread_loop_timed_wait);
+     SDL_PIPEWIRE_SYM(pw_thread_loop_start);
+     SDL_PIPEWIRE_SYM(pw_context_new);
+     SDL_PIPEWIRE_SYM(pw_context_destroy);
+@@ -1227,14 +1229,34 @@
+     }
+ 
+     // Wait until all pre-open init flags are set or the stream has failed.
++    // Takedawn: not for ever. A stream to a sink that cannot start (an HDMI
++    // output that is the default for a moment while the machine wakes) never
++    // reaches either state, and this wait is made with the device locks held,
++    // on the hotplug thread when the default device changes: the old device's
++    // thread and the event thread then block on those locks for good. After
++    // PIPEWIRE_OPEN_TIMEOUT_MS the open fails instead, as any other failed
++    // open does.
++    #define PIPEWIRE_OPEN_TIMEOUT_MS 3000
++    const Uint64 open_started = SDL_GetTicks();
++    bool open_timed_out = false;
+     PIPEWIRE_pw_thread_loop_lock(priv->loop);
+     while (priv->stream_init_status != PW_READY_FLAG_ALL_PREOPEN_BITS &&
+            PIPEWIRE_pw_stream_get_state(priv->stream, NULL) != PW_STREAM_STATE_ERROR) {
+-        PIPEWIRE_pw_thread_loop_wait(priv->loop);
++        if (SDL_GetTicks() - open_started >= PIPEWIRE_OPEN_TIMEOUT_MS) {
++            open_timed_out = true;
++            break;
++        }
++        PIPEWIRE_pw_thread_loop_timed_wait(priv->loop, 1);
+     }
+-    priv->stream_init_status |= PW_READY_FLAG_OPEN_COMPLETE;
++    if (!open_timed_out) {
++        priv->stream_init_status |= PW_READY_FLAG_OPEN_COMPLETE;
++    }
+     PIPEWIRE_pw_thread_loop_unlock(priv->loop);
+ 
++    if (open_timed_out) {
++        return SDL_SetError("Pipewire: the stream did not start within %d ms", PIPEWIRE_OPEN_TIMEOUT_MS);
++    }
++
+     if (PIPEWIRE_pw_stream_get_state(priv->stream, &error) == PW_STREAM_STATE_ERROR) {
+         return SDL_SetError("Pipewire: Stream error: %s", error);
+     }
