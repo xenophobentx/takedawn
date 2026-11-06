@@ -16,6 +16,10 @@
 #                    folder, disc name, manifest id and entries (the others'
 #                    in full, this one's are k_files); BO3_PACKAGE_COUNT,
 #                    BO3_PACKAGE_SELF
+#   bo3_langs_manifest.inc  the same for the European discs' languages
+#   bo3_langs2_manifest.inc (config/disc/pal-languages.manifest: French,
+#                    German, Italian; pal-languages-2.manifest: Spanish, Dutch,
+#                    Swedish; --install-languages)
 #
 # Run as a script (cmake -D... -P release_info.cmake) it writes the same
 # files and nothing else: tools/release/common.sh reads the key that way.
@@ -193,6 +197,12 @@ function(_bo3_manifest _id _pfx)
     set(${_pfx}_COUNT "${_count}" PARENT_SCOPE)
 endfunction()
 _bo3_manifest("${_build_id}" BO3_MANIFEST)
+# The European discs' languages (--install-languages: read in place of the
+# North American disc's English).
+_bo3_manifest(pal-languages BO3_LANGS)
+_bo3_manifest(pal-languages-2 BO3_LANGS2)
+set(_langs_inc "${BO3_LANGS_INC}")
+set(_langs2_inc "${BO3_LANGS2_INC}")
 set(_inc "${BO3_MANIFEST_INC}")
 set(_count "${BO3_MANIFEST_COUNT}")
 set(_manifest "${BO3_ROOT}/config/disc/${_build_id}.manifest")
@@ -237,7 +247,8 @@ string(APPEND _pkg_inc "#define BO3_PACKAGE_COUNT ${_np}\n#define BO3_PACKAGE_SE
        "static const bo3_package_build k_package[BO3_PACKAGE_COUNT] = {\n${_pkg_rows}};\n")
 if(NOT CMAKE_SCRIPT_MODE_FILE)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-        "${BO3_ROOT}/VERSION" "${_manifest}" "${BO3_ROOT}/tools/install/supported.json")
+        "${BO3_ROOT}/VERSION" "${_manifest}" "${BO3_ROOT}/tools/install/supported.json"
+        "${BO3_ROOT}/config/disc/pal-languages.manifest" "${BO3_ROOT}/config/disc/pal-languages-2.manifest")
 endif()
 
 # ── the generated code's stamp ───────────────────────────────────────
@@ -304,12 +315,16 @@ set(_header "/* Made by cmake/release_info.cmake at configure time. */
 #define BO3_MANIFEST_ID \"${BO3_MANIFEST_ID}\"
 #define BO3_MANIFEST_BUILD \"${BO3_MANIFEST_BUILD}\"
 #define BO3_MANIFEST_TITLE_ID ${BO3_MANIFEST_TITLE_ID}u
+#define BO3_LANGS_ID \"${BO3_LANGS_ID}\"
+#define BO3_LANGS_TITLE_ID ${BO3_LANGS_TITLE_ID}u
+#define BO3_LANGS2_ID \"${BO3_LANGS2_ID}\"
+#define BO3_LANGS2_TITLE_ID ${BO3_LANGS2_TITLE_ID}u
 #define BO3_GEN_TREE \"${BO3_GEN_TREE}\"
 #define BO3_GEN_PATCHES \"${BO3_GEN_PATCHES}\"
 #define BO3_XBE_SHA256 \"${_xbe_sha}\"
 #define BO3_BUILD_ID \"${_build_id}\"
 ")
-foreach(_pair "bo3_release.h|_header" "bo3_manifest.inc|_inc" "bo3_package.inc|_pkg_inc")
+foreach(_pair "bo3_release.h|_header" "bo3_manifest.inc|_inc" "bo3_package.inc|_pkg_inc" "bo3_langs_manifest.inc|_langs_inc" "bo3_langs2_manifest.inc|_langs2_inc")
     string(REPLACE "|" ";" _pair "${_pair}")
     list(GET _pair 0 _file)
     list(GET _pair 1 _var)

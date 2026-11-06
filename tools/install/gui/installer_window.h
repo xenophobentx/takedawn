@@ -57,6 +57,8 @@ struct LaunchConfig {
   QString home;
   QStringList media_roots;
   bool pad = true;       // read the controllers (tests press the keys themselves)
+  bool from_game = false;  // opened from the running game for More languages: no Play, restart it afterwards
+  qint64 game_pid = 0;     // that game's process (--game-pid): when it ends, Play comes back
 };
 
 // Takedawn's setup window: the front end of the installer inside the game's own
@@ -69,6 +71,10 @@ class InstallerWindow : public QWidget {
   Q_OBJECT
 
  public:
+  // The exit status that asks the game which opened this window (--from-game) to
+  // restart itself (install.c bo3_add_languages_run waits for it).
+  static constexpr int kRestartGame = 10;
+
   explicit InstallerWindow(const LaunchConfig& config, QWidget* parent = nullptr);
   ~InstallerWindow() override;
 
@@ -126,6 +132,7 @@ class InstallerWindow : public QWidget {
   // Building the window.
   QWidget* BuildDiscSection();
   QWidget* BuildInstallSection();
+  QWidget* BuildLanguagesSection();
   QWidget* BuildDetails();
   void ShowAbout();
   QString LicenseDir() const;
@@ -158,6 +165,18 @@ class InstallerWindow : public QWidget {
   qint64 CopiedBytes() const;  // the game's files already in the data folder
   qint64 FreeBytes() const;    // free on the disk the data folder is on, -1 when unknown
   qint64 StillNeededFree() const;  // what the installer wants free now (the 3 GB less what is already there)
+
+  // More languages: those of the player's European (PAL) discs (French, German,
+  // Italian; Spanish, Dutch, Swedish), once the game's data is installed (the
+  // game's --install-languages).
+  void BrowseLanguagesDisc();
+  void NativeLanguagesDialog();
+  void SetLanguagesDisc(const QString& path);
+  void InstallLanguages();
+  void RefreshLanguages();
+  bool LanguagesInstalled() const;  // both discs: <data>/Languages/<disc>/.complete
+  QStringList LanguagesInstalledNames() const;  // the language sets installed, by disc
+  bool LanguagesRunning() const { return langs_proc_ && langs_proc_->IsRunning(); }
 
   // The disc.
   void OpenBrowser();
@@ -337,4 +356,19 @@ class InstallerWindow : public QWidget {
   QLabel* hints_ = nullptr;
   PadSource* pad_ = nullptr;
   PadNavigator* nav_ = nullptr;
+
+  // More languages.
+  QFrame* langs_section_ = nullptr;
+  StepGlyph* langs_glyph_ = nullptr;
+  QLabel* langs_status_ = nullptr;
+  ElidedLabel* langs_file_ = nullptr;
+  QToolButton* langs_browse_ = nullptr;
+  QToolButton* langs_install_ = nullptr;
+  HeatProgressBar* langs_progress_ = nullptr;
+  DriverProcess* langs_proc_ = nullptr;
+  QString langs_disc_;      // the European disc chosen
+  bool langs_valid_ = false;  // the game accepted it (--install-languages --check)
+  QString langs_message_;   // what the last check or install said, when it was not OK
+  bool browse_langs_ = false;  // the built-in browser is choosing the European disc
+  QTimer game_watch_;          // --from-game: is the game that opened this still running?
 };

@@ -19,19 +19,25 @@
 #include <windows.h>
 #include <direct.h>
 #define bo3_chdir _chdir
+#define bo3_getcwd _getcwd
 #else
 #include <unistd.h>
 #define bo3_chdir chdir
+#define bo3_getcwd getcwd
 #if defined(__linux__) && !defined(__ANDROID__)
 #include <poll.h>
+#endif
+#if !defined(__ANDROID__)
 #include <sys/wait.h>
 #endif
 #endif
 
 #include "disc_install.h"
+#include "langpack.h"               /* the European discs' languages: their lists and folders */
 #include "package.h"
 #include "platform/recomp_save_dir.h"
 #include "platform/recomp_exe_dir.h"
+#include "platform/recomp_restart.h"   /* the environment the game was started with */
 #if !defined(__ANDROID__)
 #include "d3d/nv2a_pcache.h"
 #endif
@@ -934,6 +940,124 @@ int bo3_steam_art_run(char *line, unsigned n)
 }
 #endif
 
+/* ── Add languages (the overlay's Game page) ───────────────────── */
+
+#if !defined(__ANDROID__)
+int bo3_add_languages_available(void)
+{
+    char prog[1100];
+
+    return setup_program(prog, sizeof prog);
+}
+
+/* The setup window, opened beside the running game for its More languages
+ * section (--install-languages; --from-game --game-pid: it offers "Restart the
+ * game" once they are in, and becomes the launcher again if this process
+ * ends), and waited for (the overlay calls this on a thread of its own).
+ * Returns 2 when the window ended with RESTART_GAME (its Restart the game),
+ * else whether the languages are there now; they are offered from the next
+ * start. The data root is this process's working directory (bo3_data_enter
+ * went there). */
+#define RESTART_GAME 10                 /* the setup window's InstallerWindow::kRestartGame */
+
+int bo3_add_languages_run(char *line, unsigned n)
+{
+    char prog[1100], cwd[1100], pid[24];
+    const char *self = recomp_exe_path();
+    unsigned before = bo3_langpack_installed();
+    int named = 0, restart = 0;
+
+    snprintf(line, n, "The setup program was not found.");
+    if (!setup_program(prog, sizeof prog) || !self[0])
+        return 0;
+    if (bo3_getcwd(cwd, sizeof cwd) && strlen(cwd) < sizeof cwd - 40) {
+        char xbe[1200];
+        snprintf(xbe, sizeof xbe, "%s/" GAME_DIR "/default.xbe", cwd);
+        named = file_exists(xbe);
+    }
+#if defined(_WIN32)
+    snprintf(pid, sizeof pid, "%lu", (unsigned long)GetCurrentProcessId());
+    {
+        char cmd[3400];
+        STARTUPINFOA si;
+        PROCESS_INFORMATION pi;
+        DWORD status = 0;
+
+        if (named)
+            snprintf(cmd, sizeof cmd, "\"%s\" --from-game --game-pid %s --program \"%s\" --dest \"%s\"", prog,
+                     pid, self, cwd);
+        else
+            snprintf(cmd, sizeof cmd, "\"%s\" --from-game --game-pid %s --program \"%s\"", prog, pid, self);
+        memset(&si, 0, sizeof si);
+        si.cb = sizeof si;
+        if (!CreateProcessA(prog, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+            snprintf(line, n, "Could not start the setup program.");
+            return 0;
+        }
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        GetExitCodeProcess(pi.hProcess, &status);
+        restart = status == RESTART_GAME;
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+    }
+#else
+    snprintf(pid, sizeof pid, "%ld", (long)getpid());
+    {
+        char *args[9];
+        int k = 0, status = 0;
+        pid_t child;
+
+        args[k++] = prog;
+        args[k++] = (char *)"--from-game";
+        args[k++] = (char *)"--game-pid";
+        args[k++] = pid;
+        args[k++] = (char *)"--program";
+        args[k++] = (char *)self;
+        if (named) {
+            args[k++] = (char *)"--dest";
+            args[k++] = cwd;
+        }
+        args[k] = NULL;
+        child = fork();
+        if (child < 0) {
+            snprintf(line, n, "Could not start the setup program.");
+            return 0;
+        }
+        if (child == 0) {
+            /* With the environment the game was started with, not the one it
+             * has now: the settings file's values went into it at start
+             * (xbox_SettingsInit), and a game the window starts again (its
+             * Play) would take each for a variable the player set. */
+            char **envp = NULL;
+            extern char **environ;
+            recomp_restart_snapshot(NULL, NULL, &envp, NULL);
+            setsid();                   /* not stopped with the game's own process group */
+            execve(prog, args, envp ? envp : environ);
+            _exit(127);
+        }
+        if (waitpid(child, &status, 0) == child && WIFEXITED(status)) {
+            if (WEXITSTATUS(status) == 127) {
+                snprintf(line, n, "Could not start the setup program.");
+                return 0;
+            }
+            restart = WEXITSTATUS(status) == RESTART_GAME;
+        }
+    }
+#endif
+    if (restart) {
+        snprintf(line, n, "Restarting the game...");
+        return 2;
+    }
+    if (bo3_langpack_installed() != before) {
+        snprintf(line, n, "The languages are added: press Restart below, then choose one under "
+                 "Language.");
+        return 1;
+    }
+    snprintf(line, n, "The setup window was closed without adding the languages.");
+    return 0;
+}
+#endif
+
 /* The command a person types to run this program again: the AppImage file
  * they hold (APPIMAGE) rather than the program inside it, which lives in a
  * mount that is gone when the program exits. */
@@ -1387,16 +1511,19 @@ static void out(const char *fmt, ...)
     fflush(stdout);
 }
 
+/* The protocol's step: STEP, or "languages" for --install-languages. */
+static const char *s_step = STEP;
+
 static void install_progress(void *ctx, double fraction, const char *text)
 {
     (void)ctx;
-    out("PROGRESS " STEP " %.3f %s", fraction, text);
+    out("PROGRESS %s %.3f %s", s_step, fraction, text);
 }
 
 static void install_log(void *ctx, const char *text)
 {
     (void)ctx;
-    out("LOG " STEP " %s", text);
+    out("LOG %s %s", s_step, text);
 }
 
 static int install_usage(void)
@@ -1620,6 +1747,163 @@ int bo3_install_main(int argc, char **argv)
             "from an earlier run; %ld s%s", k_manifest.count,
             (unsigned long long)xr_manifest_bytes(&k_manifest), r.copied, r.verified, r.kept,
             (long)(time(NULL) - t0), switched);
+    out("RESULT OK %s", dest);
+    return 0;
+}
+
+/* ── --install-languages ───────────────────────────────────────────── */
+
+static int install_languages_usage(void)
+{
+    const xr_manifest *fdi = bo3_langpack_disc(0, NULL, NULL), *esv = bo3_langpack_disc(1, NULL, NULL);
+
+    XR_ERROR(
+        "usage: burnout3 --install-languages <image-or-folder> [--dest <dir>] [--check]\n"
+        "  Adds the languages of your own European (PAL) disc of the game: an Xbox disc\n"
+        "  image or a folder extracted from one. Either European disc:\n"
+        "    French, German, Italian: %u files (%.2f GB)\n"
+        "    English, Spanish, Dutch, Swedish: %u files (%.2f GB)\n"
+        "  are checked against the disc's manifest and copied to <data>/" BO3_LANGPACK_DIR "/<disc>,\n"
+        "  beside the game's data; the settings' Game page then offers them (Language).\n"
+        "  --dest <dir>   the game's data folder (default: as --install)\n"
+        "  --check        only say what the disc is; nothing is written\n"
+        "  stdout is the line protocol of --install, with the step \"languages\".\n",
+        fdi->count, (double)xr_manifest_bytes(fdi) / 1e9, esv->count, (double)xr_manifest_bytes(esv) / 1e9);
+    return 2;
+}
+
+/* Which European disc source is (its default.xbe), -1 neither; *code is the
+ * last check's result. */
+static int langs_disc(const char *source, const char *dest, int *code)
+{
+    xr_install_opts o;
+    xr_install_result r;
+    unsigned i;
+
+    for (i = 0; i < BO3_LANGPACK_DISCS; i++) {
+        memset(&o, 0, sizeof o);
+        o.source = source;
+        o.source_fd = -1;
+        o.dest = dest;
+        o.manifest = bo3_langpack_disc(i, NULL, NULL);
+        o.version = BO3_VERSION;
+        o.identify_only = 1;
+        xr_install(&o, &r);
+        *code = r.code;
+        if (r.code == XR_INSTALL_OK)
+            return (int)i;
+    }
+    return -1;
+}
+
+/* As --install, but a European disc's language files into
+ * <data>/Languages/<disc>, and never another disc's program: this one's data
+ * stays what it is. */
+int bo3_install_languages_main(int argc, char **argv)
+{
+    const char *source = NULL, *dest_arg = NULL, *env = getenv("TAKEDAWN_DATA");
+    const char *what, *dir;
+    char root[1024], dest[1100];
+    const xr_manifest *m;
+    xr_install_opts o;
+    xr_install_result r;
+    time_t t0 = time(NULL);
+    int code = XR_INSTALL_OK;
+    int i, check = 0, disc;
+
+    for (i = 0; i < argc; i++) {
+        if ((!strcmp(argv[i], "--dest") || !strcmp(argv[i], "--data")) && i + 1 < argc) {
+            if (!dest_arg || !strcmp(argv[i], "--dest"))
+                dest_arg = argv[i + 1];
+            i++;
+        } else if (!strcmp(argv[i], "--check"))
+            check = 1;
+        else if (argv[i][0] == '-' || source)
+            return install_languages_usage();
+        else
+            source = argv[i];
+    }
+    if (!source)
+        return install_languages_usage();
+    if (!check)
+        bo3_user_dirs_init();           /* as --install: the folders of the earlier name first */
+    if (dest_arg)
+        snprintf(root, sizeof root, "%s", dest_arg);
+    else if (env && *env)
+        snprintf(root, sizeof root, "%s", env);
+    else if (!saved_root(root, sizeof root))
+        default_root(root, sizeof root);
+    disc = langs_disc(source, root, &code);
+    s_step = "languages";
+    if (disc < 0 && code == XR_INSTALL_WRONG_VERSION) {
+        /* This game, but neither European disc: said for both, not as the
+         * first one's mismatch. */
+        out("PROTOCOL 1");
+        out("PLAN languages");
+        out("STEP languages BEGIN Checking the disc");
+        out("LOG languages source %s", source);
+        out("STEP languages FAIL wrong-version This is Burnout 3: Takedown, but neither European "
+            "(PAL) retail disc: the languages come from the Fr,De,It disc or the En,Es,Nl,Sv one. "
+            "Other regions, other pressings and patched executables cannot be used.");
+        out("RESULT FAIL languages wrong-version");
+        return 1;
+    }
+    /* Not this game at all, or unreadable: the first one's run says why. */
+    m = bo3_langpack_disc(disc < 0 ? 0u : (unsigned)disc, &dir, &what);
+    snprintf(dest, sizeof dest, "%s/%s", root, dir);
+    snprintf(s_cancel_file, sizeof s_cancel_file, "%s/install.cancel", dest);
+    remove(s_cancel_file);
+    signal(SIGINT, on_signal);
+    signal(SIGTERM, on_signal);
+#if defined(_WIN32)
+    SetConsoleCtrlHandler(on_console, TRUE);
+#endif
+
+    memset(&o, 0, sizeof o);
+    o.source = source;
+    o.source_fd = -1;
+    o.dest = dest;
+    o.subdir = NULL;
+    o.manifest = m;
+    o.version = BO3_VERSION;
+    o.free_needed = xr_manifest_bytes(m) + (100ull << 20);
+    o.identify_only = check;
+    o.progress = install_progress;
+    o.log = install_log;
+    o.cancelled = install_cancelled;
+
+    out("PROTOCOL 1");
+    out("PLAN %s", s_step);
+    if (check)
+        out("STEP %s BEGIN Checking the disc", s_step);
+    else
+        out("STEP %s BEGIN Checking the disc and copying %s (%.1f GB)", s_step, what,
+            (double)xr_manifest_bytes(m) / 1e9);
+    out("LOG %s source %s", s_step, source);
+    if (!check)
+        out("LOG %s destination %s", s_step, dest);
+    xr_install(&o, &r);
+    remove(s_cancel_file);
+    if (r.code != XR_INSTALL_OK) {
+        out("STEP %s FAIL %s %s", s_step, xr_install_code_name(r.code), r.message);
+        out("RESULT FAIL %s %s", s_step, xr_install_code_name(r.code));
+        return 1;
+    }
+    if (check) {
+        if (r.image)
+            out("STEP %s OK %s, %s (a disc image, game partition at 0x%llX)", s_step, m->title,
+                m->build, (unsigned long long)r.image_base);
+        else
+            out("STEP %s OK %s, %s (an extracted folder)", s_step, m->title, m->build);
+        out("RESULT OK %s", source);
+        return 0;
+    }
+    if (r.already)
+        out("STEP %s SKIP already installed (%u files, manifest %s)", s_step, m->count, m->id);
+    else
+        out("STEP %s OK %u files, %llu bytes; %u copied, %u checked in place, %u kept "
+            "from an earlier run; %ld s", s_step, m->count, (unsigned long long)xr_manifest_bytes(m),
+            r.copied, r.verified, r.kept, (long)(time(NULL) - t0));
     out("RESULT OK %s", dest);
     return 0;
 }
