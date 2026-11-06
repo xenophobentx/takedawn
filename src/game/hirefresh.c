@@ -114,10 +114,17 @@
 #include "kernel/kernel_pacing.h"
 #include "platform/host_time.h"
 #include "region.h"
+#include "simrate.h"
 
-#define STEP_S       (1.0 / 60.0)
+/* The simulation's step: the title's 1/60 s, or 1/N with graphics.native_rate
+ * (simrate.c, the display's rate N), taken once a frame at the start of
+ * Update, so that a pause inside the frame does not change it under the
+ * blends. */
+static double s_step = 1.0 / 60.0;
+#define STEP_S       (s_step)
 #define TIMER        BO3_VA(0x4D5338u, 0x4D5658u, 0x4D56F8u)     /* the stepper's timer object */
 #define FRAME_STEPS  BO3_VA(0x4D53ACu, 0x4D56CCu, 0x4D576Cu)     /* steps this frame's Update runs */
+#define RECORD_LOOK_BACK (0x158u + 0x30u)   /* a player's record: its handler's "look back asked for" byte */
 #define HALF_ASKED   BO3_VA(0x4D538Du, 0x4D56ADu, 0x4D574Du)     /* the half rate asked for */
 #define HALF_RATE    BO3_VA(0x4D538Eu, 0x4D56AEu, 0x4D574Eu)     /* the half rate in force */
 #define PLAYERS      BO3_VA(0x73A1C0u, 0x73A4D0u, 0x73A570u)     /* players at once: 2 in split screen */
@@ -227,32 +234,47 @@ static int env_on(recomp_env_id id)
     return v && *v && strcmp(v, "0") != 0;
 }
 
-/* The rate to draw at, 0 for the title's own: the setting on, a display
- * faster than 60, the game in its running state in a stage (not the front
- * end) with one player, and the title not in its half rate. */
-static double wanted_rate(void)
+/* The display's rate, RECOMP_FLIP_PACING=host:<Hz> for a run without one;
+ * 0 when not faster than 60. */
+static double display_hz(void)
 {
     static double env_hz = -1.0;
     double hz;
 
-    if (!env_on(RENV_GFX_HIGH_REFRESH) || MEM32(GAME_STATE) != 5)
-        return 0.0;
-    if (MEM8(HALF_ASKED) || MEM8(HALF_RATE) || MEM32(PLAYERS) >= 2)
-        return 0.0;
-    /* The front end as shipped: its showroom (Select Car) draws several
-     * cars through the same frames within one picture, which a blend
-     * between two steps' states puts in each other's place (BO-241). */
-    {
-        uint32_t st = MEM32(STAGE);
-        if (st < 0x10000u || st >= 0x08000000u || !MEM32(st + 0x1B8u))
-            return 0.0;
-    }
     if (env_hz < 0.0) {
         const char *e = recomp_env(RENV_FLIP_PACING);
         env_hz = e && !strncmp(e, "host:", 5) ? atof(e + 5) : 0.0;
     }
     hz = env_hz > 0.0 ? env_hz : xbox_DisplayRate();
     return hz > 61.0 && hz <= 1000.0 ? hz : 0.0;
+}
+
+/* The front end: the stage has no mode object (0 between stages too). */
+static int in_front_end(void)
+{
+    uint32_t st = MEM32(STAGE);
+    return st < 0x10000u || st >= 0x08000000u || !MEM32(st + 0x1B8u);
+}
+
+/* The rate to draw at, 0 for the title's own: the setting on, a display
+ * faster than 60, the game in its running state in a stage (not the front
+ * end, but for graphics.native_rate) with one player, and the title not in
+ * its half rate. */
+static double wanted_rate(void)
+{
+    if (!env_on(RENV_GFX_HIGH_REFRESH) || MEM32(GAME_STATE) != 5)
+        return 0.0;
+    if (MEM8(HALF_ASKED) || MEM8(HALF_RATE) || MEM32(PLAYERS) >= 2)
+        return 0.0;
+    /* The front end as shipped: its showroom (Select Car) draws several
+     * cars through the same frames within one picture, which a blend
+     * between two steps' states puts in each other's place (BO-241). With
+     * graphics.native_rate's short step a picture is a step there, drawn
+     * unblended (bo3_update); without it (an online session, simrate.c) the
+     * front end is as shipped. */
+    if (!bo3_sim_short() && in_front_end())
+        return 0.0;
+    return display_hz();
 }
 
 static double host_s(void)
@@ -665,15 +687,29 @@ void bo3_update(bo3_hirefresh_fn title_fn)
 {
     uint64_t now = xbox_HostNowNs(), pic;
     double rate = wanted_rate(), dt;
-    int steps, was = s_active, max = 4;
+    /* At most 4 steps of the title's own in a frame (more is dropped), and
+     * at least as much time in shorter steps (rounded up: 12 of 1/170 s,
+     * not 11, which slowed the game from 15.5 fps down): under 15 fps the
+     * game slows with either, as it does shipped. */
+    int steps, was = s_active, max;
 
     s_updates++;
+    s_step = bo3_sim_step_s();
+    max = (int)(4.0 * bo3_sim_title_step_s() / STEP_S + 0.999);
+    if (max < 4)
+        max = 4;
     restore_blends();
     bo3_hraudit_begin();
     dbg_truth();
     hit_update();
     s_rendering = 0;
-    xbox_FlipHostRate(rate);
+    /* graphics.native_rate: the loads and hand-overs (not the running state)
+     * flip at the display's rate too; the title steps once a frame there as
+     * it does, so a load also takes fewer seconds. */
+    if (rate <= 0.0 && bo3_sim_short() && MEM32(GAME_STATE) != 5 && env_on(RENV_GFX_HIGH_REFRESH))
+        xbox_FlipHostRate(display_hz());
+    else
+        xbox_FlipHostRate(rate);
     if ((rate > 0.0) != (s_rate > 0.0))
         hr_log("[HIREFRESH] %s (%.1f Hz)\n", rate > 0.0 ? "on" : "off", rate);
     if (rate <= 0.0) {
@@ -716,6 +752,8 @@ void bo3_update(bo3_hirefresh_fn title_fn)
         s_lag = 0.0;
     if (bo3_hraudit_noblend())
         s_lag = STEP_S;                     /* BO-275 audit: drawn at the last step */
+    if (bo3_sim_short() && in_front_end())
+        s_lag = STEP_S;                     /* graphics.native_rate's front end: drawn at the last step */
     MEM32(FRAME_STEPS) = (uint32_t)steps;
     s_active = 1;
     s_steps_end = MEM32(STEP_COUNT) + (uint32_t)steps;
@@ -2035,7 +2073,8 @@ static void marks_probe(void)
  * off: as shipped. */
 void bo3_player_frame(bo3_hirefresh_fn title_fn)
 {
-    uint32_t n = s_upd_steps, ret, i, esi0, edi0, ebx0;
+    uint32_t n = s_upd_steps, ret, i, esi0, edi0, ebx0, frame_steps;
+    uint8_t look_back;
     float dt;
 
     if (!s_active || !s_in_update || n == 1) {
@@ -2051,6 +2090,20 @@ void bo3_player_frame(bo3_hirefresh_fn title_fn)
     esi0 = g_esi;
     edi0 = g_edi;
     ebx0 = g_ebx;
+    /* Each run is one step's, so the frame's step count reads 1 there: the
+     * record's clock (+ 0xC2C) gains FRAME_STEPS x one step's time a run,
+     * and the cameras' blends (the race intro's) time themselves by it, so
+     * n runs made it n x n steps (the intro over in a fraction of its
+     * time whenever a frame carried more than one step). */
+    frame_steps = MEM32(FRAME_STEPS);
+    MEM32(FRAME_STEPS) = 1;
+    /* The record's message handler (+ 0x158, sub_00168380) keeps at + 0x30
+     * "look back asked for": the look-back event (id 8) sets it once a
+     * frame, and each run's update (message 4) clears it after putting the
+     * chase camera back when it is not set. With n runs the second found it
+     * cleared, so a held look back flipped between the two views every
+     * frame of two steps. Each run sees the frame's input. */
+    look_back = esi0 > 0x10000u && esi0 < 0x08000000u ? MEM8(esi0 + RECORD_LOOK_BACK) : 0;
     for (i = 0; i < n; i++) {
         if (i) {
             g_esp -= 8;
@@ -2058,10 +2111,13 @@ void bo3_player_frame(bo3_hirefresh_fn title_fn)
             g_esi = esi0;
             g_edi = edi0;
             g_ebx = ebx0;
+            if (look_back)
+                MEM8(esi0 + RECORD_LOOK_BACK) = look_back;
         }
         MEMF(g_esp + 4) = dt;
         title_fn();
     }
+    MEM32(FRAME_STEPS) = frame_steps;
 }
 
 
@@ -2174,6 +2230,18 @@ void bo3_reflection_cube(bo3_hirefresh_fn title_fn)
 void bo3_hud_update(bo3_hirefresh_fn title_fn)
 {
     bo3_hraudit_hud(MEMF(g_esp + 4), MEMF(g_esp + 4));
+    /* graphics.native_rate: its elements count calls (the entrance's ~15
+     * frames ...), so with shorter steps it keeps the title's own calls a
+     * second, each with the title's step; a call left out is its ret 4. */
+    if (s_active && s_in_update) {
+        uint32_t k = bo3_sim_hud_calls();
+        if (k == 0) {
+            g_esp += 8;
+            return;
+        }
+        if (k != ~0u)
+            MEMF(g_esp + 4) = (float)bo3_sim_title_step_s();
+    }
     title_fn();
 }
 
@@ -2190,6 +2258,11 @@ void bo3_hud_update(bo3_hirefresh_fn title_fn)
 void bo3_race_audio(bo3_hirefresh_fn title_fn)
 {
     uint32_t n = s_upd_steps, ret, i, eax0, esi0, edi0, ebx0, ebp0;
+
+    /* graphics.native_rate: it counts calls, so it keeps the title's own
+     * calls a second when the steps are shorter. */
+    if (s_active && s_in_update)
+        n = bo3_sim_legacy_calls(n);
 
     bo3_hraudit_count(1, !s_active || !s_in_update ? 1u : n);
     if (!s_active || !s_in_update || n == 1) {

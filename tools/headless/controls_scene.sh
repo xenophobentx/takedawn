@@ -84,7 +84,7 @@ if [ "$EVENT" = crash ]; then
     wait_log "$(track_re crash2)" "captions (crash2.rws)"
     b=$(anchor "$(track_re crash2)")
     shot ctl_captions "$b" 200
-    wait_flip $(( b + 300 ))
+    wait_flip $(( b + $(flips 300) ))
     press a:400 60              # Continue: the countdown
     acc=a; [ "$AS" = xbox ] && acc=rt
     pos_press "$acc:14000" 0    # the scheme's accelerator, to the junction

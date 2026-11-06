@@ -32,7 +32,7 @@ shot crash_intro "$(anchor 'C3_V1.streamed[.]dat')" 240     # the intro flyby
 wait_log "$(track_re crash2)" "captions (crash2.rws)"
 b=$(anchor "$(track_re crash2)")
 shot crash_caption "$b" 200
-wait_flip $(( b + 300 ))
+wait_flip $(( b + $(flips 300) ))
 press a:400 60              # the countdown, 3-2-1
 press rt:600000 0           # held from the countdown: the start is the GO
 wait_log 'C3_v1.crash1[.]rws' "impact (C3_v1 crash1.rws)"
