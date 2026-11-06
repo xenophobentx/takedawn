@@ -4,6 +4,31 @@ What changed in each release of Takedawn, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Major releases carry
 a codename, a song title from the game's soundtrack.
 
+## 0.3.1 "Sing Along Forever"
+
+Saves and settings from 0.3.0 carry over.
+
+### Added
+
+- Online: two players who cannot reach each other directly (closed ports,
+  strict routers) now play through the game server's relay (UDP 21811 on the
+  server) instead of the one who joined being removed after about 20
+  seconds. The direct path stays the first choice and is kept whenever it
+  works. A server without `--relay-port` works as before. See docs/online.md.
+
+### Fixed
+
+- Online: after the host changed the track, its direction, the mode or the
+  laps in the lobby's Options, the host could race the old settings while
+  the other players raced the new ones. The host now races the game's
+  settings as its guests do (#122).
+- The Crash Nav globe (World Tour, Select Region) keeps its shape in 16:9
+  with "4:3 pictures" set to Blurred sides or Black bars: it has the size
+  and place it has in 4:3, beside the menu, instead of being stretched a
+  third wider. Stretched keeps the old look (#124).
+- Lines one pixel wide at the original resolution, like the globe's grid,
+  stay as thick at a render scale above 1x instead of getting thinner (#124).
+
 ## 0.3.0 "Sing Along Forever"
 
 Saves and settings from 0.2.1 carry over.

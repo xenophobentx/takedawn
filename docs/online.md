@@ -177,6 +177,7 @@ inside a container or behind a router. `--verbose` logs every request.
 | `--max-games N` | `TAKEDAWN_LOBBY_MAX_GAMES` | 2048 | games open at once |
 | `--max-players N` | `TAKEDAWN_LOBBY_MAX_PLAYERS` | 8 | players in one game (2 to 8; the game itself asks for 6) |
 | `--max-per-ip N` | | 64 | connections from one address (0: any number; local test addresses are not counted). An address at its limit is not served for 10 seconds: its next connections are closed without an answer. Players behind one shared address (CGNAT, a campus) count together |
+| `--relay-port N` | | off | the UDP relay for pairs that cannot connect directly (the game's default is 21811). Off unless given. Open that UDP port to the internet |
 | `--idle-secs S` | | 90 | a connection that sent nothing for S seconds is dropped (0: never). The game answers the server's ping every 20 seconds, so a live player never goes quiet |
 
 A connection that has not signed in 25 seconds after it opened is dropped too.
@@ -523,7 +524,7 @@ of every day since the start, by day, week or month, and every country),
 `history.jsonl` (a copy of `daily.jsonl`) and `now.json` (today with every
 country, and the live counts, every 20 seconds). The folder's name is the
 secret: the server makes the public folder `0711` so it cannot be listed, the
-web server must not list folders either, and the name is never logged. The
+web server must not list folders either, and the name is never logged. With the relay on, `now.json` and the page also show its counters: packets and bytes carried, and games relayed. The
 page loads nothing from elsewhere and asks search engines not to index it.
 Its source is `tools/lobby/admin_page.html` (`admin_page.h` inside the program).
 
@@ -617,32 +618,50 @@ however often a player repeats it.
 |---|---|---|---|
 | 21810 | TCP | the server | the lobby: sign-in, rooms, games |
 | 21809 | UDP | nothing (LAN only) | the local-network lobby's announcement, a broadcast that never leaves the network |
+| 21811 | UDP | the server (only with `--relay-port`) | the relay for pairs that cannot connect directly |
 | 31000 | UDP | the player who hosts a game | the race between the copies (the game's port 1000; see below) |
 
-The server needs only TCP 21810 open to the internet. On a home connection,
-forward that port on the router to the machine running the server and allow
+The server needs TCP 21810 open to the internet, and UDP 21811 as well when it
+runs the relay (`--relay-port 21811`). On a home connection, forward those ports
+on the router to the machine running the server and allow
 it in that machine's firewall.
 
 ### Players behind routers
 
-The copies talk to each other directly. The player who creates a game needs
-UDP 31000 and 36000 reachable. While a copy hosts a game in Internet mode,
-Takedawn asks the router to forward those ports with UPnP, ten minutes at a
-time, renewed while it hosts, and removes the forwarding when it joins
-someone else's game or quits (`TAKEDAWN_UPNP=0` stops it asking). Without
-UPnP, forward UDP 31000 and 36000 on the router to the computer running the
-game. Players who join need nothing.
-
-Each copy finds the others through the addresses the lobby saw. Two players
-in the same house (the same public address) use the local network; players
-in different houses use their public addresses. Both sides first send a few
-small "hello" packets. These open a path through most home routers even
+Two copies in a game first try to reach each other directly. Both sides send
+a few small "hello" packets. These open a path through most home routers even
 without forwarding, and show each copy which address the other one's packets
-come from. The game accepts hellos and race packets only from players the
-lobby told it about.
+come from. Two players in the same house (the same public address) use the
+local network; players in different houses use their public addresses. The game
+accepts hellos and race packets only from players the lobby told it about.
 
-When another player in your game cannot be reached for 20 seconds, the game
-says so on the screen: most likely the host's ports are closed.
+**The relay (0.3.1).** A pair that has not reached each other directly within
+2 seconds goes through the game server's relay instead: UDP 21811 on the
+server. The direct path stays whenever it works, and it is the one with the
+lowest ping. A relayed link carries the same packets over a detour through the
+server, which costs the extra distance to the server and back, typically 10 to
+60 ms in Europe. Each pair decides on its own, so one game can have direct and
+relayed links side by side. The relay is on only when the server's operator
+started it with `--relay-port` (see Limits above and the owner's page below); on a
+server without it, a pair that cannot connect directly stays unconnected.
+
+**Ports for the lowest ping.** The player who creates a game should have UDP
+31000 and 36000 reachable, and a player who joins should have the same two
+open on their router. Then even two players behind strict routers connect
+directly. While a copy hosts a game in Internet mode, Takedawn asks the router
+to forward those ports with UPnP, ten minutes at a time, renewed while it
+hosts, and removes the forwarding when it joins someone else's game or quits
+(`TAKEDAWN_UPNP=0` stops it asking). Without UPnP, forward UDP 31000 and 36000
+on the router to the computer running the game. A player who has not opened
+anything still joins: the relay carries the link, at the cost above.
+
+**When a link does not come up.** If a player cannot be reached for 15
+seconds, the title's own timer takes over: the host removes the player whose
+link failed, and that player gets a box saying their connection did not come
+up. The same happens when two guests cannot reach each other: the title picks one
+of them, and the box names the reason as a failed connection, not a host's
+choice. It lists the ports to open and the relay address to check. The 15 seconds are
+the title's own, not something Takedawn added.
 
 The game's own UDP ports below 10000 (1000, 3074, 6000) are moved up by
 30000 on a computer (`TAKEDAWN_PORT_OFFSET`), since ordinary programs may not

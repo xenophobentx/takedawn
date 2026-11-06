@@ -41,12 +41,12 @@ static const char *const k_text[BO3_LANG_COUNT][BO3_TXT_N] = {
     [BO3_LANG_ENGLISH][BO3_TXT_STAY_FULL] = "THE GAME IS FULL",
     [BO3_LANG_ENGLISH][BO3_TXT_STAY_OVER] = "THE GAME IS OVER",
     [BO3_LANG_ENGLISH][BO3_TXT_WAIT_RACERS] = "WAITING FOR %d MORE FROM THE RACE",
-    [BO3_LANG_ENGLISH][BO3_TXT_BOX_NOLINK] = "Your connection to the host did not come up, so the game removed you.",
+    [BO3_LANG_ENGLISH][BO3_TXT_BOX_NOLINK] = "Your connection to %s did not come up, so the game removed you.",
     [BO3_LANG_ENGLISH][BO3_TXT_BOX_HOST] = "The host removed you from the game.",
     [BO3_LANG_ENGLISH][BO3_TXT_BOX_HINT_MAC] = "Allow Takedawn under Local Network in System Settings, Privacy and Security.",
     [BO3_LANG_ENGLISH][BO3_TXT_BOX_HINT_WIN] = "Set this network to Private in the Windows settings.",
     [BO3_LANG_ENGLISH][BO3_TXT_BOX_HINT_LINUX] = "Check the firewall on this computer.",
-    [BO3_LANG_ENGLISH][BO3_TXT_BOX_HINT_PORTS] = "The host needs UDP ports %u and %u open.",
+    [BO3_LANG_ENGLISH][BO3_TXT_BOX_HINT_PORTS] = "If this keeps happening, open UDP ports %u and %u on your router (the host and the players who join), or make sure the game can reach the server on UDP 21811 (the relay).",
 };
 
 const char *bo3_statustext(int lang, int id)

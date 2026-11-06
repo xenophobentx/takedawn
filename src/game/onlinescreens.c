@@ -34,6 +34,7 @@ const bo3_online_screen bo3_online_screens[] = {
     { 0x5D0, 0x0055E07Cu, 0x0055E39Cu, 0x0055E43Cu, OB_SC_CREATING },
     { 0x808, 0x005628E0u, 0x00562C00u, 0x00562CA0u, OB_SC_QUICK },    /* QUICK MATCH: searching / NO GAMES FOUND */
     { 0x590, 0x00559648u, 0x00559968u, 0x00559A08u, OB_SC_CAR },      /* SELECT CAR */
+    { 0x590, 0x00564900u, 0x00564C20u, 0x00564CC0u, OB_SC_OPTIONS },  /* the lobby's Options: the mode page on the lobby's request (0x6DCA1) */
     { 0x590, 0x0055CBA0u, 0x0055CEC0u, 0x0055CF60u, OB_SC_LOBBY },    /* the game lobby (with the lobby screen object) */
     { 0x1C8, 0, 0, 0, OB_SC_RACE },               /* race intro */
     { 0x030, 0, 0, 0, OB_SC_RACE },

@@ -180,6 +180,7 @@ typedef struct {
     char name[64], pass[64], params[256];
     char sysflags[32], custflags[48], minsize[12], maxsize[12];   /* custflags: up to 4 numbers of 10 digits */
     char secret[33];            /* TKSECRET: per game, from the CSPRNG, for its players only */
+    uint8_t key[16];            /* the secret's bytes: the relay's SipHash key (BO-381) */
     char gid[13];               /* TKGID: random per game (CSPRNG, 12 hex), member records and log lines only */
     unsigned kicked[16];        /* uids of players the host kicked: they cannot join this game again */
     int nkicked;
@@ -380,12 +381,13 @@ static int rand_bytes(unsigned char *out, size_t n)
 }
 
 /* 32 lowercase hex digits and a NUL */
-static int make_secret(char *out)
+static int make_secret(char *out, uint8_t *key)
 {
     unsigned char r[16];
     int i;
     if (!rand_bytes(r, sizeof r))
         return 0;
+    memcpy(key, r, 16);
     for (i = 0; i < 16; i++)
         snprintf(out + 2 * i, 3, "%02x", r[i]);
     return 1;
@@ -463,6 +465,7 @@ typedef struct {
     unsigned long created[N_MODES], started[N_MODES], start_size[MAX_PLAYERS + 1];
     int peak_sessions, peak_players;
     unsigned long waits, waits_joined, waits_gone, waits_full;  /* BO-365 race waits */
+    unsigned long relay_packets, relay_bytes, relay_dropped, relay_games;  /* BO-381 UDP relay: counts only */
     /* BO-367: per country (the sign-in's address looked up in the offline
      * database, never kept): new unique players and sign-ins */
     uint32_t cc_unique[N_CC], cc_signins[N_CC];
@@ -720,6 +723,8 @@ static int st_format(const stats_t *st, int now, char *out, size_t n)
         o += snprintf(out + o, n - (size_t)o, ",\"start_players_%d\":%lu", i, st->start_size[i]);
     o += snprintf(out + o, n - (size_t)o, ",\"waits\":%lu,\"waits_joined\":%lu,\"waits_gone\":%lu,\"waits_full\":%lu",
                   st->waits, st->waits_joined, st->waits_gone, st->waits_full);
+    o += snprintf(out + o, n - (size_t)o, ",\"relay_packets\":%lu,\"relay_bytes\":%lu,\"relay_dropped\":%lu,\"relay_games\":%lu",
+                  st->relay_packets, st->relay_bytes, st->relay_dropped, st->relay_games);
     o += snprintf(out + o, n - (size_t)o, ",\"countries\":{");
     for (i = 0, m = 0; i < N_CC && (size_t)o + 128 < n; i++)
         if (st->cc_unique[i] || st->cc_signins[i]) {
@@ -780,6 +785,10 @@ static int st_parse(const char *b, stats_t *st)
     json_ul(b, "waits_joined", &st->waits_joined);
     json_ul(b, "waits_gone", &st->waits_gone);
     json_ul(b, "waits_full", &st->waits_full);
+    json_ul(b, "relay_packets", &st->relay_packets);
+    json_ul(b, "relay_bytes", &st->relay_bytes);
+    json_ul(b, "relay_dropped", &st->relay_dropped);
+    json_ul(b, "relay_games", &st->relay_games);
     if ((p = strstr(b, "\"countries\":{")) != NULL) {
         p += 13;
         while (*p == '"') {                 /* "HU":[unique,signins] */
@@ -1181,6 +1190,15 @@ static void st_game_started(const char *params, int players)
 }
 
 static void st_result(void) { st_roll(); s_st.results++; }
+
+/* BO-381 UDP relay: counts only (what was forwarded, what was dropped, games that used it) */
+static void st_relay(int what, unsigned long bytes)
+{
+    st_roll();
+    if (what == 0) { s_st.relay_packets++; s_st.relay_bytes += bytes; }
+    else if (what == 1) s_st.relay_dropped++;
+    else s_st.relay_games++;
+}
 
 /* ── the public page ───────────────────────────────────────────────── */
 /* stats.json (every PUBLIC_SECS) and index.html in a folder a web server
@@ -2556,6 +2574,8 @@ static void game_rec(body_t *b, const game_t *g, int mode, int viewer)
     kv_s(b, "WHEN", "2004.9.7-0:00:00"); kv_i(b, "SEED", (long)g->ident * 7919L);
     if (mode == REC_MEMBER && g->secret[0])
         kv_s(b, "TKSECRET", g->secret);
+    if (mode == REC_MEMBER && g->secret[0] && s_cfg.relay_port)
+        kv_i(b, "TKRELAY", s_cfg.relay_port);
     if (mode == REC_MEMBER && g->gid[0])
         kv_s(b, "TKGID", g->gid);
     if (mode == REC_MEMBER) {
@@ -2593,6 +2613,327 @@ static game_t *game_by_ident(int ident)
         if (s_games[i].used && s_games[i].ident == ident)
             return &s_games[i];
     return NULL;
+}
+
+/* ── UDP relay (BO-381): forwards signed datagrams between the members of a game ──
+ * "TKRL" header (32 bytes) + payload; see .handoff/relay-0.3.1/PLAN.md. The
+ * relay only ever sees a game's own members (a SipHash tag under the game's
+ * secret, and synthetic addresses of two different members), never logs or
+ * keeps an address beyond the binding table in memory, and has no traffic cap:
+ * only counters. */
+#define RL_HDR        32
+#define RL_MAX_PAYLOAD 1400
+#define RL_STALE_MS   60000LL
+#define RL_PPS        400.0         /* packets per second a binding may send ... */
+#define RL_BPS        65536.0       /* ... and bytes per second (burst: one second's worth) */
+#define RL_ANSWER_MS  2000LL
+#define RL_GAME_TTL   (30LL * 60 * 1000)   /* a game's relay record outlives the game by this much silence */
+#define RL_ANSWER_LEN (RL_HDR + 6)
+
+typedef struct {
+    int state;                      /* 0 empty, 1 bound, 2 deleted */
+    uint32_t ident, id;             /* the game, the member's synthetic address (network order) */
+    uint16_t port;                  /* the member's title port */
+    struct sockaddr_in src;         /* where its datagrams come from */
+    long long seen_ms;
+    double tok_p, tok_b;
+    long long tok_ms;
+    long long last_answer_ms;
+    uint32_t last_answer_to;
+} rl_bind_t;
+
+/* What the relay remembers of a game: the lobby game leaves s_games a few seconds after the race
+ * starts (the players drop their lobby links), but the race goes on over the relay. */
+typedef struct {
+    int used;
+    uint32_t ident;
+    uint8_t key[16];
+    char gid[13];
+    uint32_t members[MAX_PLAYERS];  /* synthetic addresses (network order) */
+    int nm;
+    long long last_ms;              /* the last valid packet (or the last sync with the live game) */
+    int relayed;                    /* a packet was forwarded (logged and counted once) */
+} rl_game_t;
+
+static rl_bind_t *s_rl;
+static size_t s_rl_n;
+static rl_game_t *s_rlg;
+static size_t s_rlg_n;
+static long long s_rl_game_ttl_ms = RL_GAME_TTL;   /* a knob for the tests */
+static sock_t s_rl_sock = BAD_SOCK;
+
+/* SipHash-2-4 (Aumasson, Bernstein), the tag under the game's secret (same code as the toolkit's) */
+#define ROTL(x, b) (uint64_t)(((x) << (b)) | ((x) >> (64 - (b))))
+#define SIPROUND do { v0 += v1; v1 = ROTL(v1, 13); v1 ^= v0; v0 = ROTL(v0, 32); \
+                      v2 += v3; v3 = ROTL(v3, 16); v3 ^= v2; \
+                      v0 += v3; v3 = ROTL(v3, 21); v3 ^= v0; \
+                      v2 += v1; v1 = ROTL(v1, 17); v1 ^= v2; v2 = ROTL(v2, 32); } while (0)
+static uint64_t sip_le64(const uint8_t *p)
+{
+    uint64_t v = 0;
+    int i;
+    for (i = 7; i >= 0; i--)
+        v = v << 8 | p[i];
+    return v;
+}
+static uint64_t relay_siphash(const uint8_t key[16], const uint8_t *m, int n)
+{
+    uint64_t k0 = sip_le64(key), k1 = sip_le64(key + 8);
+    uint64_t v0 = 0x736f6d6570736575ull ^ k0, v1 = 0x646f72616e646f6dull ^ k1;
+    uint64_t v2 = 0x6c7967656e657261ull ^ k0, v3 = 0x7465646279746573ull ^ k1;
+    uint64_t b = (uint64_t)n << 56, mi;
+    int i, left = n & 7;
+    for (i = 0; i + 8 <= n; i += 8) {
+        mi = sip_le64(m + i);
+        v3 ^= mi; SIPROUND; SIPROUND; v0 ^= mi;
+    }
+    for (i = 0; i < left; i++)
+        b |= (uint64_t)m[n - left + i] << (8 * i);
+    v3 ^= b; SIPROUND; SIPROUND; v0 ^= b;
+    v2 ^= 0xff;
+    SIPROUND; SIPROUND; SIPROUND; SIPROUND;
+    return v0 ^ v1 ^ v2 ^ v3;
+}
+/* the tag of bytes 0..23, written little-endian into 24..31 (as the toolkit's hello_tag) */
+static void relay_tag(const uint8_t key[16], uint8_t *hdr)
+{
+    uint64_t t = relay_siphash(key, hdr, 24);
+    int i;
+    for (i = 0; i < 8; i++)
+        hdr[24 + i] = (uint8_t)(t >> (8 * i));
+}
+
+static void relay_init(void)
+{
+    free(s_rl);
+    s_rl_n = (size_t)MAX_SESS * 2;
+    s_rl = (rl_bind_t *)calloc(s_rl_n, sizeof *s_rl);
+    if (!s_rl)
+        s_rl_n = 0;
+    free(s_rlg);
+    s_rlg_n = (size_t)(MAX_GAMES > 0 ? MAX_GAMES : 1) * 8;
+    s_rlg = (rl_game_t *)calloc(s_rlg_n, sizeof *s_rlg);
+    if (!s_rlg)
+        s_rlg_n = 0;
+}
+
+static size_t rl_hash(uint32_t ident, uint32_t id, uint16_t port)
+{
+    uint32_t h = ident * 2654435761u;
+    h ^= (id + 0x9e3779b9u) * 2246822519u;
+    h ^= (uint32_t)port * 3266489917u;
+    h ^= h >> 15;
+    h *= 2246822519u;
+    h ^= h >> 13;
+    return (size_t)h;
+}
+
+/* The binding for the key, or (create) a free slot for it: an empty or deleted one, or a stale one. */
+static rl_bind_t *rl_find(uint32_t ident, uint32_t id, uint16_t port, long long now, int create)
+{
+    size_t i, h;
+    rl_bind_t *spare = NULL;
+    if (!s_rl_n)
+        return NULL;
+    h = rl_hash(ident, id, port) % s_rl_n;
+    for (i = 0; i < s_rl_n; i++) {
+        rl_bind_t *e = &s_rl[(h + i) % s_rl_n];
+        if (e->state == 0) {
+            if (!spare) spare = e;
+            break;
+        }
+        if (e->state == 1 && e->ident == ident && e->id == id && e->port == port)
+            return e;
+        if (!spare && (e->state == 2 || now - e->seen_ms > RL_STALE_MS))
+            spare = e;
+    }
+    if (create && spare) {
+        memset(spare, 0, sizeof *spare);
+        spare->state = 1;
+        spare->ident = ident; spare->id = id; spare->port = port;
+        spare->tok_p = RL_PPS; spare->tok_b = RL_BPS;
+        return spare;
+    }
+    return NULL;
+}
+
+/* The record of a game (open addressing on the ident); create: a free slot, or one whose game has been silent
+ * for the TTL. Expired records are never returned. */
+static rl_game_t *rlg_find(uint32_t ident, long long now, int create)
+{
+    size_t i, h;
+    rl_game_t *spare = NULL;
+    if (!s_rlg_n)
+        return NULL;
+    h = (size_t)((ident * 2654435761u) >> 7) % s_rlg_n;
+    for (i = 0; i < s_rlg_n; i++) {
+        rl_game_t *e = &s_rlg[(h + i) % s_rlg_n];
+        if (e->used && e->ident == ident) {
+            if (now - e->last_ms > s_rl_game_ttl_ms) {     /* expired: reusable, not valid */
+                if (!spare) spare = e;
+                continue;
+            }
+            return e;
+        }
+        if (!spare && (!e->used || now - e->last_ms > s_rl_game_ttl_ms))
+            spare = e;
+        if (!e->used)
+            break;
+    }
+    if (create && spare) {
+        memset(spare, 0, sizeof *spare);
+        spare->used = 1;
+        spare->ident = ident;
+        spare->last_ms = now;
+        return spare;
+    }
+    return NULL;
+}
+
+static int rlg_member(const rl_game_t *r, uint32_t id)
+{
+    int i;
+    if (!id)
+        return -1;
+    for (i = 0; i < r->nm; i++)
+        if (r->members[i] == id)
+            return i;
+    return -1;
+}
+
+/* Copy a live game's key, gid and members into its record (members are only added: sessions that
+ * dropped their lobby link for the race stay members). */
+static void rlg_sync(rl_game_t *r, const game_t *g)
+{
+    int i;
+    memcpy(r->key, g->key, sizeof r->key);
+    memcpy(r->gid, g->gid, sizeof r->gid);
+    for (i = 0; i < g->np; i++) {
+        const sess_t *p = &s_sess[g->players[i]];
+        if (p->used && p->tkid && p->synth && rlg_member(r, p->synth) < 0 && r->nm < MAX_PLAYERS)
+            r->members[r->nm++] = p->synth;
+    }
+}
+
+static void relay_send(const void *b, int n, const struct sockaddr_in *to)
+{
+    if (s_rl_sock != BAD_SOCK)
+        sendto(s_rl_sock, (const char *)b, (int)n, 0, (const struct sockaddr *)to, (socklen_t)sizeof *to);
+}
+
+/* One datagram from src. Anything that is not a valid packet of a live game's
+ * member is dropped without a word (and counted); nothing is ever answered to it. */
+static void relay_handle(const uint8_t *b, int n, const struct sockaddr_in *src, long long now)
+{
+    uint32_t ident, from, to;
+    uint16_t fport, tport;
+    game_t *g;
+    rl_game_t *rg;
+    rl_bind_t *sb, *db;
+    uint8_t want[RL_HDR];
+    int fi, ti;
+    if (n < RL_HDR || n > RL_HDR + RL_MAX_PAYLOAD || memcmp(b, "TKRL", 4) || b[4] != 1 || b[5] != 1)
+        goto drop;
+    ident = (uint32_t)b[6] << 24 | (uint32_t)b[7] << 16 | (uint32_t)b[8] << 8 | b[9];
+    memcpy(&from, b + 10, 4);
+    memcpy(&to, b + 14, 4);
+    fport = (uint16_t)(b[18] << 8 | b[19]);
+    tport = (uint16_t)(b[20] << 8 | b[21]);
+    if (b[22] || b[23])
+        goto drop;
+    g = game_by_ident((int)ident);
+    if (g) {                                /* a live game: its record is refreshed from it */
+        rg = rlg_find(ident, now, 1);
+        if (!rg)
+            goto drop;
+        rlg_sync(rg, g);
+    } else {                                /* the race goes on after the game has left the lobby */
+        rg = rlg_find(ident, now, 0);
+        if (!rg)
+            goto drop;
+    }
+    memcpy(want, b, 24);
+    relay_tag(rg->key, want);
+    {   /* compare the whole tag, no early exit */
+        int i, diff = 0;
+        for (i = 24; i < 32; i++)
+            diff |= want[i] ^ b[i];
+        if (diff)
+            goto drop;
+    }
+    fi = rlg_member(rg, from);
+    if (fi < 0)
+        goto drop;
+    if (to) {
+        ti = rlg_member(rg, to);
+        if (ti < 0 || ti == fi)
+            goto drop;
+    }
+    rg->last_ms = now;                      /* a valid packet: the game is alive */
+    sb = rl_find(ident, from, fport, now, 1);
+    if (!sb)
+        goto drop;                          /* the table is full of live bindings */
+    sb->src = *src;
+    sb->seen_ms = now;
+    if (!to)
+        return;                             /* bind only: nothing forwarded, nothing answered */
+    db = rl_find(ident, to, tport, now, 0);
+    if (!db || now - db->seen_ms > RL_STALE_MS)
+        goto drop;
+    {   /* the sender's token bucket (per binding) */
+        double dt = sb->tok_ms ? (double)(now - sb->tok_ms) / 1000.0 : 0;
+        if (dt < 0) dt = 0;
+        sb->tok_ms = now;
+        sb->tok_p += dt * RL_PPS; if (sb->tok_p > RL_PPS) sb->tok_p = RL_PPS;
+        sb->tok_b += dt * RL_BPS; if (sb->tok_b > RL_BPS) sb->tok_b = RL_BPS;
+        if (sb->tok_p < 1.0 || sb->tok_b < (double)n)
+            goto drop;
+        sb->tok_p -= 1.0;
+        sb->tok_b -= (double)n;
+    }
+    relay_send(b, n, &db->src);
+    st_relay(0, (unsigned long)n);
+    if (!rg->relayed) {
+        rg->relayed = 1;
+        st_relay(2, 0);
+        logf_("game %d gid=%s relayed", (int)rg->ident, rg->gid);
+    }
+    /* the answer (kind 2): the destination's endpoint, to the sender, never bigger than the packet that caused it */
+    if (n >= RL_ANSWER_LEN && (sb->last_answer_to != to || now - sb->last_answer_ms >= RL_ANSWER_MS)) {
+        uint8_t a[RL_ANSWER_LEN];
+        memcpy(a, "TKRL", 4);
+        a[4] = 1; a[5] = 2;
+        memcpy(a + 6, b + 6, 4);
+        memcpy(a + 10, &to, 4);             /* from: the peer */
+        memcpy(a + 14, &from, 4);           /* to: the asker */
+        a[18] = (uint8_t)(tport >> 8); a[19] = (uint8_t)tport;
+        a[20] = (uint8_t)(fport >> 8); a[21] = (uint8_t)fport;
+        a[22] = a[23] = 0;
+        relay_tag(rg->key, a);
+        memcpy(a + 32, &db->src.sin_addr.s_addr, 4);
+        memcpy(a + 36, &db->src.sin_port, 2);   /* already network order = big-endian */
+        sb->last_answer_ms = now;
+        sb->last_answer_to = to;
+        relay_send(a, RL_ANSWER_LEN, &sb->src);
+    }
+    return;
+drop:
+    st_relay(1, 0);
+}
+
+/* up to 64 datagrams per wake */
+static void relay_pump(void)
+{
+    static uint8_t buf[2048];
+    int k;
+    for (k = 0; k < 64; k++) {
+        struct sockaddr_in from;
+        socklen_t fl = (socklen_t)sizeof from;
+        int n = (int)recvfrom(s_rl_sock, (char *)buf, sizeof buf, 0, (struct sockaddr *)&from, &fl);
+        if (n < 0)
+            break;                          /* would block, or an error: next wake */
+        relay_handle(buf, n, &from, now_ms());
+    }
 }
 
 static int game_has(const game_t *g, int si)
@@ -3652,7 +3993,7 @@ static void handle(int si, const char *cmd, const char *body)
         if (!s->room)
             s->room = r;
         g->room = r;
-        if (!make_secret(g->secret) || !new_gid(g->gid)) {   /* no randomness: no game (never a guessable secret) */
+        if (!make_secret(g->secret, g->key) || !new_gid(g->gid)) {   /* no randomness: no game (never a guessable secret) */
             g->used = 0;
             send_pkt(si, "gcre", "full", "");
             logs_(s, "cannot create a game: no random numbers");
@@ -4462,7 +4803,7 @@ int aries_run(const aries_config *cfg)
     int one = 1, i;
     time_t last_beacon = 0, last_stats = 0, last_resolve = time(NULL);
     pfd_t *pf;
-    int *pi;
+    int *pi, first;
     s_cfg = *cfg;
     if (!s_cfg.port)
         s_cfg.port = 21810;
@@ -4493,8 +4834,9 @@ int aries_run(const aries_config *cfg)
     s_games = (game_t *)calloc((size_t)MAX_GAMES, sizeof *s_games);
     free(s_races);
     s_races = (race_t *)calloc((size_t)MAX_GAMES, sizeof *s_races);   /* none if it fails: no waiting (BO-365) */
-    pf = (pfd_t *)calloc((size_t)MAX_SESS + 1, sizeof *pf);
-    pi = (int *)calloc((size_t)MAX_SESS + 1, sizeof *pi);
+    pf = (pfd_t *)calloc((size_t)MAX_SESS + 2, sizeof *pf);
+    pi = (int *)calloc((size_t)MAX_SESS + 2, sizeof *pi);
+    relay_init();
     s_nsess = s_players = 0;
     memset(s_synth_used, 0, sizeof s_synth_used);
     s_lease_seq = 0;
@@ -4534,6 +4876,23 @@ int aries_run(const aries_config *cfg)
         return 1;
     }
     set_nonblock(ls);
+    s_rl_sock = BAD_SOCK;
+    if (s_cfg.relay_port) {             /* BO-381: the UDP relay */
+        sock_t us = socket(AF_INET, SOCK_DGRAM, 0);
+        int rcv = 1 << 20;
+        struct sockaddr_in ua = sa;
+        ua.sin_port = htons(s_cfg.relay_port);
+        if (us != BAD_SOCK) {
+            setsockopt(us, SOL_SOCKET, SO_RCVBUF, (const char *)&rcv, sizeof rcv);
+            if (bind(us, (struct sockaddr *)&ua, sizeof ua) != 0) {
+                logf_("cannot listen on UDP port %u (relay off)", (unsigned)s_cfg.relay_port);
+                sock_close(us);
+            } else {
+                set_nonblock(us);
+                s_rl_sock = us;
+            }
+        }
+    }
     st_init(s_cfg.stats_dir, s_cfg.public_dir, s_cfg.page_html);
     if (s_cfg.beacon_port) {
         bs = socket(AF_INET, SOCK_DGRAM, 0);
@@ -4550,6 +4909,11 @@ int aries_run(const aries_config *cfg)
         time_t now, mnow;
         pf[0].fd = ls; pf[0].events = POLLIN; pf[0].revents = 0;
         n = 1;
+        if (s_rl_sock != BAD_SOCK) {
+            pf[1].fd = s_rl_sock; pf[1].events = POLLIN; pf[1].revents = 0;
+            n = 2;
+        }
+        first = n;                      /* the sessions' entries start here */
         for (i = 0; i < MAX_SESS; i++)
             if (s_sess[i].used) {
                 pf[n].fd = s_sess[i].fd;
@@ -4571,7 +4935,9 @@ int aries_run(const aries_config *cfg)
         if (r > 0) {
             if (pf[0].revents & POLLIN)
                 accept_ok = on_accept(ls);
-            for (i = 1; i < n; i++) {
+            if (first == 2 && (pf[1].revents & POLLIN))
+                relay_pump();
+            for (i = first; i < n; i++) {
                 int si = pi[i];
                 if (pf[i].revents && s_sess[si].used && s_sess[si].fd == pf[i].fd) {
                     if (pf[i].revents & POLLOUT)
@@ -4623,9 +4989,13 @@ int aries_run(const aries_config *cfg)
             int ng = 0, k;
             last_stats = now;
             for (k = 0; k < MAX_GAMES; k++) ng += s_games[k].used;
-            logf_("stats: %d of %d sessions (%d signed in, %d in a race, peak today %d), %d of %d games; today %lu sign-ins, %lu games started",
+            char rl[96] = "";
+            if (s_rl_sock != BAD_SOCK)
+                snprintf(rl, sizeof rl, "; relay %lu packets, %lu bytes, %lu dropped",
+                         s_st.relay_packets, s_st.relay_bytes, s_st.relay_dropped);
+            logf_("stats: %d of %d sessions (%d signed in, %d in a race, peak today %d), %d of %d games; today %lu sign-ins, %lu games started%s",
                   s_nsess, MAX_SESS, s_players, s_racers, s_st.peak_sessions, ng, MAX_GAMES,
-                  s_st.signins, s_st.games_started);
+                  s_st.signins, s_st.games_started, rl);
         }
         public_tick(now, &last_resolve);
         lease_expire(now);
@@ -4663,6 +5033,15 @@ int aries_run(const aries_config *cfg)
     s_racers = 0;
     free(s_races);
     s_races = NULL;
+    if (s_rl_sock != BAD_SOCK)
+        sock_close(s_rl_sock);
+    s_rl_sock = BAD_SOCK;
+    free(s_rl);
+    s_rl = NULL;
+    s_rl_n = 0;
+    free(s_rlg);
+    s_rlg = NULL;
+    s_rlg_n = 0;
     st_write_current();
     st_free();
     free(pf);

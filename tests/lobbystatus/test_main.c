@@ -104,8 +104,11 @@ int main(void)
         int p;
         bo3_status_kick_box(BO3_STATUS_KICK_NOLINK, 0, BO3_PLAT_MAC, 31000, 36000, b, sizeof b);
         CHECK(strcmp(b, "Your connection to the host did not come up, so the game removed you. Allow Takedawn under "
-                        "Local Network in System Settings, Privacy and Security. The host needs UDP ports 31000 and "
-                        "36000 open.") == 0);
+                        "Local Network in System Settings, Privacy and Security. If this keeps happening, open UDP "
+                        "ports 31000 and 36000 on your router (the host and the players who join), or make sure the "
+                        "game can reach the server on UDP 21811 (the relay).") == 0);
+        bo3_status_kick_box_peer(BO3_STATUS_KICK_NOLINK, 0, BO3_PLAT_OTHER, 1, 2, "Zed", b, sizeof b);
+        CHECK(strncmp(b, "Your connection to Zed did not come up", 38) == 0);
         bo3_status_kick_box(BO3_STATUS_KICK_NOLINK, 0, BO3_PLAT_WINDOWS, 31000, 36000, b, sizeof b);
         CHECK(strstr(b, "Set this network to Private") && strstr(b, "31000 and 36000"));
         bo3_status_kick_box(BO3_STATUS_KICK_NOLINK, 0, BO3_PLAT_LINUX, 31000, 36000, b, sizeof b);
@@ -113,7 +116,8 @@ int main(void)
         /* no settings hint where there is none to give (Android): the ports only */
         bo3_status_kick_box(BO3_STATUS_KICK_NOLINK, 0, BO3_PLAT_OTHER, 1000, 6000, b, sizeof b);
         CHECK(strcmp(b, "Your connection to the host did not come up, so the game removed you. "
-                        "The host needs UDP ports 1000 and 6000 open.") == 0);
+                        "If this keeps happening, open UDP ports 1000 and 6000 on your router (the host and the players who join), "
+                        "or make sure the game can reach the server on UDP 21811 (the relay).") == 0);
         bo3_status_kick_box(BO3_STATUS_KICK_HOST, 0, BO3_PLAT_MAC, 31000, 36000, b, sizeof b);
         CHECK(strcmp(b, "The host removed you from the game.") == 0);
         /* the game ended: the title's own text stays */
@@ -275,6 +279,48 @@ int main(void)
         CHECK(bo3_line_action(0, 0, 0, -1) == BO3_LINE_WRITE);
         CHECK(bo3_line_action(0, 1, 0, -1) == BO3_LINE_SKIP);
         CHECK(bo3_line_action(1, 1, 1, -1) == BO3_LINE_SKIP);
+    }
+
+    /* the title's own pair rule (bo3_status_kick_reason2) */
+    {
+        static const uint8_t k1[] = "gset\0\0\0\0\0\0\0\0KICK=G1\n", k2[] = "gset\0\0\0\0\0\0\0\0KICK=G2\n",
+                             kx[] = "gset\0\0\0\0\0\0\0\0KICK=Nobody\n";
+        bo3_link_view v;
+        /* slot 0 the local host (id 10), G1 id 11, G2 id 12 */
+        memset(&v, 0, sizeof v);
+        v.np = 3; v.local_id = 10;
+        v.name[0] = "Host"; v.name[1] = "G1"; v.name[2] = "G2";
+        v.id[0] = 10; v.id[1] = 11; v.id[2] = 12;
+        v.own_link[0] = v.own_link[1] = v.own_link[2] = 3;
+        /* all up: a host's choice; an unknown name too */
+        CHECK(bo3_status_kick_reason2(k2, sizeof k2 - 1, &v) == BO3_STATUS_KICK_HOST);
+        CHECK(bo3_status_kick_reason2(kx, sizeof kx - 1, &v) == BO3_STATUS_KICK_HOST);
+        CHECK(bo3_status_kick_reason2((const uint8_t *)"auth", 4, &v) == BO3_STATUS_KICK_NONE);
+        /* 3 is not a failure, 0 to 2 and 5 are not either (the title kicks on 4) */
+        v.own_link[2] = 2;
+        CHECK(bo3_status_kick_reason2(k2, sizeof k2 - 1, &v) == BO3_STATUS_KICK_HOST);
+        /* our own link to G2 failed */
+        v.own_link[2] = 4;
+        CHECK(bo3_status_kick_reason2(k2, sizeof k2 - 1, &v) == BO3_STATUS_KICK_NOLINK);
+        CHECK(bo3_status_kick_reason2(k1, sizeof k1 - 1, &v) == BO3_STATUS_KICK_HOST);
+        v.own_link[2] = 3;
+        /* G1 reports G2 failed: kicking G2 is nolink, and so is kicking G1 */
+        v.rep_id[1][0] = 12; v.rep_state[1][0] = 4;
+        CHECK(bo3_status_kick_reason2(k2, sizeof k2 - 1, &v) == BO3_STATUS_KICK_NOLINK);
+        CHECK(bo3_status_kick_reason2(k1, sizeof k1 - 1, &v) == BO3_STATUS_KICK_NOLINK);
+        /* G2 reports G1 failed: kicking G1 is nolink */
+        memset(v.rep_id, 0, sizeof v.rep_id); memset(v.rep_state, 0, sizeof v.rep_state);
+        v.rep_id[2][3] = 11; v.rep_state[2][3] = 4;
+        CHECK(bo3_status_kick_reason2(k1, sizeof k1 - 1, &v) == BO3_STATUS_KICK_NOLINK);
+        /* a 4 for someone else's id is no reason; a report of 3 neither */
+        memset(v.rep_id, 0, sizeof v.rep_id); memset(v.rep_state, 0, sizeof v.rep_state);
+        v.rep_id[1][0] = 99; v.rep_state[1][0] = 4;
+        v.rep_id[1][1] = 12; v.rep_state[1][1] = 3;
+        CHECK(bo3_status_kick_reason2(k2, sizeof k2 - 1, &v) == BO3_STATUS_KICK_HOST);
+        /* G1 reports the local host (id 10) failed: kick G1 is nolink */
+        v.rep_id[1][2] = 10; v.rep_state[1][2] = 4;
+        CHECK(bo3_status_kick_reason2(k1, sizeof k1 - 1, &v) == BO3_STATUS_KICK_NOLINK);
+        CHECK(bo3_status_kick_reason2(k2, sizeof k2 - 1, &v) == BO3_STATUS_KICK_HOST);
     }
 
     printf("lobbystatus: %d/%d checks passed\n", checks - fails, checks);

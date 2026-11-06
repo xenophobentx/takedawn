@@ -133,6 +133,11 @@ int bo3_quickplay_target_decide(const qp_target_in *in)
     return QP_T_NONE;       /* searching, or the title's own join runs */
 }
 
+int bo3_quickplay_start_reads_record(int host, unsigned lobby_state, uint32_t sysflags)
+{
+    return host && lobby_state == 0x11u && (sysflags & QP_SYS_LOCK) && !(sysflags & QP_SYS_STARTED);
+}
+
 int bo3_quickplay_name_match(const char *rec, const char *want)
 {
     return rec && want && want[0] && !strncmp(rec, want, 31);
@@ -1823,12 +1828,61 @@ extern void BO3_SUB(sub_001BD8F0, sub_001BDC10, sub_001BDCB0)(void);    /* the l
 
 int bo3_quickplay_countdown_seconds(void) { return s_cd_seconds; }
 
+extern void BO3_SUB(sub_000A3AA0, sub_000A3DF0, sub_000A3E90)(void);    /* the game record into the race (mode, track, laps) */
+#define QP_RACE_MODE    BO3_VA(0x00463B00u, 0x00463E20u, 0x00463EC0u)
+#define QP_RACE_TRACK   BO3_VA(0x00463BD8u, 0x00463EF8u, 0x00463F98u)
+
+static int s_start_read;        /* this lobby frame's host read was done before the title's frame */
+
+static void qp_start_read(unsigned st, const char *when)
+{
+    uint32_t m0 = MEM32(QP_RACE_MODE), lo0 = MEM32(QP_RACE_TRACK), hi0 = MEM32(QP_RACE_TRACK + 4u);
+    qp_call(BO3_SUB(sub_000A3AA0, sub_000A3DF0, sub_000A3E90), 0u, NULL, NULL);
+    if (m0 != MEM32(QP_RACE_MODE) || lo0 != MEM32(QP_RACE_TRACK) || hi0 != MEM32(QP_RACE_TRACK + 4u))
+        QP_LOG("start (lobby state %02X, %s): the host races the game's settings as its guests do: mode %u track "
+               "%08X:%08X (it had mode %u track %08X:%08X)", st, when, MEM32(QP_RACE_MODE), MEM32(QP_RACE_TRACK),
+               MEM32(QP_RACE_TRACK + 4u), m0, lo0, hi0);
+    else
+        QP_LOG("start (lobby state %02X, %s): the host's race settings are the game's (mode %u track %08X:%08X)", st,
+               when, m0, lo0, hi0);
+}
+
+/* 1: this copy hosts the lobby's game and the record's start lock is back */
+static int qp_start_due(void)
+{
+    xnet_hle_lobby_view lv;
+    uint32_t rec = MEM32(QP_SESSION + 0x38u);
+    int host;
+    if (!qp_ok_va(rec))
+        return 0;
+    host = xnet_hle_lobby_view_get(&lv) && lv.np > 0 && !strcmp(lv.name[0], xnet_hle_gamertag());
+    return bo3_quickplay_start_reads_record(host, 0x11u, MEM32(rec + 0x114u));
+}
+
+void bo3_quickplay_host_start_sync(uint32_t scr)
+{
+    s_start_read = 0;
+    if (!g_xbox_mem_offset || !qp_ok_va(scr) || MEM8(scr + 0x13ACu) != 0x11u || !qp_start_due())
+        return;
+    qp_start_read(0x11u, "before the gsta");
+    s_start_read = 1;
+}
+
+void bo3_quickplay_host_start_after(uint32_t scr, unsigned state_before)
+{
+    if (!g_xbox_mem_offset || !qp_ok_va(scr) || s_start_read || state_before != 0x11u || MEM8(scr + 0x13ACu) != 0x0Bu ||
+        !qp_start_due())
+        return;
+    qp_start_read(0x0Bu, "the lock's answer came in the frame");
+}
+
 void bo3_quickplay_lobby_frame(uint32_t scr)
 {
     xnet_hle_lobby_view lv;
     qp_cd_in in;
     int k, act, secs = 0;
     s_cd_seconds = 0;
+    bo3_quickplay_host_start_sync(scr);    /* every game, BO-384 */
     if (!s_host_game || !g_xbox_mem_offset || !xnet_hle_lobby_view_get(&lv))
         return;
     memset(&in, 0, sizeof in);

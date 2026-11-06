@@ -54,12 +54,12 @@ enum {
     /* the title's own kick box ("You have been kicked out of the room."), said
      * with the reason instead (lobbystatus.c bo3_status_kick_box). Sentence
      * case: the box's font has both, and it wraps the text itself. */
-    BO3_TXT_BOX_NOLINK,     /* "Your connection to the host did not come up, so the game removed you." */
+    BO3_TXT_BOX_NOLINK,     /* "Your connection to %s did not come up, so the game removed you." (%s: a name, or "the host") */
     BO3_TXT_BOX_HOST,       /* "The host removed you from the game." */
     BO3_TXT_BOX_HINT_MAC,   /* "Allow Takedawn under Local Network in System Settings, Privacy and Security." */
     BO3_TXT_BOX_HINT_WIN,   /* "Set this network to Private in the Windows settings." */
     BO3_TXT_BOX_HINT_LINUX, /* "Check the firewall on this computer." */
-    BO3_TXT_BOX_HINT_PORTS, /* "The host needs UDP ports %u and %u open." */
+    BO3_TXT_BOX_HINT_PORTS, /* "If this keeps happening, open UDP ports %u and %u on your router (...), or ... UDP 21811 (the relay)." */
     BO3_TXT_N
 };
 

@@ -104,6 +104,13 @@
  *                                next pick is taken), separated by , or |;
  *                                "back" presses B on the list. Up
  *                                to TAKEDAWN_ONLINEBOT_PICK_WAIT s (600) a pick.
+ *   TAKEDAWN_ONLINEBOT_RETRACK   host (BO-384): before each start, Y (Options), the
+ *                                menu's game options row, N presses right on the
+ *                                page's TRACK row (TAKEDAWN_ONLINEBOT_RETRACK_ROW,
+ *                                default 2), Continue, then Start as soon as the
+ *                                lobby takes a press: a change just before the start
+ *                                (TAKEDAWN_ONLINEBOT_RETRACK_RACES=K: only before the
+ *                                first K races)
  *   TAKEDAWN_ONLINEBOT_PAGE_HOLD  s the bot leaves the online page as it is
  *                                each time it comes back to it (tests: the
  *                                page's message read in a frame; default 0)
@@ -174,7 +181,7 @@
 static const char *const k_sc_name[OB_SC_N] = {
     "unknown", "loading", "boot", "main-menu", "gamertag", "signing-in", "xbox-live", "lobby-select",
     "update-rankings", "room", "create-game", "mode", "creating", "quick-match", "car", "game-lobby", "race",
-    "race-end", "results", "autosave", "points"
+    "race-end", "results", "autosave", "points", "lobby-options"
 };
 
 /* (flow state offset, page) -> screen lives in onlinescreens.c (BO-352). */
@@ -418,6 +425,12 @@ static unsigned long long s_retry_at;         /* guest: Quick Match again after 
 static unsigned s_gsea_seen;
 static int s_join_tried;                      /* JOIN WITH CODE's join pressed; the entry back: a miss */
 static int s_vote_row = -1;
+/* TAKEDAWN_ONLINEBOT_RETRACK=N (BO-384, GitHub #122): the host changes the track in its
+ * lobby's Options (Y, the menu's game options row, the mode page on the lobby's request:
+ * N presses right on its TRACK row, Continue) once before each race, and presses Start
+ * as soon as the lobby takes a press again: "start right after changing the settings". */
+static int s_retrack, s_retrack_row = 2, s_retrack_phase, s_retrack_rights, s_retrack_race = -1;
+static int s_retrack_fast, s_retrack_races;   /* RETRACK_RACES: only before the first K races (0: all) */
 static unsigned s_vote_round;
 static int s_quick_waited;                    /* QUICK PLAY's own delay is over */
 static unsigned s_alone_ms;                   /* how long a QUICK PLAY host waits alone */
@@ -839,6 +852,33 @@ static void ob_lobby(void)
     if (!s_lobby_since)
         s_lobby_since = s_now;
     ob_after_race();
+    if (s_retrack_phase == 1 && s_v.lobby && s_v.lstate != 0x01 && s_v.lstate != 0x09 && !s_v.popup) {
+        /* the Options menu (Y): its rows' actions at +0x12C0, the cursor +0x1284;
+         * action 2 is the game's options (0xA0952 -> the mode page, exit 0x23) */
+        uint32_t scr = s_v.page, n = MEM16(scr + 0x1286u), cur = MEM16(scr + 0x1284u), r, want = 0xFFFFu;
+        char st[48];
+        for (r = 0; r < n && r < 8; r++)
+            if (MEM32(scr + 0x12C0u + 4u * r) == 2u)
+                want = r;
+        if (want == 0xFFFFu) {
+            OB_LOG("game %d: retrack: the menu (lobby state %02X) has no game options row (%u rows): left", s_game,
+                   s_v.lstate, n);
+            s_retrack_phase = 0;
+            s_retrack_race = s_race_n;
+        } else if (cur != want) {
+            snprintf(st, sizeof st, "retrack: menu %u to %u", cur, want);
+            if (ob_step(st))
+                ob_press(cur < want ? "down" : "up", 150, 1500, "to the game options row");
+            return;
+        } else {
+            if (ob_step("retrack: menu game options")) {
+                s_retrack_phase = 2;
+                s_retrack_rights = 0;
+                ob_press("a", 300, 6000, "the game options");
+            }
+            return;
+        }
+    }
     switch (s_v.lstate) {
     case 0x03:                          /* a player's menu (VIEW PROFILE): never wanted */
         if (ob_step("close the player menu"))
@@ -906,7 +946,20 @@ static void ob_lobby(void)
         if (own_start && ob_gate(want, why, sizeof why)) {
             if (!s_gate_since)
                 s_gate_since = s_now;
-            if (s_now - s_gate_since >= 2000) {
+            if (s_retrack && s_retrack_race != s_race_n && (!s_retrack_races || s_race_n < s_retrack_races) &&
+                !s_retrack_phase && s_now - s_gate_since >= 2000) {
+                if (ob_step("retrack: options")) {
+                    OB_LOG("game %d: retrack: Options before the start (track row %d, %d right)", s_game,
+                           s_retrack_row, s_retrack);
+                    s_retrack_phase = 1;
+                    ob_press("y", 300, 4000, "Options");
+                }
+                return;
+            }
+            if (s_retrack_fast || s_now - s_gate_since >= 2000) {
+                if (s_retrack_fast)
+                    OB_LOG("game %d: retrack: Start at once after the change", s_game);
+                s_retrack_fast = 0;
                 if (++s_starts > 3) {
                     ob_stuck("Start pressed three times on an open gate, the game did not start");
                     return;
@@ -1440,6 +1493,42 @@ static void ob_act(void)
         if (ob_step("create: continue"))
             ob_press("a", 300, 5000, "Continue (name, limit as they are)");
         return;
+    case OB_SC_OPTIONS: {
+        /* the lobby's Options page (the mode page on 0x55DE80): only the retrack
+         * test opens it; anything else backs out */
+        uint32_t row = MEM16(s_v.page + 4);
+        char st[48];
+        if (s_retrack_phase != 2) {
+            if (ob_step("options: back"))
+                ob_press("b", 300, 4000, "out of the options");
+            return;
+        }
+        if ((int)row != s_retrack_row) {
+            snprintf(st, sizeof st, "retrack: row %u to %d", row, s_retrack_row);
+            if (ob_step(st))
+                ob_press((int)row < s_retrack_row ? "down" : "up", 150, 1500, "to the TRACK row");
+            return;
+        }
+        if (s_retrack_rights < s_retrack) {
+            snprintf(st, sizeof st, "retrack: right %d", s_retrack_rights + 1);
+            if (ob_step(st)) {
+                s_retrack_rights++;
+                ob_press("right", 150, 1500, "the next track");
+            }
+            return;
+        }
+        if (ob_step("retrack: continue")) {
+            OB_LOG("game %d: retrack: Continue with region %u track %u (list key %08X:%08X)", s_game,
+                   MEM32(s_v.page + 0x6E8u), MEM32(s_v.page + 0x6ECu),
+                   MEM32(s_v.page + 0x120u + 8u * MEM32(s_v.page + 0x6ECu)),
+                   MEM32(s_v.page + 0x124u + 8u * MEM32(s_v.page + 0x6ECu)));
+            s_retrack_phase = 0;
+            s_retrack_race = s_race_n;
+            s_retrack_fast = 1;
+            ob_press("a", 300, 8000, "Continue: the new settings");
+        }
+        return;
+    }
     case OB_SC_MODE: {
         uint32_t m = MEM32(OB_MODE_VALUE);
         int want = mode_of_game(s_game + 1);
@@ -1670,6 +1759,12 @@ void bo3_onlinebot_start(void)
         s_page_hold_s = (unsigned)atoi(e);
     if ((e = getenv("TAKEDAWN_ONLINEBOT_PICK_WAIT")) && atoi(e) > 0)
         s_pick_wait_s = (unsigned)atoi(e);
+    if ((e = getenv("TAKEDAWN_ONLINEBOT_RETRACK")) && atoi(e) > 0)
+        s_retrack = atoi(e);
+    if ((e = getenv("TAKEDAWN_ONLINEBOT_RETRACK_ROW")) && atoi(e) >= 0)
+        s_retrack_row = atoi(e);
+    if ((e = getenv("TAKEDAWN_ONLINEBOT_RETRACK_RACES")) && atoi(e) > 0)
+        s_retrack_races = atoi(e);
     s_start_ms = ob_ms();
     s_rng = (uint32_t)time(NULL) ^ ((uint32_t)ob_ms() << 8) ^ ((uint32_t)xnet_hle_port_offset() << 16);
     if (s_role != 3)

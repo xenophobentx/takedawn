@@ -114,6 +114,12 @@ void bo3_status_kick_line(int why, int lang, unsigned port, char *out, size_t n)
 
 void bo3_status_kick_box(int why, int lang, int plat, unsigned port1, unsigned port2, char *out, size_t n)
 {
+    bo3_status_kick_box_peer(why, lang, plat, port1, port2, NULL, out, n);
+}
+
+void bo3_status_kick_box_peer(int why, int lang, int plat, unsigned port1, unsigned port2,
+                              const char *peer, char *out, size_t n)
+{
     size_t o;
     int hint;
     if (!out || !n)
@@ -129,7 +135,7 @@ void bo3_status_kick_box(int why, int lang, int plat, unsigned port1, unsigned p
      * first, then the host's ports (online.md, Players behind routers) */
     hint = plat == BO3_PLAT_MAC ? BO3_TXT_BOX_HINT_MAC : plat == BO3_PLAT_WINDOWS ? BO3_TXT_BOX_HINT_WIN
          : plat == BO3_PLAT_LINUX ? BO3_TXT_BOX_HINT_LINUX : -1;
-    o = (size_t)snprintf(out, n, "%s", bo3_statustext(lang, BO3_TXT_BOX_NOLINK));
+    o = (size_t)snprintf(out, n, bo3_statustext(lang, BO3_TXT_BOX_NOLINK), peer && peer[0] ? peer : "the host");
     if (hint >= 0 && o + 1 < n)
         o += (size_t)snprintf(out + o, n - o, " %s", bo3_statustext(lang, hint));
     if (o + 1 < n) {
@@ -195,6 +201,39 @@ int bo3_status_kick_reason(const uint8_t *pkt, int n, const char *const names[8]
     for (k = 0; k < np && k < 8; k++)
         if (names[k] && !strcmp(names[k], name))
             return links[k] != 3 ? BO3_STATUS_KICK_NOLINK : BO3_STATUS_KICK_HOST;
+    return BO3_STATUS_KICK_HOST;   /* not in the game any more: a host's choice */
+}
+
+static int rep_has(const bo3_link_view *v, int k, uint32_t id)
+{
+    int e;
+    for (e = 0; e < 8; e++)
+        if (v->rep_state[k][e] == 4 && v->rep_id[k][e] == id)
+            return 1;
+    return 0;
+}
+
+int bo3_status_kick_reason2(const uint8_t *pkt, int n, const bo3_link_view *v)
+{
+    char name[32];
+    int k, m;
+    if (!pkt || !v || n < 12 || memcmp(pkt, "gset", 4))
+        return BO3_STATUS_KICK_NONE;
+    if (!kick_name((const char *)pkt + 12, n - 12, name, sizeof name))
+        return BO3_STATUS_KICK_NONE;
+    for (k = 0; k < v->np && k < 8; k++) {
+        if (!v->name[k] || strcmp(v->name[k], name))
+            continue;
+        if (v->own_link[k] == 4 || rep_has(v, k, v->local_id))
+            return BO3_STATUS_KICK_NOLINK;
+        for (m = 0; m < v->np && m < 8; m++) {
+            if (m == k)
+                continue;
+            if (rep_has(v, m, v->id[k]) || rep_has(v, k, v->id[m]))
+                return BO3_STATUS_KICK_NOLINK;
+        }
+        return BO3_STATUS_KICK_HOST;
+    }
     return BO3_STATUS_KICK_HOST;   /* not in the game any more: a host's choice */
 }
 

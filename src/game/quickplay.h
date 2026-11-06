@@ -152,6 +152,28 @@ typedef struct {
     unsigned long long now, deadline, retry_at;
 } qp_target_in;
 int bo3_quickplay_target_decide(const qp_target_in *in);
+/* BO-384 (GitHub #122): the host's start reads the game record. A guest's race
+ * takes its mode, track (the direction is part of the track), laps and the
+ * rest from the game record when the record says "under way" (sub_000A3AA0 at
+ * 0xA165C). The host goes from its start lock (state 0x11) to 0x0B and gsta at
+ * 0x9F4EB without that read, on the race values its lobby set last, and the
+ * lobby's Options return sets them from the edited request and then from the
+ * record before the update has gone out (0x6DD70 -> 0x9EA20 -> 0xA3AA0): the
+ * host raced the old settings and the guests the new ones. So on the frame the
+ * title sends the host's gsta (state 0x11, the record's lock bit 12 back, not
+ * yet under way) the host runs the same read: before the title's lobby frame,
+ * or, when the lock's answer came inside that frame, right after it (the state
+ * went 0x11 -> 0x0B; the race loads frames later, after 0x0B's wait for the
+ * peers; the next frame the lobby connection, and with it the record, may be
+ * gone). 1: read now. */
+#define QP_SYS_LOCK     0x00001000u
+#define QP_SYS_STARTED  0x00080000u
+int bo3_quickplay_start_reads_record(int host, unsigned lobby_state, uint32_t sysflags);
+/* the lobby frame's hooks (online.c, every game): before the title's frame
+ * (bo3_quickplay_lobby_frame calls it) and after it, with the state before */
+void bo3_quickplay_host_start_sync(uint32_t scr);
+void bo3_quickplay_host_start_after(uint32_t scr, unsigned state_before);
+
 /* a +gam record's NAME against the game looked for (exact, at most 31 bytes) */
 int bo3_quickplay_name_match(const char *rec, const char *want);
 /* the request words the stay create writes: +8 .. +0x28 from the saved lobby

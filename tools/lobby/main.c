@@ -4,7 +4,7 @@
  * docs/online.md.
  *
  *   takedawn-lobby [--port 21810] [--public ADDRESS] [--bind ADDRESS]
- *                  [--lan] [--max-sessions N] [--max-games N]
+ *                  [--lan] [--relay-port N] [--max-sessions N] [--max-games N]
  *                  [--max-players N] [--max-per-ip N] [--idle-secs S]
  *                  [--stats S] [--stats-dir DIR] [--public-dir DIR] [--crowd-test]
  *                  [--geoip FILE] [--admin-token-file FILE]
@@ -13,7 +13,8 @@
  * The limits can also come from TAKEDAWN_LOBBY_MAX_SESSIONS,
  * TAKEDAWN_LOBBY_MAX_GAMES and TAKEDAWN_LOBBY_MAX_PLAYERS, the statistics
  * directory from TAKEDAWN_LOBBY_STATS_DIR and the public page's from
- * TAKEDAWN_LOBBY_PUBLIC_DIR (a flag wins).
+ * TAKEDAWN_LOBBY_PUBLIC_DIR (a flag wins); the relay port from
+ * TAKEDAWN_LOBBY_RELAY_PORT.
  */
 #include <signal.h>
 #include <stdio.h>
@@ -41,6 +42,10 @@ static void usage(void)
           "                   (default: this machine's address on its default route)\n"
           "  --bind ADDR      listen on one local address only\n"
           "  --lan            announce the lobby on the local network (UDP 21809)\n"
+          "  --relay-port N   UDP port of the relay between the members of a game (the\n"
+          "                   toolkit's online play falls back to it when a direct link\n"
+          "                   fails; 21811 in the unit file; 0: off, the default; also\n"
+          "                   TAKEDAWN_LOBBY_RELAY_PORT). Counts only, no addresses kept\n"
           "  --max-sessions N players connected at once (default 4096; the open-file\n"
           "                   limit, ulimit -n / LimitNOFILE, caps it)\n"
           "  --max-games N    games at once (default 2048)\n"
@@ -86,11 +91,13 @@ int main(int argc, char **argv)
     c.geoip_file = getenv("TAKEDAWN_LOBBY_GEOIP");
     c.admin_token_file = getenv("TAKEDAWN_LOBBY_ADMIN_TOKEN_FILE");
     c.max_players = env_int("TAKEDAWN_LOBBY_MAX_PLAYERS");
+    c.relay_port = (unsigned short)env_int("TAKEDAWN_LOBBY_RELAY_PORT");
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--port") && i + 1 < argc) c.port = (unsigned short)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--public") && i + 1 < argc) c.public_ip = argv[++i];
         else if (!strcmp(argv[i], "--bind") && i + 1 < argc) c.bind_ip = argv[++i];
         else if (!strcmp(argv[i], "--lan")) c.beacon_port = 21809;
+        else if (!strcmp(argv[i], "--relay-port") && i + 1 < argc) c.relay_port = (unsigned short)atoi(argv[++i]);
         else if (!strcmp(argv[i], "--max-sessions") && i + 1 < argc) c.max_sessions = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--max-games") && i + 1 < argc) c.max_games = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--max-players") && i + 1 < argc) c.max_players = atoi(argv[++i]);

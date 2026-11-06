@@ -2106,6 +2106,64 @@ static int body_has(const char *key, const char *val)
     return strstr(g_body, pat) != NULL || (strlen(g_body) >= strlen(pat) - 1 && !strcmp(g_body + strlen(g_body) - (strlen(pat) - 1), pat + 0) );
 }
 
+/* BO-384 (GitHub #122): the record every copy reads at the start. A host that
+ * changes the game's settings in its lobby (gset PARAMS) and starts at once
+ * (the lock, then gsta) must find the new PARAMS in the lock's answer and in
+ * gsta's, and every guest the same in the start's record; a gset that comes
+ * after the start changes nothing. The client reads this record on the host
+ * too (quickplay.c bo3_quickplay_host_start_sync). */
+static void test_start_record(void)
+{
+    aries_config c;
+    int a, b, i, got;
+    memset(&c, 0, sizeof c);
+    c.port = PORT;
+    c.bind_ip = "127.0.0.1";
+    c.public_ip = "127.0.0.1";
+    c.log = quiet;
+    c.max_sessions = 20;
+    c.max_games = 5;
+    CHECK(aries_start_thread(&c) == 0);
+    settle();
+    a = login_as("Hostr", "127.0.0.9", "");
+    b = login_as("Guestr", "127.0.0.9", "");
+    mkgame(a, "Rec", "");
+    put(b, "gjoi", "NAME=Rec\nPASS=\nUSERPARAMS=1,1,3,\n");
+    CHECK(await(b, "gjoi", NULL) && strstr(g_body, "PARAMS=1,2,0,3,"));
+    quiesce(a); quiesce(b);
+    /* the Options page's update, the lock right after it */
+    put(a, "gset", "NAME=Hostr\nPASS=\nROOM=1\nMAXSIZE=6\nMINSIZE=2\nPARAMS=-1622913024,0,0,16842788,50331648,-994224003,0,0,0,\n");
+    CHECK(await(a, "gset", NULL) && strstr(g_body, "PARAMS=-1622913024,0,0,16842788,50331648,-994224003,0,0,0,"));
+    put(a, "gset", "NAME=Hostr\nSYSFLAGS=266560\n");
+    CHECK(await(a, "gset", NULL) && strstr(g_body, "SYSFLAGS=266560") &&
+          strstr(g_body, "PARAMS=-1622913024,0,0,16842788,50331648,-994224003,0,0,0,"));
+    put(a, "gsta", "");
+    CHECK(await(a, "gsta", NULL) && strstr(g_body, "SYSFLAGS=786752") &&
+          strstr(g_body, "PARAMS=-1622913024,0,0,16842788,50331648,-994224003,0,0,0,"));
+    /* the guest's view of the start: every record it got says the new settings,
+     * and the one under way is among them */
+    got = 0;
+    for (i = 0; i < 40 && await(b, "+mgm", NULL); i++) {
+        CHECK(!strstr(g_body, "PARAMS=1,2,0,3,"));
+        if (strstr(g_body, "SYSFLAGS=786752")) {
+            got = 1;
+            CHECK(strstr(g_body, "PARAMS=-1622913024,0,0,16842788,50331648,-994224003,0,0,0,") != NULL);
+            break;
+        }
+    }
+    CHECK(got);
+    /* a late update (the title's SC_APPLY after its start) is not taken */
+    put(a, "gset", "NAME=Hostr\nPARAMS=9,0,0,9,9,9,0,0,0,\n");
+    CHECK(await(a, "gset", NULL) && !g_body[0]);
+    for (i = 0, got = 0; i < MAX_GAMES; i++)
+        if (s_games[i].used && !strcmp(s_games[i].name, "Rec"))
+            got = !strcmp(s_games[i].params, "-1622913024,0,0,16842788,50331648,-994224003,0,0,0,");
+    CHECK(got);
+    close(a); close(b);
+    aries_stop();
+    settle();
+}
+
 static void test_identity(void)
 {
     aries_config c;
@@ -4415,6 +4473,365 @@ static void test_countries(void)
     s_cfg.log = quiet;
 }
 
+static int cap_has_relayed(void) { return strstr(cap, " relayed") != NULL; }
+
+/* ── the UDP relay (BO-381) ── */
+
+static int rl_udp(uint16_t *port)
+{
+    struct sockaddr_in a;
+    socklen_t l = sizeof a;
+    struct timeval tv = { 0, 300000 };
+    int fd = socket(AF_INET, SOCK_DGRAM, 0), big = 1 << 20;
+    memset(&a, 0, sizeof a);
+    a.sin_family = AF_INET;
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if (fd < 0 || bind(fd, (struct sockaddr *)&a, sizeof a) != 0)
+        return -1;
+    getsockname(fd, (struct sockaddr *)&a, &l);
+    *port = ntohs(a.sin_port);
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+    setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &big, sizeof big);
+    return fd;
+}
+
+static void rl_hex(const char *rec, uint8_t *key, int *ident)
+{
+    const char *p = strstr(rec, "TKSECRET=");
+    int i;
+    unsigned v;
+    for (i = 0; p && i < 16; i++) {
+        sscanf(p + 9 + 2 * i, "%2x", &v);
+        key[i] = (uint8_t)v;
+    }
+    p = strstr(rec, "IDENT=");
+    *ident = p ? atoi(p + 6) : 0;
+}
+
+static int rl_mk(uint8_t *b, int kind, int ident, uint32_t from, uint32_t to, int fp, int tp,
+                 const uint8_t *key, const void *pay, int pl)
+{
+    memset(b, 0, 32);
+    memcpy(b, "TKRL", 4);
+    b[4] = 1; b[5] = (uint8_t)kind;
+    b[6] = (uint8_t)(ident >> 24); b[7] = (uint8_t)(ident >> 16); b[8] = (uint8_t)(ident >> 8); b[9] = (uint8_t)ident;
+    memcpy(b + 10, &from, 4); memcpy(b + 14, &to, 4);
+    b[18] = (uint8_t)(fp >> 8); b[19] = (uint8_t)fp; b[20] = (uint8_t)(tp >> 8); b[21] = (uint8_t)tp;
+    relay_tag(key, b);
+    if (pl)
+        memcpy(b + 32, pay, (size_t)pl);
+    return 32 + pl;
+}
+
+static void rl_to(int fd, uint16_t port, const void *b, int n)
+{
+    struct sockaddr_in a;
+    memset(&a, 0, sizeof a);
+    a.sin_family = AF_INET;
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    a.sin_port = htons(port);
+    sendto(fd, b, (size_t)n, 0, (struct sockaddr *)&a, sizeof a);
+}
+
+static int rl_rx(int fd, uint8_t *b)
+{
+    ssize_t n = recv(fd, b, 2048, 0);
+    return n < 0 ? -1 : (int)n;
+}
+
+static int rl_drain(int fd)
+{
+    uint8_t b[2048];
+    int n = 0;
+    struct timeval z = { 0, 20000 }, o;
+    socklen_t ol = sizeof o;
+    getsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &o, &ol);
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &z, sizeof z);
+    while (rl_rx(fd, b) >= 0)
+        n++;
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &o, sizeof o);
+    return n;
+}
+
+static int rl_live(int ident)
+{
+    size_t i;
+    int n = 0;
+    for (i = 0; i < s_rl_n; i++)
+        n += s_rl[i].state == 1 && s_rl[i].ident == (uint32_t)ident;
+    return n;
+}
+
+static void test_relay(void)
+{
+    aries_config c;
+    uint16_t rp, pa, pb, pc, pz;
+    int ua, ub, uc, a, b, l, i, ident = 0, n, got;
+    uint8_t key[16], pk[2048], rx[2048], junk[16];
+    uint32_t sa, sb, sl, nobody = inet_addr("10.64.250.250");
+    unsigned long p0, d0, g0;
+    char rec[BODY_MAX + 32], cj[600];
+    struct stat st;
+    const char pay[] = "hello relay payload";
+    snprintf(g_dir, sizeof g_dir, "%s", "/tmp/takedawn-lobby-rl-XXXXXX");
+    CHECK(mkdtemp(g_dir) != NULL);
+    /* a free UDP port for the relay */
+    pz = 0;
+    { int t = rl_udp(&pz); close(t); }
+    rp = pz;
+    memset(&c, 0, sizeof c);
+    c.port = PORT;
+    c.bind_ip = "127.0.0.1";
+    c.public_ip = "127.0.0.1";
+    c.log = capture;
+    cap_n = 0; cap[0] = 0;
+    c.max_sessions = 20;
+    c.max_games = 4;
+    c.relay_port = rp;
+    c.stats_dir = g_dir;
+    CHECK(aries_start_thread(&c) == 0);
+    settle();
+    ua = rl_udp(&pa); ub = rl_udp(&pb); uc = rl_udp(&pc);
+    CHECK(ua >= 0 && ub >= 0 && uc >= 0);
+
+    a = login_id("RelayA", "192.168.40.1", "", 1);
+    sa = inet_addr(g_tkaddr);
+    b = login_id("RelayB", "192.168.40.2", "", 1);
+    sb = inet_addr(g_tkaddr);
+    quiesce(a); quiesce(b);
+    put(a, "gcre", "NAME=Relay\nPASS=\nPARAMS=1,2,0,3,\nMINSIZE=2\nMAXSIZE=6\nSYSFLAGS=0\nROOM=1\n");
+    CHECK(await(a, "gcre", NULL));
+    snprintf(rec, sizeof rec, "%s", g_body);
+    rl_hex(rec, key, &ident);
+    CHECK(ident > 0 && strstr(rec, "TKRELAY=") && atoi(strstr(rec, "TKRELAY=") + 8) == rp);
+    put(b, "gjoi", "NAME=Relay\nPASS=\nUSERPARAMS=1,1,3,\n");
+    CHECK(await(b, "gjoi", NULL));
+    CHECK(strstr(g_body, "TKSECRET=") && strstr(g_body, "TKRELAY="));
+    quiesce(a); quiesce(b);
+    CHECK(sa && sb && sa != sb);
+
+    /* (a) bind only: nothing is answered */
+    n = rl_mk(pk, 1, ident, sb, 0, 1000, 0, key, NULL, 0);
+    rl_to(ub, rp, pk, n);
+    CHECK(rl_rx(ub, rx) < 0);
+    CHECK(rl_live(ident) == 1);
+
+    /* (b) A to B while A has not bound and B has (B bound above): use a different port for B: unbound */
+    p0 = s_st.relay_packets; d0 = s_st.relay_dropped;
+    n = rl_mk(pk, 1, ident, sa, sb, 1000, 6000, key, pay, sizeof pay);      /* B port 6000 was never bound */
+    rl_to(ua, rp, pk, n);
+    CHECK(rl_rx(ub, rx) < 0 && rl_rx(ua, rx) < 0 && rl_rx(uc, rx) < 0);
+    CHECK(s_st.relay_packets == p0 && s_st.relay_dropped == d0 + 1);
+
+    /* (c) B bound on port 1000: A to B is delivered unchanged, A gets the answer with B's endpoint */
+    g0 = s_st.relay_games;
+    CHECK(!cap_has_relayed());
+    n = rl_mk(pk, 1, ident, sa, sb, 1000, 1000, key, pay, sizeof pay);
+    rl_to(ua, rp, pk, n);
+    got = rl_rx(ub, rx);
+    CHECK(got == n && !memcmp(rx, pk, (size_t)n));
+    got = rl_rx(ua, rx);
+    CHECK(got == 38 && !memcmp(rx, "TKRL", 4) && rx[4] == 1 && rx[5] == 2);
+    if (got == 38) {
+        uint8_t chk[32];
+        memcpy(chk, rx, 24);
+        relay_tag(key, chk);
+        CHECK(!memcmp(chk + 24, rx + 24, 8));
+        CHECK(!memcmp(rx + 10, &sb, 4) && !memcmp(rx + 14, &sa, 4));
+        CHECK(rx[32] == 127 && rx[33] == 0 && rx[34] == 0 && rx[35] == 1 && (rx[36] << 8 | rx[37]) == pb);
+    }
+    CHECK(s_st.relay_packets == p0 + 1 && s_st.relay_bytes >= (unsigned long)n && s_st.relay_games == g0 + 1);
+    CHECK(cap_has_relayed());
+    /* a second one inside two seconds: forwarded, not answered again */
+    rl_to(ua, rp, pk, n);
+    CHECK(rl_rx(ub, rx) == n);
+    CHECK(rl_rx(ua, rx) < 0);
+    CHECK(s_st.relay_games == g0 + 1);
+    /* and the other way, B to A (A is bound) */
+    n = rl_mk(pk, 1, ident, sb, sa, 1000, 1000, key, pay, sizeof pay);
+    rl_to(ub, rp, pk, n);
+    CHECK(rl_rx(ua, rx) == n && !memcmp(rx, pk, (size_t)n));
+    CHECK(rl_rx(ub, rx) == 38);
+    {   /* no address in the relay's log line */
+        const char *e = strstr(cap, " relayed"), *q = e;
+        while (q > cap && q[-1] != '\n') q--;
+        CHECK(e && !memchr(q, '.', (size_t)(e - q)) && !strstr(e, "127.0.0.1\n"));
+    }
+
+    /* a short payload gets no answer (it would be bigger than the packet) */
+    { struct timespec ts = { 2, 100000000 }; nanosleep(&ts, NULL); }       /* the answer's pause is over */
+    rl_drain(ua); rl_drain(ub);
+    n = rl_mk(pk, 1, ident, sa, sb, 1000, 1000, key, "x", 1);
+    rl_to(ua, rp, pk, n);
+    CHECK(rl_rx(ub, rx) == n);
+    CHECK(rl_rx(ua, rx) < 0);
+    n = rl_mk(pk, 1, ident, sa, sb, 1000, 1000, key, pay, sizeof pay);     /* a full-size one: answered again */
+    rl_to(ua, rp, pk, n);
+    CHECK(rl_rx(ub, rx) == n && rl_rx(ua, rx) == 38);
+
+    /* (d) refused: no delivery, no answer */
+    rl_drain(ua); rl_drain(ub);
+    d0 = s_st.relay_dropped; p0 = s_st.relay_packets;
+    n = rl_mk(pk, 1, ident, sa, sb, 1000, 1000, key, pay, sizeof pay);
+    pk[24] ^= 1;                                                          /* bad tag */
+    rl_to(ua, rp, pk, n);
+    n = rl_mk(pk, 1, ident + 777, sa, sb, 1000, 1000, key, pay, sizeof pay);   /* wrong game */
+    rl_to(ua, rp, pk, n);
+    n = rl_mk(pk, 1, ident, nobody, sb, 1000, 1000, key, pay, sizeof pay);     /* from: not a member */
+    rl_to(ua, rp, pk, n);
+    n = rl_mk(pk, 1, ident, sa, nobody, 1000, 1000, key, pay, sizeof pay);     /* to: not a member */
+    rl_to(ua, rp, pk, n);
+    n = rl_mk(pk, 1, ident, sa, sa, 1000, 1000, key, pay, sizeof pay);         /* to = from */
+    rl_to(ua, rp, pk, n);
+    { uint8_t big[32 + 1401]; memset(big, 7, sizeof big);
+      n = rl_mk(big, 1, ident, sa, sb, 1000, 1000, key, big + 32, 1401);       /* oversize */
+      rl_to(ua, rp, big, n); }
+    n = rl_mk(pk, 2, ident, sa, sb, 1000, 1000, key, pay, sizeof pay);         /* a kind 2 from a client */
+    rl_to(ua, rp, pk, n);
+    memset(junk, 0, sizeof junk);
+    rl_to(ua, rp, junk, 16);                                               /* too short */
+    n = rl_mk(pk, 1, ident, sa, sb, 1000, 1000, key, pay, sizeof pay);
+    pk[22] = 1;                                                           /* reserved bytes */
+    relay_tag(key, pk);
+    rl_to(ua, rp, pk, n);
+    CHECK(rl_rx(ub, rx) < 0 && rl_rx(ua, rx) < 0 && rl_rx(uc, rx) < 0);
+    CHECK(s_st.relay_dropped == d0 + 9 && s_st.relay_packets == p0);
+
+    /* (e) a 0.3.0-style session (no TKID) in the game: it still gets its records, and its address is no valid from/to */
+    l = login_id("RelayOld", "192.168.40.77", "", 0);
+    sl = inet_addr("192.168.40.77");
+    quiesce(l);
+    put(l, "gjoi", "NAME=Relay\nPASS=\nUSERPARAMS=1,1,3,\n");
+    CHECK(await(l, "gjoi", NULL));
+    snprintf(cj, sizeof cj, "%s", g_body);
+    CHECK(strstr(cj, "TKSECRET=") && strstr(cj, "IDENT=") && strstr(cj, "OPPO2=RelayOld"));
+    rl_drain(ua); rl_drain(ub); rl_drain(uc);
+    d0 = s_st.relay_dropped;
+    n = rl_mk(pk, 1, ident, sl, sa, 1000, 1000, key, pay, sizeof pay);        /* old session as from */
+    rl_to(uc, rp, pk, n);
+    n = rl_mk(pk, 1, ident, sa, sl, 1000, 1000, key, pay, sizeof pay);        /* old session as to */
+    rl_to(ua, rp, pk, n);
+    n = rl_mk(pk, 1, ident, 0, sa, 1000, 1000, key, pay, sizeof pay);         /* from 0 (its synth is 0) */
+    rl_to(uc, rp, pk, n);
+    CHECK(rl_rx(ua, rx) < 0 && rl_rx(uc, rx) < 0 && rl_rx(ub, rx) < 0);
+    CHECK(s_st.relay_dropped == d0 + 3);
+    put(l, "glea", "NAME=RelayOld\nFORCE=1\n");
+    close(l);
+
+    /* (f) the rate limit: 500 packets in a burst */
+    { struct timespec ts = { 1, 200000000 }; nanosleep(&ts, NULL); }
+    rl_drain(ua); rl_drain(ub);
+    d0 = s_st.relay_dropped; p0 = s_st.relay_packets;
+    n = rl_mk(pk, 1, ident, sa, sb, 1000, 1000, key, pay, sizeof pay);
+    for (i = 0; i < 500; i++)
+        rl_to(ua, rp, pk, n);
+    { struct timespec ts = { 0, 500000000 }; nanosleep(&ts, NULL); }
+    got = rl_drain(ub);
+    CHECK(got >= 380 && got <= 470);
+    CHECK(s_st.relay_packets - p0 == (unsigned long)got);
+    CHECK(s_st.relay_dropped - d0 >= 30 && s_st.relay_dropped - d0 + (s_st.relay_packets - p0) == 500);
+    rl_drain(ua);
+
+    /* (g) the game closes: the race goes on over the relay (bindings and the game's record stay) */
+    CHECK(rl_live(ident) >= 2);
+    put(a, "gdel", "");
+    CHECK(await(a, "gdel", NULL));
+    settle();
+    CHECK(rl_live(ident) >= 2);
+    rl_drain(ua); rl_drain(ub);
+    d0 = s_st.relay_dropped;
+    n = rl_mk(pk, 1, ident, sa, sb, 1000, 1000, key, pay, sizeof pay);
+    rl_to(ua, rp, pk, n);
+    CHECK(rl_rx(ub, rx) == n && !memcmp(rx, pk, (size_t)n));
+    CHECK(s_st.relay_dropped == d0);
+    rl_drain(ua);
+    n = rl_mk(pk, 1, ident, nobody, sb, 1000, 1000, key, pay, sizeof pay);     /* a non-member is still refused */
+    rl_to(ua, rp, pk, n);
+    CHECK(rl_rx(ub, rx) < 0);
+    CHECK(s_st.relay_dropped == d0 + 1);
+
+    /* (g2) a second game: both TCP sessions gone after it started, the relay still carries the traffic */
+    {
+        int a2, b2, id2 = 0;
+        uint32_t sa2, sb2;
+        uint8_t key2[16];
+        char rec2[BODY_MAX + 32];
+        a2 = login_id("RelayC", "192.168.40.3", "", 1);
+        sa2 = inet_addr(g_tkaddr);
+        b2 = login_id("RelayD", "192.168.40.4", "", 1);
+        sb2 = inet_addr(g_tkaddr);
+        quiesce(a2); quiesce(b2);
+        put(a2, "gcre", "NAME=Relay2\nPASS=\nPARAMS=1,2,0,3,\nMINSIZE=2\nMAXSIZE=6\nSYSFLAGS=0\nROOM=1\n");
+        CHECK(await(a2, "gcre", NULL));
+        snprintf(rec2, sizeof rec2, "%s", g_body);
+        rl_hex(rec2, key2, &id2);
+        put(b2, "gjoi", "NAME=Relay2\nPASS=\nUSERPARAMS=1,1,3,\n");
+        CHECK(await(b2, "gjoi", NULL));
+        quiesce(a2); quiesce(b2);
+        CHECK(id2 > 0 && id2 != ident);
+        n = rl_mk(pk, 1, id2, sb2, 0, 1000, 0, key2, NULL, 0);                 /* B binds, A sends: the game is live */
+        rl_to(ub, rp, pk, n);
+        n = rl_mk(pk, 1, id2, sa2, 0, 1000, 0, key2, NULL, 0);
+        rl_to(ua, rp, pk, n);
+        n = rl_mk(pk, 1, id2, sa2, sb2, 1000, 1000, key2, pay, sizeof pay);
+        rl_to(ua, rp, pk, n);
+        CHECK(rl_rx(ub, rx) == n);
+        rl_drain(ua);
+        close(a2); close(b2);
+        { struct timespec ts = { 1, 0 }; nanosleep(&ts, NULL); }
+        settle();
+        rl_drain(ua); rl_drain(ub);
+        n = rl_mk(pk, 1, id2, sa2, sb2, 1000, 1000, key2, pay, sizeof pay);
+        rl_to(ua, rp, pk, n);
+        CHECK(rl_rx(ub, rx) == n && !memcmp(rx, pk, (size_t)n));
+        rl_drain(ua);
+        n = rl_mk(pk, 1, id2, sb2, sa2, 1000, 1000, key2, pay, sizeof pay);
+        rl_to(ub, rp, pk, n);
+        CHECK(rl_rx(ua, rx) == n);
+        rl_drain(ua); rl_drain(ub);
+        /* (g3) a record older than the TTL is refused (the TTL is lowered; the game is gone by now or not) */
+        { struct timespec ts = { 0, 300000000 }; nanosleep(&ts, NULL); }
+        CHECK(game_by_ident(id2) == NULL);
+        s_rl_game_ttl_ms = 100;
+        { struct timespec ts = { 0, 400000000 }; nanosleep(&ts, NULL); }
+        d0 = s_st.relay_dropped;
+        n = rl_mk(pk, 1, id2, sa2, sb2, 1000, 1000, key2, pay, sizeof pay);
+        rl_to(ua, rp, pk, n);
+        CHECK(rl_rx(ub, rx) < 0);
+        CHECK(s_st.relay_dropped == d0 + 1);
+        s_rl_game_ttl_ms = RL_GAME_TTL;
+    }
+
+    /* (h) the counters: in the log line and in current.json after the stop */
+    {
+        unsigned long fp = s_st.relay_packets, fb = s_st.relay_bytes, fd = s_st.relay_dropped, fg = s_st.relay_games;
+        char path[300], want[200], cur[ST_LINE_MAX];
+        close(a); close(b);
+        aries_stop();
+        settle();
+        snprintf(want, sizeof want, "\"relay_packets\":%lu,\"relay_bytes\":%lu,\"relay_dropped\":%lu,\"relay_games\":%lu", fp, fb, fd, fg);
+        slurp("current.json", cur, sizeof cur);
+        CHECK(strstr(cur, want) != NULL);
+        CHECK(fp > 400 && fg == 2);
+        {   /* it parses back */
+            stats_t t;
+            CHECK(st_parse(cur, &t) && t.relay_packets == fp && t.relay_bytes == fb && t.relay_dropped == fd && t.relay_games == fg);
+        }
+        snprintf(path, sizeof path, "%s/public/stats.json", g_dir);
+        if (stat(path, &st) == 0) {   /* the public page carries no relay numbers */
+            char pubj[16384];
+            FILE *f = fopen(path, "rb");
+            size_t k = f ? fread(pubj, 1, sizeof pubj - 1, f) : 0;
+            if (f) fclose(f);
+            pubj[k] = 0;
+            CHECK(!strstr(pubj, "relay"));
+        }
+    }
+    close(ua); close(ub); close(uc);
+    rmfiles();
+    rmdir(g_dir);
+}
+
 int main(int argc, char **argv)
 {
     /* ./test_lobby [name ...] runs only those parts (stats server validators requests deadlines beacon
@@ -4423,8 +4840,9 @@ int main(int argc, char **argv)
         { "stats", test_stats }, { "server", test_server }, { "validators", test_validators },
         { "requests", test_requests }, { "deadlines", test_deadlines }, { "beacon", test_beacon_and_counts },
         { "lease", test_lease }, { "kick", test_kick }, { "review", test_review_fixes }, { "codesec", test_code_security }, { "identity", test_identity }, { "ids", test_ids }, { "racing", test_racing_guards }, { "private", test_private_codes }, { "pushes", test_private_pushes }, { "public", test_public_codes }, { "room", test_room_entry }, { "crowd", test_crowd },
+        { "startrec", test_start_record },
         { "bo352", test_bo352_server }, { "racers", test_racers }, { "auditc", test_audit_c }, { "racewait", test_racewait }, { "staywait", test_staywait }, { "racecrowd", test_racewait_crowd }, { "browse", test_browse },
-        { "countries", test_countries },
+        { "countries", test_countries }, { "relay", test_relay },
     };
     size_t k;
     int a;

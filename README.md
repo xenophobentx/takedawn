@@ -19,7 +19,7 @@
   &nbsp;·&nbsp;
   <a href="#reporting-a-bug">Report a bug</a>
   &nbsp;·&nbsp;
-  <a href="CHANGELOG.md">What's new in 0.3.0</a>
+  <a href="CHANGELOG.md">What's new in 0.3.1</a>
 </p>
 
 > [!IMPORTANT]
@@ -49,11 +49,12 @@ TL;DR
   [docs/online.md](docs/online.md).
 
 > [!IMPORTANT]
-> Online play needs open ports on the host. The player who creates a game
-> needs UDP 31000 and 36000 open. Takedawn asks the router to open them
+> Open ports give online play the lowest ping. The player who creates a game
+> should have UDP 31000 and 36000 open. Takedawn asks the router to open them
 > (UPnP). If UPnP is off on your router, forward both ports to your computer
-> by hand. If they stay closed, players who join are removed from the game
-> after about 20 seconds.
+> by hand. Since 0.3.1, players who can't connect to each other directly play
+> through the game server's relay instead of being removed from the game. The
+> relay adds a little ping.
 
 - The European discs work too: all three discs (North America, Europe, and
   Europe and Australia) in one download, with the game in your disc's
@@ -66,7 +67,7 @@ TL;DR
   then you play.
 - To update, install the new version over the old one. Saves and settings stay.
 - Mods go in a mods folder and switch on and off in the game's own MODS
-  page. [CHANGELOG.md](CHANGELOG.md) has everything that is new in 0.3.0.
+  page. [CHANGELOG.md](CHANGELOG.md) has everything that is new in 0.3.1.
 - Settings: Back and Start, F1, or TAKEDAWN SETTINGS in the game's menu.
 - Bugs: first check the [known issues](#known-issues). Then switch on
   System > Diagnostic logging, restart the game and make the
@@ -248,10 +249,10 @@ EA's.
 
 | Platform | File | Size |
 |---|---|---|
-| Mac (Apple silicon, macOS 13 or newer) | [`Takedawn-0.3.0-macos-arm64.dmg`](https://github.com/xenophobentx/takedawn/releases/download/v0.3.0/Takedawn-0.3.0-macos-arm64.dmg) | about 75 MB |
-| Windows (64-bit) | [`Takedawn-0.3.0-windows-x64-setup.exe`](https://github.com/xenophobentx/takedawn/releases/download/v0.3.0/Takedawn-0.3.0-windows-x64-setup.exe) | about 68 MB |
-| Linux and Steam Deck (x86-64) | [`Takedawn-0.3.0-linux-x86_64.AppImage`](https://github.com/xenophobentx/takedawn/releases/download/v0.3.0/Takedawn-0.3.0-linux-x86_64.AppImage) | about 82 MB |
-| Android (arm64, Snapdragon), experimental | [`Takedawn-0.3.0-android-arm64.apk`](https://github.com/xenophobentx/takedawn/releases/download/v0.3.0/Takedawn-0.3.0-android-arm64.apk) | about 42 MB |
+| Mac (Apple silicon, macOS 13 or newer) | [`Takedawn-0.3.1-macos-arm64.dmg`](https://github.com/xenophobentx/takedawn/releases/download/v0.3.1/Takedawn-0.3.1-macos-arm64.dmg) | about 75 MB |
+| Windows (64-bit) | [`Takedawn-0.3.1-windows-x64-setup.exe`](https://github.com/xenophobentx/takedawn/releases/download/v0.3.1/Takedawn-0.3.1-windows-x64-setup.exe) | about 68 MB |
+| Linux and Steam Deck (x86-64) | [`Takedawn-0.3.1-linux-x86_64.AppImage`](https://github.com/xenophobentx/takedawn/releases/download/v0.3.1/Takedawn-0.3.1-linux-x86_64.AppImage) | about 82 MB |
+| Android (arm64, Snapdragon), experimental | [`Takedawn-0.3.1-android-arm64.apk`](https://github.com/xenophobentx/takedawn/releases/download/v0.3.1/Takedawn-0.3.1-android-arm64.apk) | about 42 MB |
 
 Every file works with all three discs. The desktop files are large because they carry the programs for all three discs and the AI
 upscaler for the menu pictures.
@@ -280,29 +281,32 @@ I play it on these machines:
 | Retroid Pocket 5 | Snapdragon 865 | 8 GB | Adreno 650, bundled Turnip driver | Android 13 |
 | Laptop | Intel Core Ultra 5 228V | 32 GB | Intel Arc 130V | Windows 11, tried only |
 
-I ran the online mode for about three hours in one go on the live server, with
-the build before the final one and copies on Linux, Windows and a Mac, 11
-scenarios in all: private games, quick play, stay-together rematches, late
-joiners and a full game. Nothing crashed and memory use stayed flat. In one
-race, two players stayed on WAITING FOR OTHER PLAYERS at the start line
-for 17 minutes. I found the cause: a player whose messages stopped arriving
-filled the host's queue of 32 reliable messages, so the start signal never
-went out. I rebuilt that case with five copies, one of them reachable in
-only one direction. Before the fix three of four guests sat on the start
-line until I stopped the test. After it everyone raced, the race ended for
-all four and the next one started. The same night I ran the build before
-the final one with a dead server address, and with a bad link (150 ms
-delay, 30 ms jitter, 2 % packet loss) between three copies: the race ended
-for everyone and nobody was kicked.
+For 0.3.1 I tested the final packages. On Linux and on
+Windows, each one installed the game from a disc image through the setup
+window, raced to the results, and updated a 0.3.0 install with its saves and
+settings unchanged. The Europe and Australia disc installed and started on
+Linux. The Mac package installed a disc and started to the main menu. On Linux the
+game also raced for about half an hour in one process, four races in a row,
+with memory flat and no file handles lost.
+
+For online play I put two copies behind two test routers that block a direct
+connection, on the live server. They raced through the new relay and the race ended
+for both. With the relay switched off, the player who joined got the error box
+instead, and its text fits the box. A 0.3.1 copy and a 0.3.0 copy raced each
+other directly. For #122, the host changed the track before each of three races
+in a row, and both copies loaded the same track every time.
+
+Before 0.3.0 I ran the online mode for about three hours in one go on the live
+server, with copies on Linux, Windows and a Mac: private games, quick play,
+stay-together rematches, late joiners and a full game. Nothing crashed and
+memory use stayed flat.
 
 The test suites pass: the game's on all three discs (three tests that use
 North American save fixtures fail on the European discs, as they did before),
-the toolkit's, and 170 checks of the online server's lobby code. The Mac,
-Windows and Linux packages report the same two source commits. The final Mac
-package is installed on my MacBook Air.
+the toolkit's, and 800 checks of the online server's code, relay included. The
+Mac, Windows and Linux packages report the same two source commits.
 
-I have not yet played this exact build on the Steam Deck and the Retroid
-Pocket 5. Both run the build before it.
+I have not played 0.3.1 on the Steam Deck and the Retroid Pocket 5 yet.
 
 One person can only test so much. If you play it on other hardware,
 or something breaks, please tell me through the [issue form][issues]. A bug
@@ -477,8 +481,8 @@ the game data and your saves and says where they are. Delete
 1. Make the AppImage executable and start it:
 
    ```sh
-   chmod +x Takedawn-0.3.0-linux-x86_64.AppImage
-   ./Takedawn-0.3.0-linux-x86_64.AppImage
+   chmod +x Takedawn-0.3.1-linux-x86_64.AppImage
+   ./Takedawn-0.3.1-linux-x86_64.AppImage
    ```
 
 2. The setup window looks for your disc in your home folder, Downloads,
@@ -1110,8 +1114,10 @@ handled.
 
 - Online: if the host leaves, the game ends. It doesn't pass to another
   player.
-- Online: in a full game, a player who cannot connect to all the others can
-  be removed from the game. The error box says why.
+- Online: a player whose connection to another player works in one direction
+  only can still be removed from the game, because the relay doesn't cover
+  that case yet. A 0.3.0 copy can't use the relay at all. The error box says
+  why.
 - Online on a Mac that has Local Network access turned off (or behind a
   router without hairpin): it cannot reach players on the same network
   directly. Its car may not show for the others, it can get an empty result,

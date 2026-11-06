@@ -26,6 +26,7 @@ typedef struct aries_config {
                              * redirects and for players seen on loopback;
                              * NULL: found from the routing table */
     uint16_t beacon_port;   /* UDP LAN beacon (0: none) */
+    uint16_t relay_port;    /* UDP relay between a game's members (BO-381; 0: off) */
     void (*log)(const char *line);  /* NULL: stderr */
     int verbose;            /* log every packet */
     int max_sessions;       /* connected players at once (0: 256) */

@@ -78,8 +78,15 @@ build, with Nahelam's PS2 symbol list as the guide to the names.
   across the frame that is content, the selected line's brackets
   (`sub_000FB900`), is left to the squeeze. The PS2 fix patches each element's
   width and x; here it is one rule by geometry.
-- The front end's 3D (the Crash Nav globe, the garage) is the title's own,
-  already drawn for 16:9, and is not touched.
+- The front end's 3D: the garage is drawn by the one-player camera
+  (`sub_0002F380`), which has the title's 16:9, and is not touched. The
+  Crash Nav globe is drawn under the front end's 2D camera (owner
+  `0x4D6170` + `0x310`, made once by `sub_0002ECC0` with its constructor's
+  4:3 view window), so in 16:9 the title draws the 4:3 view a third wider
+  than it is; it follows `display.pictures` (below). That camera is not the
+  globe's alone: `sub_0003D9E0` with mode 0 begins every frame's 2D pass
+  through it, in races, loading screens and menus, so its window is not
+  changed.
 - Crash Nav's Select Location map (`display.crashnav_map`, Game page row
   "Crash Nav map", shown while Widescreen HUD is on; BO-222). The map is six
   tiles (callback `0x1C1A60`) on a frame of its own with the route line
@@ -120,8 +127,20 @@ build, with Nahelam's PS2 symbol list as the guide to the names.
   1/(k+1) opacity each, at 45% brightness, then the picture at 4:3. At
   `blur` and `black` the Crash Nav map and its zoom are 4:3 whatever
   `display.crashnav_map` says, and that row is hidden. The race and crash
-  results, the garage and the globe are 3D and keep their shape anyway.
-  Live; nothing changes in 4:3.
+  results and the garage are 3D and keep their shape anyway. The Crash Nav
+  globe (BO-385, GitHub #124) is 3D too, but its camera keeps a 4:3 view
+  window (above): at `blur` and `black`, for the globe's draw only
+  (`sub_000F31E0`, wrapped in `recomp_manual.c`), the clip x of the
+  camera's matrices for that frame is divided by the picture's shape over
+  4:3 (4/3 at 16:9, the `globe_k` of `src/game/main.c`): column 0 of the
+  projection (`0x4D66B0`) and of the view-projection (`0x4D66F0`), and row
+  0 of the transposed copy the globe loads as vertex shader constants
+  (`0x4D6730`), put back after the draw. The globe then has the size, shape
+  and place it has in 4:3, beside the squeezed menu, and the sides show
+  more of it over the menu film's fill; at `stretch` it is the title's own.
+  It is read every frame, so a change shows at once. Headless check:
+  `tools/headless/globe_scene.sh` (globe, zoom, Select Location, loading
+  screen). Live; nothing changes in 4:3.
 - Latch: the rectangle sites sample the setting when a stage is set up; every
   other HUD site follows that sample. A change shows whole from the next race
   (or a Restart). The front-end sites follow the setting as it is. A

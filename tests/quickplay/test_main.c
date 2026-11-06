@@ -441,6 +441,29 @@ static void browse_cases(void)
     CHECK(bo3_quickplay_browse_key(QP_BR_NONE, 3) == bo3_quickplay_browse_key(QP_BR_OPEN, 3));
 }
 
+/* BO-384 (GitHub #122): when the host's start reads the game record, as every
+ * guest does at its start */
+static void start_record(void)
+{
+    const uint32_t open = 0x00040140u, locked = 0x00041140u, racing = 0x000C0140u;
+    /* the start lock's answer is back (state 0x11, bit 12): read, then gsta */
+    CHECK(bo3_quickplay_start_reads_record(1, 0x11u, locked));
+    /* the lock still on its way: not yet (the record may not have the last update) */
+    CHECK(!bo3_quickplay_start_reads_record(1, 0x11u, open));
+    /* a record already under way: the title's own start ran (a guest's read) */
+    CHECK(!bo3_quickplay_start_reads_record(1, 0x11u, racing));
+    CHECK(!bo3_quickplay_start_reads_record(1, 0x11u, locked | racing));
+    /* a guest reads at 0xA165C by itself; nothing in the plain lobby, the
+     * update steps, the menu, the leave question or after the start */
+    CHECK(!bo3_quickplay_start_reads_record(0, 0x11u, locked));
+    CHECK(!bo3_quickplay_start_reads_record(1, 0x01u, locked));
+    CHECK(!bo3_quickplay_start_reads_record(1, 0x0Bu, locked));
+    CHECK(!bo3_quickplay_start_reads_record(1, 0x0Cu, locked));
+    CHECK(!bo3_quickplay_start_reads_record(1, 0x0Du, locked));
+    CHECK(!bo3_quickplay_start_reads_record(1, 0x02u, locked));
+    CHECK(!bo3_quickplay_start_reads_record(1, 0x09u, locked));
+}
+
 int main(void)
 {
     countdown();
@@ -458,6 +481,7 @@ int main(void)
     stay_request();
     room_ask();
     browse_cases();
+    start_record();
     if (s_fail)
         return 1;
     printf("quickplay: all checks passed\n");

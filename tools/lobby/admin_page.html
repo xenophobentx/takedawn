@@ -111,6 +111,7 @@ footer a { color: var(--ink2); }
   <div class="card"><h2>Races started by mode</h2><div id="cModes"></div></div>
   <div class="card"><h2>Modes, all time</h2><div id="tModes" class="scroll"></div></div>
   <div class="card"><h2>Race waits</h2><div class="sub">A player waiting for a race under way: begun, and how it ended</div><div id="cWaits"></div></div>
+  <div class="card"><h2>Relay</h2><div class="sub">UDP relay between a game's players: packets and MB forwarded, games that used it, packets dropped</div><div id="tRelay"></div><div id="cRelay"></div></div>
   <div class="card"><h2>Players in a race</h2><div class="sub">Races by the number of players at the start, in the shown range</div><div id="cSize"></div></div>
   <div class="card wide"><h2>Countries</h2>
     <div class="bar" style="margin:4px 0 10px">
@@ -345,6 +346,15 @@ function render() {
     {name: "joined", color: S(3), values: sum("waits_joined")},
     {name: "race gone", color: S(2), values: sum("waits_gone")},
     {name: "raced again full", color: S(7), values: sum("waits_full")}], "line", {short});
+  {
+    const tot = f => all.reduce((x, d) => x + v(d, f), 0);
+    $("tRelay").innerHTML = `<div class="tiles">` + tile("packets relayed", fmt(tot("relay_packets"))) +
+      tile("MB relayed", (tot("relay_bytes") / 1048576).toFixed(1)) + tile("games relayed", fmt(tot("relay_games"))) +
+      tile("dropped", fmt(tot("relay_dropped"))) + `</div>`;
+    chart($("cRelay"), labels, [
+      {name: "packets relayed", color: S(1), values: sum("relay_packets")},
+      {name: "dropped", color: S(2), values: sum("relay_dropped")}], "line", {short});
+  }
   const sizes = []; for (let p = 1; p <= 8; p++) sizes.push(all.reduce((a, d) => a + v(d, "start_players_" + p), 0));
   chart($("cSize"), ["1", "2", "3", "4", "5", "6", "7", "8"].map(x => x + " player" + (x === "1" ? "" : "s")),
     [{name: "races", color: S(4), values: sizes}], "bar", {short: i => String(i + 1)});

@@ -123,7 +123,7 @@ extern void xbox_InputPanicStop(int wait_ms);
  * which starts the guest with every register at zero. */
 extern RECOMP_TLS uint32_t g_eax, g_ecx, g_edx, g_esp;
 extern RECOMP_TLS uint32_t g_seh_ebp;
-extern RECOMP_TLS uint32_t g_ebx, g_esi, g_edi;
+extern RECOMP_TLS uint32_t g_ebx, g_esi, g_edi, g_ebp;
 extern ptrdiff_t g_xbox_mem_offset;
 
 extern void xbe_entry_point(void);
@@ -1089,7 +1089,8 @@ static void scenery_props_dump(void)
 /* BO3_FX_AT=<file>: a test aid for the two effect switches (BO-101,
  * docs/effects.md; "bloom" and "blur" take a strength, 0..1, BO-212) and the
  * crash camera rate (BO-111, docs/crash60.md).
- * Lines appended to the file, "<flip> bloom|blur|crash60 0|1" in
+ * Lines appended to the file, "<flip> bloom|blur|crash60 0|1" (and
+ * "pictures 0|1|2", display.pictures: stretch / blur / black) in
  * rising flip order, are taken at that flip (the "[GPU] flip N" number; a
  * flip already past: at once): graphics.bloom / graphics.motion_blur /
  * graphics.crash_60fps is set
@@ -1126,6 +1127,20 @@ static void fx_at_flip(uint32_t flip)
 #endif
             fprintf(stderr, "BO3_FX_AT: flip %u, graphics.crash_60fps = %d\n",
                     flip, v != 0);
+            continue;
+        }
+        if (!strcmp(what, "pictures")) {
+            /* "<flip> pictures 0|1|2": display.pictures stretch / blur /
+             * black (BO-315, BO-385), as the overlay's row sets it. */
+            static const char *const k[] = { "stretch", "blur", "black" };
+            if (v < 0 || v > 2)
+                continue;
+#ifdef XBOXRECOMP_HAVE_OVERLAY
+            xbox_SettingSet(XS_DISPLAY_PICTURES, v);
+#else
+            recomp_env_set(RENV_DISPLAY_PICTURES, k[v]);
+#endif
+            fprintf(stderr, "BO3_FX_AT: flip %u, display.pictures = %s\n", flip, k[v]);
             continue;
         }
         if (!strcmp(what, "vdetail")) {
@@ -2924,6 +2939,61 @@ static double fe_dx(void) { double dx, dw; fe_decor(&dx, &dw); return dx; }
 static double fe_dw(void) { double dx, dw; fe_decor(&dx, &dw); return dw; }
 static double fe_base_aspect(void) { return s_base_aspect; }
 static double fe_stage_frame(void) { return s_stage_drew ? 1.0 : 0.0; }
+
+/* The Crash Nav globe at display.pictures blur or black (BO-385, GitHub
+ * #124): the front end's 2D camera it is drawn under keeps the 4:3 view
+ * window of its constructor, so in the title's 16:9 the globe was the 4:3
+ * view stretched a third wider, beside the squeezed menu. For the globe's
+ * draw only (bo3_globe_draw below) the view is made wider by the picture's
+ * shape over 4:3 (4/3 at 16:9) and kept as high: the globe has the size,
+ * shape and place it has in 4:3, in the middle of the picture, and the
+ * picture's sides show more of it. 1 at stretch (the title's own view) and
+ * in 4:3. */
+static double globe_k(void)
+{
+    if (!pic_mode() || !(s_base_aspect > 4.0 / 3.0 + 1e-3))
+        return 1.0;
+    return s_base_aspect * 3.0 / 4.0;
+}
+
+/* The globe is drawn under the front end's 2D camera (owner 0x4D6170 +
+ * 0x310, made once by sub_0002ECC0). That camera is not the globe's own:
+ * sub_0003D9E0 with mode 0 begins every frame's 2D pass through it, in the
+ * race, the loading screens and the menus, so its view window is left alone.
+ * Only while the globe draws (sub_000F31E0, wrapped in recomp_manual.c) the
+ * clip x of the camera's matrices, as sub_00040660 copied them for this
+ * frame, is divided by globe_k: the projection (0x4D66B0 in NTSC-U) and the
+ * view-projection (0x4D66F0), column 0 of each, and row 0 of the transposed
+ * copy the globe loads into the vertex shader (0x4D6730). After the draw
+ * each value goes back, unless the title wrote that value in between. */
+#define GLOBE_NM 12
+#define GLOBE_T BO3_VA(0x4D6730u, 0x4D6A50u, 0x4D6AF0u)   /* owner + 0x5C0 */
+static const uint32_t s_globe_m[GLOBE_NM] = {
+    GLOBE_T - 0x80, GLOBE_T - 0x70, GLOBE_T - 0x60, GLOBE_T - 0x50,  /* projection, column 0 */
+    GLOBE_T - 0x40, GLOBE_T - 0x30, GLOBE_T - 0x20, GLOBE_T - 0x10,  /* view-projection, column 0 */
+    GLOBE_T, GLOBE_T + 4, GLOBE_T + 8, GLOBE_T + 0xC,                /* transposed, row 0 */
+};
+
+void bo3_globe_draw(void (*fn)(void))
+{
+    float was[GLOBE_NM], now[GLOBE_NM];
+    double k = globe_k();
+    int i;
+
+    if (k == 1.0 || !fe_ok(s_globe_m[0])) {
+        fn();
+        return;
+    }
+    for (i = 0; i < GLOBE_NM; i++) {
+        was[i] = HD_MF(s_globe_m[i]);
+        now[i] = (float)(was[i] / k);
+        PWF(s_globe_m[i]) = now[i];
+    }
+    fn();
+    for (i = 0; i < GLOBE_NM; i++)
+        if (HD_MF(s_globe_m[i]) == now[i])
+            PWF(s_globe_m[i]) = was[i];
+}
 
 static void uw_init(void)
 {

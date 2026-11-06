@@ -20,6 +20,7 @@ The Windows setup of each release, as VirusTotal scored it when I scanned it.
 
 | Release | File | SHA-256 | VirusTotal | Flagged |
 |---|---|---|---|---|
+| 0.3.1 | `Takedawn-0.3.1-windows-x64-setup.exe` | `5d571a9896be77defb96bc5a1e8552cf70eee83c91e907c6d852aaefcfa274cd` | [report](https://www.virustotal.com/gui/file/5d571a9896be77defb96bc5a1e8552cf70eee83c91e907c6d852aaefcfa274cd) | 1/68 (Deep Instinct) |
 | 0.3.0 | `Takedawn-0.3.0-windows-x64-setup.exe` | `c549a139fa3744a5029c7d63170acc363549395b99fbcd12e65d436239670dbc` | [report](https://www.virustotal.com/gui/file/c549a139fa3744a5029c7d63170acc363549395b99fbcd12e65d436239670dbc) | 1/68 (Deep Instinct) |
 | 0.2.1 | `Takedawn-0.2.1-windows-x64-setup.exe` | `85ab4e81ece174f29656f9e39bf68bc39cd7e1f0018870d89a49bc596d06da7e` | [report](https://www.virustotal.com/gui/file/85ab4e81ece174f29656f9e39bf68bc39cd7e1f0018870d89a49bc596d06da7e) | 3/59 (Deep Instinct, SecureAge, Kingsoft) |
 

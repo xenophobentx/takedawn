@@ -54,6 +54,27 @@ void bo3_status_kick_line(int why, int lang, unsigned port, char *out, size_t n)
 int bo3_status_kick_reason(const uint8_t *pkt, int n, const char *const names[8],
                            const int links[8], int np);
 
+/* What the title reported about its links, per player k (lobby-record order),
+ * for bo3_status_kick_reason2. The caller reads it from the peer structs
+ * (online.c tag_kick). The local copy's own slot has own_link 3 and no
+ * reports. Raw link states: 0 none, 1 asked, 2 answered, 3 linked, 4 failed,
+ * 5 empty. */
+typedef struct {
+    int np;                     /* players */
+    uint32_t local_id;          /* this copy's player id */
+    const char *name[8];
+    int own_link[8];            /* this copy's link to k (peer +0x4F0) */
+    uint32_t id[8];             /* k's player id (the local copy's slot: local_id) */
+    uint32_t rep_id[8][8];      /* what k reported about its links: ids ... */
+    int rep_state[8][8];        /* ... and their states (peer +0x580 / +0x5A0) */
+} bo3_link_view;
+
+/* Like bo3_status_kick_reason, by the title's own automatic-kick rule (its
+ * scan, sub_000A05B0): the kicked player k is NOLINK when our link to k is 4,
+ * or k reported (local id, 4), or another player reported (k's id, 4), or k
+ * reported (that player's id, 4); anything else is a host's choice. */
+int bo3_status_kick_reason2(const uint8_t *pkt, int n, const bo3_link_view *v);
+
 /* A kick reason that waits for the next game lobby with the top message line
  * (step 5c follow-up). why is set when the player is kicked; the message is
  * shown in that line once such a lobby is up, for BO3_KICK_TICKER_MS, or on
@@ -79,8 +100,12 @@ int bo3_kick_msg_frame(bo3_kick_msg *k, unsigned long long now, int on_ticker_pa
  * host's race port and its second one (1000 and 6000 plus the offset). ""
  * for any other reason (closed keeps the title's own text). */
 enum { BO3_PLAT_OTHER = 0, BO3_PLAT_MAC, BO3_PLAT_WINDOWS, BO3_PLAT_LINUX };
-#define BO3_KICK_BOX_MAX 240    /* the longest box text, with the null */
+#define BO3_KICK_BOX_MAX 400    /* the longest box text, with the null */
 void bo3_status_kick_box(int why, int lang, int plat, unsigned port1, unsigned port2, char *out, size_t n);
+/* The same with the name of the player the connection failed to: NULL or ""
+ * says "the host" (the kicked copy is only told the reason, not the pair). */
+void bo3_status_kick_box_peer(int why, int lang, int plat, unsigned port1, unsigned port2,
+                              const char *peer, char *out, size_t n);
 
 /* The kick box's text in the title's string table: put in when the kick
  * arrives (the box is built from the table a frame later), taken out again

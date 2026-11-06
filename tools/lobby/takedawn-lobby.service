@@ -2,7 +2,8 @@
 # Install: binary at /usr/local/bin/takedawn-lobby, this file at
 # /etc/systemd/system/takedawn-lobby.service, then
 #   systemctl daemon-reload && systemctl enable --now takedawn-lobby
-# Only TCP 21810 (the default port) has to be open; races go peer to peer.
+# TCP 21810 (the default port) and UDP 21811 (the relay, BO-381) have to be open;
+# races go peer to peer, the relay carries a link that cannot be made directly.
 # --public may be an IPv4 address or a name (resolved at start and every 10 minutes).
 # Logs: journalctl -u takedawn-lobby
 # Usage totals (counts only): /var/lib/takedawn-lobby/daily.jsonl, current.json
@@ -19,7 +20,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/takedawn-lobby --public lobby.example.org --stats 300 --stats-dir /var/lib/takedawn-lobby --public-dir /run/takedawn-lobby --geoip /run/takedawn-lobby-data/dbip-country-lite.csv --admin-token-file /run/takedawn-lobby-data/admin-token
+ExecStart=/usr/local/bin/takedawn-lobby --public lobby.example.org --relay-port 21811 --stats 300 --stats-dir /var/lib/takedawn-lobby --public-dir /run/takedawn-lobby --geoip /run/takedawn-lobby-data/dbip-country-lite.csv --admin-token-file /run/takedawn-lobby-data/admin-token
 DynamicUser=yes
 StateDirectory=takedawn-lobby
 RuntimeDirectory=takedawn-lobby

@@ -290,6 +290,11 @@ extern void bo3_fe_picture_draw(void (*fn)(void), uint32_t va);
 void sub_001C1E20(void) { bo3_fe_picture_draw(sub_001C1E20_gen, 0x001C1E20u); }   /* NTSC-U sub_001C1A60 */
 void sub_001C5D60(void) { bo3_fe_picture_draw(sub_001C5D60_gen, 0x001C5D60u); }   /* NTSC-U sub_001C59A0 */
 
+/* The Crash Nav globe (BO-385): NTSC-U sub_000F31E0. */
+extern void sub_000F35E0_gen(void);
+extern void bo3_globe_draw(void (*fn)(void));
+void sub_000F35E0(void) { bo3_globe_draw(sub_000F35E0_gen); }   /* NTSC-U sub_000F31E0 */
+
 /* QUICK PLAY (src/game/quickplay.c, Takedawn Online step 3): the create
  * state's name page and mode page builders. The generated bodies are the _gen
  * names; they are all that runs unless QUICK PLAY's create branch is on. */

@@ -329,6 +329,14 @@ extern void bo3_fe_picture_draw(void (*fn)(void), uint32_t va);
 void sub_001C1A60(void) { bo3_fe_picture_draw(sub_001C1A60_gen, 0x001C1A60u); }
 void sub_001C59A0(void) { bo3_fe_picture_draw(sub_001C59A0_gen, 0x001C59A0u); }
 
+/* The Crash Nav globe (BO-385, GitHub #124; display.pictures in ../main.c):
+ * its draw, every frame the globe is up, with the 2D camera's clip x
+ * scaled for that draw only. */
+extern void sub_000F31E0_gen(void);
+extern void bo3_globe_draw(void (*fn)(void));
+
+void sub_000F31E0(void) { bo3_globe_draw(sub_000F31E0_gen); }
+
 /* QUICK PLAY (src/game/quickplay.c, Takedawn Online step 3): the create
  * state's name page and mode page builders. The generated bodies are the _gen
  * names; they are all that runs unless QUICK PLAY's create branch is on. */

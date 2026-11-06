@@ -413,8 +413,8 @@ static uint32_t qos_lookup(uint32_t pp, uint32_t n, uint32_t apxna, uint32_t cxn
 static int tag_kick(const uint8_t *pkt, int n, uint8_t *out, int cap)
 {
     xnet_hle_lobby_view lv;
-    const char *names[8];
-    int links[8], np, k, why;
+    bo3_link_view v;
+    int np, k, e, why;
     /* CREATE GAME's gcre: a public game with its code (xboxlive.h,
      * bo3_xboxlive_gcre_public); the toolkit adds the TKCODE line after this */
     if (n >= 12 && !memcmp(pkt, "gcre", 4))
@@ -439,13 +439,25 @@ static int tag_kick(const uint8_t *pkt, int n, uint8_t *out, int cap)
     if (n < 12 || memcmp(pkt, "gset", 4) || !xnet_hle_lobby_view_get(&lv))
         return 0;
     np = lv.np > 0 && lv.np <= 8 ? lv.np : 0;
+    memset(&v, 0, sizeof v);
+    v.np = np;
+    v.local_id = MEM32(BO3_VA(0x005729F8u, 0x00572D08u, 0x00572DA8u));
     for (k = 0; k < np; k++) {
         uint32_t P = k < (int)MEM32(BO3_VA(0x005729A8u, 0x00572CB8u, 0x00572D58u))
                          ? MEM32(BO3_VA(0x00572988u, 0x00572C98u, 0x00572D38u) + 4u * (uint32_t)k) : 0;
-        names[k] = lv.name[k][0] ? lv.name[k] : "";
-        links[k] = (P >= 0x10000u && P < 0x04000000u - 0xD00u) ? (int)MEM32(P + 0x4F0) : 3;
+        v.name[k] = lv.name[k][0] ? lv.name[k] : "";
+        v.own_link[k] = 3;
+        v.id[k] = v.local_id;                       /* a null slot is the local copy itself */
+        if (P >= 0x10000u && P < 0x04000000u - 0xD00u) {
+            v.own_link[k] = (int)MEM32(P + 0x4F0);
+            v.id[k] = MEM32(P + 8);
+            for (e = 0; e < 8; e++) {               /* what k reported about its links (table C) */
+                v.rep_id[k][e] = MEM32(P + 0x580u + 4u * (uint32_t)e);
+                v.rep_state[k][e] = (int)MEM32(P + 0x5A0u + 4u * (uint32_t)e);
+            }
+        }
     }
-    why = bo3_status_kick_reason(pkt, n, names, links, np);
+    why = bo3_status_kick_reason2(pkt, n, &v);
     if (why == BO3_STATUS_KICK_NONE)
         return 0;
     return xl_add_line(pkt, n, why == BO3_STATUS_KICK_NOLINK ? "TKWHY=nolink" : "TKWHY=host", out, cap);
@@ -1482,6 +1494,7 @@ static void status_tick(uint32_t scr)
 void bo3_online_lobby_screen(bo3_online_fn title_fn)
 {
     uint32_t scr = 0;
+    unsigned st0 = 0;
     if (xnet_hle_on()) {
         scr = MEM32(g_esp + 4);
         s_lobby_screen = scr;
@@ -1496,11 +1509,13 @@ void bo3_online_lobby_screen(bo3_online_fn title_fn)
             status_tick(scr);
             if (MEM8(scr + 0x13ACu) == 0x0Au)
                 s_lobby_leave_ms = s_lobby_screen_ms;
+            st0 = MEM8(scr + 0x13ACu);
         }
     }
     title_fn();
     if (scr && scr >= 0x10000u && scr < 0x04000000u - 0x2000u) {
         unsigned long long now = mono_ms();
+        bo3_quickplay_host_start_after(scr, st0);   /* BO-384: the host's race takes the game record */
         bo3_react_lobby_frame(scr);     /* BO-352: the reaction bubble */
         int r = bo3_startwatch_step(&s_startwatch, scr, MEM8(scr + 0x13ACu), now);
         if (r == BO3_SW_REPORT)

@@ -391,6 +391,37 @@ static void st_save_exit(void)
     ST_LOG("the save is written: the autosave page's Continue");
 }
 
+/* TAKEDAWN_TRACK_TRACE=1 (tests, BO-384): a line whenever the race's track
+ * (0x463BD8/DC), the lobby's request track (0x55DE80 +0xC/+0x20) or the game
+ * record's PARAMS change, with the flow state and the lobby screen's state */
+#define ST_RACE_TRACK   BO3_VA(0x00463BD8u, 0x00463EF8u, 0x00463F98u)
+#define ST_LOBBY_STATE  BO3_VA(0x0055DF4Cu, 0x0055E26Cu, 0x0055E30Cu)  /* the lobby screen 0x55CBA0 + 0x13AC */
+static void st_track_trace(uint32_t cur, uint32_t rec)
+{
+    static int on = -1;
+    static uint32_t last[4];
+    static char last_p[64];
+    uint32_t now[4];
+    char p[64];
+    if (on < 0)
+        on = getenv("TAKEDAWN_TRACK_TRACE") && atoi(getenv("TAKEDAWN_TRACK_TRACE")) > 0;
+    if (!on)
+        return;
+    now[0] = MEM32(ST_RACE_TRACK);
+    now[1] = MEM32(ST_RACE_TRACK + 4u);
+    now[2] = MEM32(ST_LOBBY_REQ + 0xCu);
+    now[3] = MEM32(ST_LOBBY_REQ + 0x20u);
+    p[0] = 0;
+    if (st_ok_va(rec))
+        st_str(p, sizeof p, rec + 0x8Cu);
+    if (memcmp(now, last, sizeof now) || strcmp(p, last_p)) {
+        ST_LOG("track trace: race %08X:%08X request %08X:%08X record '%s' (flow %X, lobby state %02X)", now[0], now[1],
+               now[2], now[3], p, cur, MEM8(ST_LOBBY_STATE));
+        memcpy(last, now, sizeof now);
+        snprintf(last_p, sizeof last_p, "%s", p);
+    }
+}
+
 void bo3_stay_flip(void)
 {
     bo3_stay_in in;
@@ -402,6 +433,7 @@ void bo3_stay_flip(void)
     cur = MEM32(ST_FLOW + 4u);
     cur = st_ok_va(cur) ? cur - ST_FLOW : 0;
     rec = MEM32(ST_SESSION + 0x38u);
+    st_track_trace(cur, rec);
     memset(&in, 0, sizeof in);
     in.flow = cur;
     in.prev = s_prev_flow;

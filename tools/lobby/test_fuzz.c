@@ -323,7 +323,96 @@ static void check(const char *what)
     }
 }
 
-static long s_fz_races, s_fz_waits;
+#define CHECK_F(c) do { if (!(c)) { printf("BAD %s:%d: %s\n", __FILE__, __LINE__, #c); exit(1); } } while (0)
+static long s_fz_races, s_fz_waits, s_fz_relay, s_fz_fwd;
+
+/* BO-381: a TKRL datagram built from a live game (valid tag half the time, a member or a stranger as
+ * from/to), then mutated; fed straight to the relay handler. */
+static long long s_fz_vt = 1000000;
+static void fuzz_relay(void)
+{
+    uint8_t b[2048];
+    uint8_t zero[16] = { 0 };
+    int k, n, pl, gi = -1, nm;
+    uint32_t from = 0, to = 0, ident = (uint32_t)(rnd() % 40);
+    const uint8_t *key = zero;
+    struct sockaddr_in src;
+    unsigned long before = s_st.relay_packets;
+    for (k = 0; k < MAX_GAMES; k++)
+        if (s_games[k].used && s_games[k].np > 0 && (gi < 0 || rnd() % 2))
+            gi = k;
+    if (gi >= 0) {
+        const game_t *g = &s_games[gi];
+        ident = (uint32_t)g->ident;
+        if (rnd() % 8) key = g->key;
+        nm = g->np;
+        /* make some members capable, with synthetic addresses, so packets can be valid */
+        for (k = 0; k < nm; k++) {
+            sess_t *p = &s_sess[g->players[k]];
+            if (!p->tkid && rnd() % 3 == 0) {
+                int idx = synth_alloc();
+                if (idx > 0) { p->tkid = 1; p->synth_idx = idx; p->synth = synth_net(idx); }
+            }
+        }
+        from = s_sess[g->players[rnd() % (unsigned)nm]].synth;
+        to = rnd() % 5 ? s_sess[g->players[rnd() % (unsigned)nm]].synth : 0;
+    }
+    if (rnd() % 6 == 0) from = (uint32_t)rnd();
+    if (rnd() % 6 == 0) to = (uint32_t)rnd();
+    pl = rnd() % 4 ? (int)(rnd() % 80) : (int)(rnd() % 1500);
+    for (k = 0; k < pl; k++)
+        b[32 + k] = (uint8_t)rnd();
+    n = 32 + pl;
+    memset(b, 0, 32);
+    memcpy(b, "TKRL", 4);
+    b[4] = 1; b[5] = rnd() % 8 ? 1 : (uint8_t)rnd();
+    b[6] = (uint8_t)(ident >> 24); b[7] = (uint8_t)(ident >> 16); b[8] = (uint8_t)(ident >> 8); b[9] = (uint8_t)ident;
+    memcpy(b + 10, &from, 4); memcpy(b + 14, &to, 4);
+    b[19] = (uint8_t)(1000 + rnd() % 3); b[21] = (uint8_t)(1000 + rnd() % 3);
+    relay_tag(key, b);
+    if (rnd() % 4 == 0)                                   /* mutate */
+        for (k = (int)(rnd() % 4); k >= 0; k--)
+            b[rnd() % (unsigned)n] ^= (uint8_t)(1u << (rnd() % 8));
+    if (rnd() % 10 == 0)
+        n = (int)(rnd() % (unsigned)(n + 1));              /* truncated */
+    if (rnd() % 20 == 0) {                                 /* pure noise */
+        n = (int)(rnd() % 200);
+        for (k = 0; k < n; k++) b[k] = (uint8_t)rnd();
+    }
+    memset(&src, 0, sizeof src);
+    src.sin_family = AF_INET;
+    src.sin_addr.s_addr = htonl(0x7f000001u);
+    src.sin_port = htons((uint16_t)(2000 + rnd() % 6));
+    {   /* a clock of its own: a few ms a step, now and then a jump past the 60 s of staleness */
+        s_fz_vt += (long long)(rnd() % 12) + (rnd() % 400 == 0 ? 70000 : 0);
+        relay_handle(b, n, &src, s_fz_vt);
+    }
+    s_fz_relay++;
+    s_fz_fwd += s_st.relay_packets != before;
+    if (s_st.relay_packets != before) {   /* a forwarded packet: its game's record is fresh and the destination was heard within RL_STALE_MS */
+        rl_game_t *r = rlg_find(ident, s_fz_vt, 0);
+        rl_bind_t *d;
+        memcpy(&to, b + 14, 4);
+        d = rl_find(ident, to, (uint16_t)(b[20] << 8 | b[21]), s_fz_vt, 0);
+        if (!r || r->last_ms != s_fz_vt || s_fz_vt - r->last_ms > s_rl_game_ttl_ms ||
+            !d || s_fz_vt - d->seen_ms > RL_STALE_MS) {
+            printf("BAD relay: forwarded on an expired record or binding\n"); s_bad++;
+        }
+    }
+}
+
+/* no binding is used after RL_STALE_MS of silence and no rl_game after its TTL: the handler is fed the
+ * clock vt; a probe with a valid packet for a record or binding older than that must not be forwarded.
+ * Here: the structural part, a record is never "used" with an empty or foreign slot, and members stay within bounds. */
+static void check_relay(void)
+{
+    size_t i;
+    for (i = 0; i < s_rlg_n; i++)
+        if (s_rlg[i].used && (s_rlg[i].nm < 0 || s_rlg[i].nm > MAX_PLAYERS)) {
+            printf("BAD relay: a game record with %d members\n", s_rlg[i].nm); s_bad++;
+            return;
+        }
+}
 
 int main(int argc, char **argv)
 {
@@ -346,6 +435,26 @@ int main(int argc, char **argv)
     s_reserve_ms = 2;
     s_race_tail_ms = 3;
     st_init(NULL, NULL, NULL);
+    relay_init();
+    s_rl_game_ttl_ms = 100000;           /* reachable with the clock's 70 s jumps */
+    {   /* the relay alone, on a game of three capable members made by hand: most packets are valid here */
+        game_t *g = &s_games[0];
+        long q;
+        memset(g, 0, sizeof *g);
+        g->used = 1; g->ident = 4242; g->np = 3;
+        snprintf(g->gid, sizeof g->gid, "%s", "000000000000");
+        for (i = 0; i < 16; i++) g->key[i] = (uint8_t)rnd();
+        for (i = 0; i < 3; i++) {
+            sess_t *p = &s_sess[i];
+            p->used = 1; p->tkid = 1; p->synth_idx = synth_alloc(); p->synth = synth_net(p->synth_idx);
+            g->players[i] = i;
+        }
+        for (q = 0; q < iters / 4 + 100; q++)
+            fuzz_relay();
+        CHECK_F(s_fz_fwd > 100);
+        for (i = 0; i < 3; i++) { synth_free(&s_sess[i]); memset(&s_sess[i], 0, sizeof s_sess[i]); }
+        memset(g, 0, sizeof *g);
+    }
     for (i = 0; i < NS; i++)
         new_sess(i);
     for (it = 0; it < iters; it++) {
@@ -383,6 +492,8 @@ int main(int argc, char **argv)
             drain();
         if (it % 7 == 0)
             race_tick(now_ms());
+        if (rnd() % 2) { fuzz_relay(); fuzz_relay(); }
+        check_relay();
         check("step");
         if (s_bad) {
             printf("stopped at iteration %ld\n", it);
@@ -402,6 +513,6 @@ int main(int argc, char **argv)
         for (i = 0; i < NS; i++)
             s_sess[i].tok = TOK_BURST;
     }
-    printf("fuzz: %ld handled, %ld raw, %ld drops, no inconsistency; peak %ld games, %ld players in games, %ld started-game steps, private game seen with up to %ld players, %ld race-record steps, %ld waiter steps\n", handled, wire, drops, s_peak_games, s_peak_players, s_fz_started, s_peak_priv, s_fz_races, s_fz_waits);
+    printf("fuzz: %ld relay datagrams (%ld forwarded); %ld handled, %ld raw, %ld drops, no inconsistency; peak %ld games, %ld players in games, %ld started-game steps, private game seen with up to %ld players, %ld race-record steps, %ld waiter steps\n", s_fz_relay, s_fz_fwd, handled, wire, drops, s_peak_games, s_peak_players, s_fz_started, s_peak_priv, s_fz_races, s_fz_waits);
     return 0;
 }
