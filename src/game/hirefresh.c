@@ -118,6 +118,7 @@
 #define STEP_S       (1.0 / 60.0)
 #define TIMER        BO3_VA(0x4D5338u, 0x4D5658u, 0x4D56F8u)     /* the stepper's timer object */
 #define FRAME_STEPS  BO3_VA(0x4D53ACu, 0x4D56CCu, 0x4D576Cu)     /* steps this frame's Update runs */
+#define RECORD_LOOK_BACK (0x158u + 0x30u)   /* a player's record: its handler's "look back asked for" byte */
 #define HALF_ASKED   BO3_VA(0x4D538Du, 0x4D56ADu, 0x4D574Du)     /* the half rate asked for */
 #define HALF_RATE    BO3_VA(0x4D538Eu, 0x4D56AEu, 0x4D574Eu)     /* the half rate in force */
 #define PLAYERS      BO3_VA(0x73A1C0u, 0x73A4D0u, 0x73A570u)     /* players at once: 2 in split screen */
@@ -2035,7 +2036,8 @@ static void marks_probe(void)
  * off: as shipped. */
 void bo3_player_frame(bo3_hirefresh_fn title_fn)
 {
-    uint32_t n = s_upd_steps, ret, i, esi0, edi0, ebx0;
+    uint32_t n = s_upd_steps, ret, i, esi0, edi0, ebx0, frame_steps;
+    uint8_t look_back;
     float dt;
 
     if (!s_active || !s_in_update || n == 1) {
@@ -2051,6 +2053,20 @@ void bo3_player_frame(bo3_hirefresh_fn title_fn)
     esi0 = g_esi;
     edi0 = g_edi;
     ebx0 = g_ebx;
+    /* Each run is one step's, so the frame's step count reads 1 there: the
+     * record's clock (+ 0xC2C) gains FRAME_STEPS x one step's time a run,
+     * and the cameras' blends (the race intro's) time themselves by it, so
+     * n runs made it n x n steps (the intro over in a fraction of its
+     * time whenever a frame carried more than one step). */
+    frame_steps = MEM32(FRAME_STEPS);
+    MEM32(FRAME_STEPS) = 1;
+    /* The record's message handler (+ 0x158, sub_00168380) keeps at + 0x30
+     * "look back asked for": the look-back event (id 8) sets it once a
+     * frame, and each run's update (message 4) clears it after putting the
+     * chase camera back when it is not set. With n runs the second found it
+     * cleared, so a held look back flipped between the two views every
+     * frame of two steps. Each run sees the frame's input. */
+    look_back = esi0 > 0x10000u && esi0 < 0x08000000u ? MEM8(esi0 + RECORD_LOOK_BACK) : 0;
     for (i = 0; i < n; i++) {
         if (i) {
             g_esp -= 8;
@@ -2058,10 +2074,13 @@ void bo3_player_frame(bo3_hirefresh_fn title_fn)
             g_esi = esi0;
             g_edi = edi0;
             g_ebx = ebx0;
+            if (look_back)
+                MEM8(esi0 + RECORD_LOOK_BACK) = look_back;
         }
         MEMF(g_esp + 4) = dt;
         title_fn();
     }
+    MEM32(FRAME_STEPS) = frame_steps;
 }
 
 
