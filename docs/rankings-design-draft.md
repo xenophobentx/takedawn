@@ -13,8 +13,8 @@ hash on the server; SQLite local to `takedawn-lobby` with daily off-machine
 backups; a one-time race token; place/takedown reports from all copies; count
 points only when most copies agree and at least two people started; rankings
 are optional and must never block a race; the existing public statistics page
-can show the leaderboard. Account recovery and cross-device use remain open. A separate non-binding
-analysis of that topic is in `docs/cross-device-profiles-note.md`.
+can show the leaderboard. Account recovery and cross-device use remain open.
+This PR does not propose an account-linking mechanism.
 
 An important distinction: **"guest" means no manual registration**, not
 necessarily no server-side identity. Under the author's described plan, the
@@ -47,9 +47,9 @@ release.
 - `tools/lobby/test_lobby.c`, `tools/lobby/crowd/`: existing tests and
   simulated clients may be extended after the protocol is agreed.
 
-The source baseline was the user's `takedawn-main(1).zip` snapshot, compared
-against relevant files in the current public repository. **Rebase/check the
-current `main` before beginning a real PR**; the lobby is changing rapidly.
+The initial source review used Takedawn `main` at commit `9f7c371`.
+**Check and rebase against current `main` before integration**, as the lobby
+is changing rapidly.
 
 ## Cross-device identity (deferred design, not a promise)
 
@@ -61,7 +61,7 @@ If approved later, a `profile_credentials` relation can support multiple
 independently revocable device credentials without changing race history.
 The existing `UNIQUE(race_id, profile_id)` prevents one registered profile
 from receiving multiple votes in one ranked race, including when it uses
-multiple devices. More details: `docs/cross-device-profiles-note.md`.
+multiple devices. Multi-device linking and recovery remain out of scope.
 
 ## Proposed v0 schema
 
@@ -227,12 +227,14 @@ Official SQLite docs:
 
 ## Testing status
 
-The accompanying 26 reference tests were executed with Python 3 standard library
-against an in-memory/on-disk SQLite database. They cover sample two-, three-
+The accompanying 26 reference tests passed on Windows (Python 3.12.10)
+and in the preparation environment using Python standard-library SQLite
+with in-memory/on-disk databases. They cover sample two-, three-
 and four-player consensus, conflicts, retries, tampered resubmissions,
 unknown reporters, token mismatch, a simulated authentication gate, unidentified/legacy
 roster counting, restart persistence, and FK checks, SQL-injection-shaped names, cross-race token reuse, stable profiles across separate races, name changes and prevention of same-profile double voting, and a
 consistent SQLite online-backup snapshot. **They do not run any
 Takedawn game or exercise the actual TCP/UDP protocol.**
 
-No PR is opened and no real repository/server is modified by this draft.
+This draft changes only documentation and a standalone Python/SQLite
+reference prototype. It does not modify the production lobby or server.

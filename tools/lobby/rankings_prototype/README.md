@@ -1,14 +1,17 @@
 # Rankings prototype (discussion only)
 
 This folder is a **self-contained reference model**, not a Takedawn feature or
-an implementation of the real online protocol. It is intended to accompany a
+an implementation of the real online protocol. It is intended to accompany an
 early draft PR and be deleted, rewritten in C, or adapted at the maintainer's
 discretion. No game files or network connection are required.
 
-Run from the repository root using Python 3 stdlib only (Windows via
-`run-tests-windows.cmd` at the bundle root; Linux/macOS via the command below):
+Run from the repository root using Python 3 standard library only:
 
 ```sh
+# Windows (PowerShell)
+python -m unittest discover -s tools/lobby/rankings_prototype -p 'test_*.py' -v
+
+# Linux/macOS
 python3 -m unittest discover -s tools/lobby/rankings_prototype -p 'test_*.py' -v
 ```
 
@@ -39,4 +42,5 @@ server, writes/checkpoints/backups must never block the network event loop.
 
 Cross-device profile linking is **NOT implemented**. The stable `profile_id`
 and unique roster constraint anticipate the possibility without imposing a
-new authentication scheme. See `docs/cross-device-profiles-note.md`.
+new authentication scheme. Account recovery and device linking are out of
+scope for this draft.
