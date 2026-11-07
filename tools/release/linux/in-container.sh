@@ -22,6 +22,13 @@ JOBS="${JOBS:-4}"
 B=/out/build
 A=/out/AppDir
 
+# Arch-specific constants derived once so the library lists below don't repeat them.
+case $(uname -m) in
+    x86_64)  LINKER='ld-linux-x86-64'  ; MULTIARCH='x86_64-linux-gnu'  ;;
+    aarch64) LINKER='ld-linux-aarch64' ; MULTIARCH='aarch64-linux-gnu'  ;;
+    *) echo "in-container.sh: unsupported architecture $(uname -m)" >&2; exit 1 ;;
+esac
+
 # Every program of the package (BO3_REGIONS: NTSC-U, the main one, then PAL
 # and PAL-ENSV, which go beside it as takedawn-pal and takedawn-ensv;
 # src/game/package.h): /out/build for the first, /out/build-<region> for the
@@ -66,7 +73,7 @@ cp -R /src/toolkit/third_party/upscale_shaders/upstream "$A/usr/share/takedawn/s
 # of a protocol and come with any system that has Wayland at all; libxkbcommon
 # must be the system's too, because it reads the system's keyboard layouts and
 # an old copy does not understand a new system's.)
-SYSTEM='^(linux-vdso|ld-linux-x86-64|libc|libm|libdl|libpthread|librt|libutil|libresolv|libgcc_s|libstdc\+\+|libatomic|libvulkan|libGL|libGLX|libGLdispatch|libEGL|libOpenGL|libdrm|libgbm|libX11|libxcb|libXau|libXdmcp|libXext|libXrender|libbsd|libmd|libz|libexpat|libuuid|libfontconfig|libfreetype|libpng16|libbrotli[a-z]*|libglib-2\.0|libgthread-2\.0|libgobject-2\.0|libgio-2\.0|libgmodule-2\.0|libffi|libmount|libblkid|libselinux|libpcre[0-9]*|libpcre2-8|libdbus-1|libsystemd|liblzma|libzstd|liblz4|libgcrypt|libgpg-error|libcap|libwayland-client|libwayland-cursor|libwayland-egl|libgraphite2|libharfbuzz|libxkbcommon|libxkbcommon-x11|libX11-xcb|libSM|libICE)\.so'
+SYSTEM="^(linux-vdso|$LINKER|libc|libm|libdl|libpthread|librt|libutil|libresolv|libgcc_s|libstdc\+\+|libatomic|libvulkan|libGL|libGLX|libGLdispatch|libEGL|libOpenGL|libdrm|libgbm|libX11|libxcb|libXau|libXdmcp|libXext|libXrender|libbsd|libmd|libz|libexpat|libuuid|libfontconfig|libfreetype|libpng16|libbrotli[a-z]*|libglib-2\.0|libgthread-2\.0|libgobject-2\.0|libgio-2\.0|libgmodule-2\.0|libffi|libmount|libblkid|libselinux|libpcre[0-9]*|libpcre2-8|libdbus-1|libsystemd|liblzma|libzstd|liblz4|libgcrypt|libgpg-error|libcap|libwayland-client|libwayland-cursor|libwayland-egl|libgraphite2|libharfbuzz|libxkbcommon|libxkbcommon-x11|libX11-xcb|libSM|libICE)\.so"
 # Carried from this image when the program or the window needs them: the X11
 # helper libraries Qt's xcb plugin wants that a desktop may lack. (SDL and Qt
 # are carried too, from /sdl and /qt: built in this image from pinned source.)
@@ -162,7 +169,7 @@ if [ -d /qt/lib ]; then
     # against its own libxkbcommon's internals and must not meet another one.
     mkdir -p "$A/usr/lib/xkb-fallback"
     for l in libxkbcommon.so.0 libxkbcommon-x11.so.0; do
-        p=/usr/lib/x86_64-linux-gnu/$l
+        p=/usr/lib/$MULTIARCH/$l
         [ -f "$p" ] || { echo "the image has no $l" >&2; exit 1; }
         cp -L "$p" "$A/usr/lib/xkb-fallback/$l"
         pkg=$(dpkg -S "$(readlink -f "$p")" 2>/dev/null | head -1 | cut -d: -f1 || true)
