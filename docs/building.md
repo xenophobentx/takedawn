@@ -34,6 +34,7 @@ are ignored by git. Never commit or share them.
 |---|---|---|
 | macOS (Apple silicon) | Xcode Command Line Tools; from Homebrew `sdl2`, `sdl3`, `libepoxy`, `openssl@3` | below |
 | Linux, Steam Deck | `podman` and the Steam Runtime "sniper" SDK container, so the result runs on SteamOS; or the host's clang or gcc with the sdl2, libepoxy, vulkan and openssl development packages (untested) | [installer.md](installer.md) |
+| Linux arm64 | an aarch64 Linux machine with `podman` and the aarch64 sniper SDK container (`TAKEDAWN_LINUX_ARM64_HOST`); or clang, cmake, ninja and glslang-devel directly on the arm64 host | [release.md](release.md) |
 | Windows | llvm-mingw, cross-built from macOS or Linux, or natively with the same toolchain file | [windows.md](windows.md) |
 | Android | Android SDK and NDK r28 or newer, a JDK 17 or newer; built on a Linux PC | [android.md](android.md) |
 

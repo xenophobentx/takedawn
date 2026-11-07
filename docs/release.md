@@ -20,10 +20,11 @@ builds everything it can reach, smoke-runs it, and leaves in `dist/0.1.0/`
 | `Takedawn-0.1.0-macos-arm64.dmg` | `build-macos.sh` | this Mac |
 | `Takedawn-0.1.0-windows-x64-setup.exe` | `build-windows.sh` | cross-built here; the setup compiled on a Windows machine |
 | `Takedawn-0.1.0-linux-x86_64.AppImage` | `build-linux.sh` | a Linux machine with podman, in the Steam Runtime sniper SDK container |
+| `Takedawn-0.1.0-linux-arm64.AppImage` | `build-linux-arm64.sh` | an aarch64 Linux machine with podman, in the aarch64 sniper SDK container |
 | `Takedawn-0.1.0-android-arm64.apk` | `build-android.sh`, `sign-android.sh` | built on the Android build machine, signed here |
 | `SHA256SUMS`, `BUILDINFO` | `release.sh` | |
 
-Exactly these four packages: `release.sh` fails when another `Takedawn-*`
+Exactly these five packages: `release.sh` fails when another `Takedawn-*`
 file is in the folder.
 `SHA256SUMS` lists the four and `BUILDINFO`; `BUILDINFO` names each program's
 regen key, tree, patches and manifest.
@@ -328,6 +329,23 @@ on X11 under a headless gamescope of its own (the xcb plugin and the carried
 helper libraries), and the Wayland plugin's loading; `--install` from a disc
 folder on that machine (`TAKEDAWN_LINUX_DISC`, read only); a headless boot to
 the main menu on the machine's Vulkan driver.
+
+## Linux arm64
+
+`build-linux-arm64.sh` mirrors `build-linux.sh` for aarch64. It needs an
+aarch64 Linux build machine (`TAKEDAWN_LINUX_ARM64_HOST`, or run natively on
+aarch64) with podman and the aarch64 sniper SDK image (`SNIPER_SDK_IMAGE_ARM64`
+in `pins.env`, pinned by digest). The AppDir layout is the same as the x86_64
+one, except the menu pictures' upscaler is not included (Real-ESRGAN v0.2.5.0
+publishes no arm64 Linux binary). `linux/in-container.sh` is shared and derives
+the linker name and multiarch triple from `uname -m` at run time.
+
+`release.sh` runs `build-linux-arm64.sh` when `TAKEDAWN_LINUX_ARM64_HOST` is
+set (or the release machine itself is aarch64) and skips it silently otherwise,
+so a release can be cut without an arm64 build host.
+
+`smoke-linux-arm64.sh` runs the same checks as `smoke-linux.sh` on the arm64
+build machine.
 
 ## Android
 
