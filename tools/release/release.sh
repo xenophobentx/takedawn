@@ -36,7 +36,7 @@ source "$REPO/tools/release/pins.env"
 
 [ $# -ge 1 ] || die "usage: release.sh <version> [--only macos,windows,linux,android] [--allow-dirty] [--reuse-gen]"
 WANT_VERSION="$1"; shift
-ONLY="macos,windows,linux,android"; ALLOW_DIRTY=0; REUSE=""
+ONLY="macos,windows,linux,linux-arm64,android"; ALLOW_DIRTY=0; REUSE=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --only) ONLY="$2"; shift ;;
@@ -114,6 +114,18 @@ if wants linux; then
         NOTRUN+=("linux: run on the build machine only (headless, RADV): no window on a real screen, no Steam Deck, no Game Mode start, no desktop without the usual libraries")
     else FAILED+=("linux build"); fi
 fi
+if wants linux-arm64; then
+    if [ -z "${TAKEDAWN_LINUX_ARM64_HOST:-}" ] && [ "$(uname -m)" != aarch64 ]; then
+        NOTRUN+=("linux-arm64: no TAKEDAWN_LINUX_ARM64_HOST")
+    elif step linux-arm64 build-linux-arm64 "$T/build-linux-arm64.sh"; then
+        DONE+=(linux-arm64)
+        if step linux-arm64-smoke smoke-linux-arm64 "$T/smoke-linux-arm64.sh"; then
+            while IFS= read -r l; do NOTRUN+=("linux-arm64 smoke: ${l#NOT RUN }"); done \
+                < <(grep -a "^NOT RUN" "$LOGS/smoke-linux-arm64.log" || true)
+        else FAILED+=("linux-arm64 smoke run"); fi
+        NOTRUN+=("linux-arm64: run on the build machine only (headless): no window on a real screen, no handheld run, no desktop without the usual libraries")
+    else FAILED+=("linux-arm64 build"); fi
+fi
 if wants android; then
     if [ -x "$T/build-android.sh" ]; then
         # build-android.sh builds on its machine and signs here with
@@ -168,7 +180,7 @@ esac
 # ── one package per platform ─────────────────────────────────────────
 # Every package carries the three programs (src/game/package.h, BO-341):
 # exactly these four files, nothing per region beside them.
-PACKAGES="Takedawn-$VERSION-macos-arm64.dmg Takedawn-$VERSION-windows-x64-setup.exe Takedawn-$VERSION-linux-x86_64.AppImage Takedawn-$VERSION-android-arm64.apk"
+PACKAGES="Takedawn-$VERSION-macos-arm64.dmg Takedawn-$VERSION-windows-x64-setup.exe Takedawn-$VERSION-linux-x86_64.AppImage Takedawn-$VERSION-linux-arm64.AppImage Takedawn-$VERSION-android-arm64.apk"
 for f in "$DIST"/Takedawn-* "$DIST"/takedawn-*; do
     [ -f "$f" ] || continue
     case "$(basename "$f")" in *-unsigned.apk|*.idsig) continue ;; esac   # not for release
@@ -201,6 +213,7 @@ done
     grep -E '^[A-Z0-9_]+=' "$T/pins.env" | sed 's/^/  /'
     sed -n 's/^\([A-Z0-9_]*_\(VER\|TAG\)\)=\(.*\)/  \1=\3 (tools\/win\/fetch-deps.sh)/p' "$REPO/tools/win/fetch-deps.sh"
     [ -f "$WORK/linux/carried.txt" ] && { echo "  Linux, carried from the sniper image:"; sed 's/^/    /' "$WORK/linux/carried.txt"; }
+    [ -f "$WORK/linux-arm64/carried.txt" ] && { echo "  Linux arm64, carried from the sniper image:"; sed 's/^/    /' "$WORK/linux-arm64/carried.txt"; }
     echo
     echo "artefacts"
     sed 's/^/  /' "$DIST/SHA256SUMS"
@@ -223,5 +236,6 @@ say "dist: $DIST ($(( $(date +%s) - t0 )) s). Nothing was uploaded."
 if [ ${#FAILED[@]} -gt 0 ]; then die "failed: ${FAILED[*]}"; fi
 for p in $(printf '%s' "$ONLY" | tr ',' ' '); do
     case " ${DONE[*]:-} " in *" $p "*) ;; *) [ "$p" = android ] && { [ ! -x "$T/build-android.sh" ] || [ -z "${TAKEDAWN_ANDROID_HOST:-}" ]; } && continue
+                                             [ "$p" = linux-arm64 ] && { [ -z "${TAKEDAWN_LINUX_ARM64_HOST:-}" ] && [ "$(uname -m)" != aarch64 ]; } && continue
                                              die "$p was requested and not built" ;; esac
 done

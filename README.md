@@ -252,6 +252,7 @@ EA's.
 | Mac (Apple silicon, macOS 13 or newer) | [`Takedawn-0.3.1-macos-arm64.dmg`](https://github.com/xenophobentx/takedawn/releases/download/v0.3.1/Takedawn-0.3.1-macos-arm64.dmg) | about 75 MB |
 | Windows (64-bit) | [`Takedawn-0.3.1-windows-x64-setup.exe`](https://github.com/xenophobentx/takedawn/releases/download/v0.3.1/Takedawn-0.3.1-windows-x64-setup.exe) | about 68 MB |
 | Linux and Steam Deck (x86-64) | [`Takedawn-0.3.1-linux-x86_64.AppImage`](https://github.com/xenophobentx/takedawn/releases/download/v0.3.1/Takedawn-0.3.1-linux-x86_64.AppImage) | about 82 MB |
+| Linux arm64 (Odin, Asahi, Pi 5, ARM servers) | [`Takedawn-0.3.1-linux-arm64.AppImage`](https://github.com/xenophobentx/takedawn/releases/download/v0.3.1/Takedawn-0.3.1-linux-arm64.AppImage) | about 80 MB |
 | Android (arm64, Snapdragon), experimental | [`Takedawn-0.3.1-android-arm64.apk`](https://github.com/xenophobentx/takedawn/releases/download/v0.3.1/Takedawn-0.3.1-android-arm64.apk) | about 42 MB |
 
 Every file works with all three discs. The desktop files are large because they carry the programs for all three discs and the AI
