@@ -36,6 +36,7 @@ if(ANDROID)
         controls.c
         autopilot.c
         softbody.c
+        seatcam.c
         menuentry.c
         tutorial.c
         scoreboard.c
@@ -103,6 +104,7 @@ add_executable(burnout3
     controls.c
     autopilot.c
     softbody.c
+    seatcam.c
     menuentry.c
     tutorial.c
     scoreboard.c

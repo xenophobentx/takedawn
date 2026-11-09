@@ -5,6 +5,7 @@
 #   $BO3_WINDEPS  (default ~/.cache/bo3-windeps)
 #     llvm-mingw/   clang + lld + mingw-w64 (UCRT), pinned
 #     SDL2/         SDL2 mingw development package (headers, import lib, SDL2.dll)
+#     openxr/       the OpenXR SDK (headers used; the loader is the runtime's)
 #     vulkan/       Vulkan-Headers + a generated vulkan-1 import library
 #                   (the loader itself, vulkan-1.dll, is the user's GPU driver's)
 #     glslang/      glslang built static for mingw (no SPIRV-Tools optimizer)
@@ -19,6 +20,7 @@ LLVM_MINGW_VER=20260922
 SDL2_VER=2.32.10
 VK_HEADERS_TAG=vulkan-sdk-1.4.363.0
 GLSLANG_TAG=16.6.0
+OPENXR_TAG=release-1.1.47
 
 case "$(uname -s)" in
   Darwin) LLVM_ASSET="llvm-mingw-$LLVM_MINGW_VER-ucrt-macos-universal.tar.xz" ;;
@@ -63,6 +65,15 @@ if [ ! -f vulkan/lib/libvulkan-1.dll.a ]; then
     grep -h -o -E 'VKAPI_CALL +vk[A-Za-z0-9_]+' vulkan/include/vulkan/vulkan_core.h \
         vulkan/include/vulkan/vulkan_win32.h | awk '{print $2}' | sort -u; } > vulkan/lib/vulkan-1.def
   x86_64-w64-mingw32-dlltool -m i386:x86-64 -d vulkan/lib/vulkan-1.def -l vulkan/lib/libvulkan-1.dll.a
+fi
+
+# The OpenXR headers (Apache-2.0 or MIT; src/video/oxr.c: a VR headset; the loader is opened at run time, so only
+# the headers are needed to build).
+if [ ! -f openxr/include/openxr/openxr.h ]; then
+  A="OpenXR-SDK-$OPENXR_TAG.tar.gz"
+  fetch "https://github.com/KhronosGroup/OpenXR-SDK/archive/refs/tags/$OPENXR_TAG.tar.gz" "$A"
+  rm -rf openxr && mkdir -p openxr
+  tar -xf "dl/$A" -C openxr --strip-components 1
 fi
 
 if [ ! -f glslang/lib/libglslang.a ]; then

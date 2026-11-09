@@ -58,6 +58,7 @@
 #include "platform/recomp_env.h"
 #include "recomp_types.h"
 #include "region.h"
+#include "seatcam.h"
 
 extern RECOMP_TLS uint32_t g_eax, g_esi, g_ebp, g_esp;
 extern ptrdiff_t g_xbox_mem_offset;
@@ -2169,6 +2170,8 @@ static void sb_draw(void)
     sb_car *c;
     int i;
 
+    bo3_seatcam_car_draw(1);            /* --vr: the car body drawn with both faces (seatcam.c) */
+
     if (!g_xbox_mem_offset || car < 0x10000u || car >= 0x04000000u)
         return;
     bgv = SB_M32(car + SB_CAR_BGV);
@@ -2333,6 +2336,8 @@ static void sb_drawn(void)
 {
     sb_car *c = car_find(g_esi);
     uint32_t w;
+
+    bo3_seatcam_car_draw(0);
 
     if (!c || !c->wheel_bent)
         return;
@@ -2862,8 +2867,10 @@ void bo3_softbody_start(uint32_t (*flips)(void))
     const char *e = recomp_env(RENV_GFX_SOFTBODY), *b = getenv("BO3_SOFTBODY");
     if (b && *b)                     /* the old switch still works (tests) */
         e = b;
-    if (!e || !*e || *e == '0')
+    if (!e || !*e || *e == '0') {
+        bo3_seatcam_marks();             /* the car-draw marks are the seat camera's then */
         return;
+    }
     s_log = getenv("BO3_SOFTBODY_LOG") != NULL;
     {
         const char *t = getenv("BO3_SOFTBODY_TRAFFIC");
