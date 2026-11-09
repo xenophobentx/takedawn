@@ -31,6 +31,7 @@ cmake -S "$(wp "$HERE")" -B "$(wp "$B")" -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH="$(wp "$D/SDL2/x86_64-w64-mingw32");$(wp "$D/glslang")" \
   -DVulkan_INCLUDE_DIR="$(wp "$D/vulkan/include")" \
   -DVulkan_LIBRARY="$(wp "$D/vulkan/lib/libvulkan-1.dll.a")" \
+  -DXBOXRECOMP_OPENXR_INCLUDE_DIR="$(wp "$D/openxr/include")" \
   "$@"
 cmake --build "$B" --target burnout3 -j"${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || nproc)}"
 cp -f "$D/SDL2/x86_64-w64-mingw32/bin/SDL2.dll" "$HERE/bin/"

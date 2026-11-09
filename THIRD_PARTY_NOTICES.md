@@ -185,6 +185,7 @@ fonts.
 | [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) | 20260922 | The compiler for Windows |
 | CMake, Ninja | | Build system |
 | Vulkan headers | SDK 1.4.363.0 | Windows build |
+| [OpenXR SDK](https://github.com/KhronosGroup/OpenXR-SDK) headers (Apache-2.0 or MIT) | release-1.1.47 | The Windows build's headset output (`--vr`, docs/vr.md): the headers only. The OpenXR loader is the player's runtime's and is opened at run time, not shipped |
 | [capstone](https://www.capstone-engine.org), the Python module | from PyPI | The recompiler's disassembler |
 | Steam Runtime "sniper" SDK container image | | The compiler and libraries for Linux |
 | Android SDK and NDK, a JDK | NDK r28 or newer | The Android build |

@@ -71,6 +71,7 @@ extern void xbox_InputPanicStop(int wait_ms);
 #include "usb/ohci.h"
 #include "region.h"                   /* BO3_VA: NTSC-U or PAL addresses */
 #include "controls.h"                 /* input.control_scheme (BO-106) */
+#include "seatcam.h"                  /* --vr: the seat camera (seatcam.c) */
 #include "install.h"                  /* the data root, --install, --version (BO-103) */
 #include "languages.h"                /* the Language row's languages */
 #include "fatal.h"                    /* a start-up failure the player sees */
@@ -2323,6 +2324,8 @@ static void uw_stage_render(void)
 {
     s_uw_frame = s_uw_stage;
     s_stage_drew = 1;
+    /* BO3_SEATCAM / --vr (seatcam.c): the stage's render begins by building the camera; the seat goes in first. */
+    bo3_seatcam_apply();
     /* display.score_board (scoreboard.c, BO-165): before the HUD is drawn. */
     bo3_score_board_render();
 }
@@ -2339,6 +2342,8 @@ int  nv2a_host_hdr(void);                               /* toolkit nv2a_backend_
 static void hdr_mark(uint32_t tag)
 {
     uint32_t dev, put;
+
+    bo3_seatcam_stereo_scene((int)tag);     /* --stereo / --vr: the scene's eye shift on, the HUD's off (seatcam.c) */
     /* graphics.hdr (live) or RECOMP_DEBUG=hdr: before, only the debug
      * switch marked, so the setting alone never gave the scene its light. */
     if (!nv2a_host_hdr())
@@ -2413,6 +2418,8 @@ static void uw_flip(void)
 {
     uint32_t n = s_uw_flips + 1;
     float a = (float)s_uw_frame, prev = s_uw_ring[(n - 1) % UW_RING];
+
+    bo3_seatcam_restore();              /* the title's camera back (seatcam.c) */
 
     /* The first flip after a stage's last frame shows that frame again (the
      * title flips without drawing while it leaves the stage): wide still.
@@ -3584,6 +3591,16 @@ int main(int argc, char **argv)
      * arguments stay in its ANSI code page, as before. After the console is
      * attached: its code page is set with it. */
     s_utf8_args = recomp_win_utf8_args(&argc, &argv);
+    {
+        /* The headset starts below, before the settings are read: its graphics API (the VR page's vr.api) from the file now. */
+        char api[16];
+        int i;
+
+        for (i = 1; i < argc; i++)
+            if (!strcmp(argv[i], "--vr") && !getenv("RECOMP_VR_API") && xbox_SettingsPeek(BO3_USER_DIR, "vr.api", api, sizeof api))
+                _putenv_s("RECOMP_VR_API_SAVED", api);   /* not RECOMP_VR_API: that would lock the VR page's row */
+    }
+    bo3_seatcam_args(argc, argv);                 /* --vr, --stereo, --seatcam, --bonnet (seatcam.c) */
 #endif
     /* The package's programs, one for each disc, hand the whole line to
      * each other (install.c, package.h): the one whose disc is installed
@@ -3728,6 +3745,10 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--seconds") && i + 1 < argc) {
             seconds = (unsigned)strtoul(argv[++i], NULL, 10);
             snprintf(seconds_text, sizeof seconds_text, "%u", seconds);
+        }
+        /* --vr, --stereo[=ipd], --seatcam[=r,u,a[,save]], --bonnet=r,u,a[,save]: read by bo3_seatcam_args (seatcam.c). */
+        else if (!strcmp(argv[i], "--vr") || !strncmp(argv[i], "--stereo", 8) || !strncmp(argv[i], "--seatcam", 9)
+                 || !strncmp(argv[i], "--bonnet=", 9)) {
         }
         else if (argv[i][0] == '-') {
             const char *self = getenv("APPIMAGE");
@@ -4107,6 +4128,7 @@ int main(int argc, char **argv)
     hud_dump_start();
     hud_mon_start();
     fx_at_start();
+    bo3_seatcam_start();                /* --vr, BO3_SEATCAM: the seat camera (seatcam.c) */
     drive_log_start();
     pace_log_start();
     /* BO-106: input.control_scheme (controls.c). */
