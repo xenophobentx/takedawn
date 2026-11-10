@@ -29,6 +29,13 @@ set a variable from). The settings' Mods page names it on its first line:
 | Portable mode (docs/windows.md) | `data/mods` next to the program |
 | Android | `mods` in the app's files folder (below) |
 
+On a European disc, the folder is in that disc's own per-user folder
+(docs/pal.md, Where each disc's data is). On Windows that is
+`%APPDATA%\Takedawn PAL\mods`, on macOS
+`~/Library/Application Support/Takedawn PAL/mods` and on Linux
+`~/.local/share/takedawn pal/mods`. A mod installed for the North American
+disc is not read there.
+
 Make the folder if it is not there yet. Each mod is a folder of its own in it,
 with a `mod.toml` (Manifests, below); loose files there work too, as in any
 mod folder.
