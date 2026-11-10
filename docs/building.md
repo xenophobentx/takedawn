@@ -1,5 +1,9 @@
 # Building from source
 
+For the `steam-frame-vr` branch, use the [Steam Frame guide](steam-frame.md)
+for the matching toolkit checkout and ARM64 Docker build. The upstream
+release toolkit tags below do not include the VR additions.
+
 For developers. Players do not need any of this: the downloads are ready to
 run (see the [README](../README.md)).
 

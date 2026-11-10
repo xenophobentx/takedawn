@@ -10,7 +10,8 @@ SteamVR's recommended size (2160x2160 at the 100% resolution setting) and
 the whole frame, both eyes included, costs about 9.5 ms of GPU time.
 
 The toolkit side (OpenXR, the stereo replay, the headset loop) is in the
-toolkit (xenophobentx/xboxrecomp, `takedawn` branch): `src/d3d/nv2a_vk_xr.c`,
+toolkit ([astromaddie/xboxrecomp](https://github.com/astromaddie/xboxrecomp/tree/steam-frame-vr),
+`steam-frame-vr` branch): `src/d3d/nv2a_vk_xr.c`,
 the "stereo" part of `src/d3d/nv2a_pb_vulkan.c`, `D3D8_GLSL_STEREO` in
 `src/d3d/d3d8_vsh_glsl.c`, CMake option `XBOXRECOMP_VK_XR` (Linux only, off by
 default). This repository has the build and test scripts in `tools/frame/`
@@ -18,15 +19,63 @@ and one game hook, `xbox_vr_scene()` in `src/game/controls.c`.
 
 ## Build and install
 
-On a Mac or a Linux PC with Docker (Colima on a Mac: `colima start --memory 4
---cpu 4`). The toolkit sits beside this checkout as `../xboxrecomp`
-(`XBOXRECOMP_NAME` for another folder name).
+Use the matching `steam-frame-vr` branches of both forks. The upstream
+`xenophobentx/xboxrecomp` `takedawn` branch is the base of this work, but it
+doesn't include this fork's OpenXR additions.
 
-    SPLIT=250 ./regen.sh                  # the generated C, in files small enough for a 4 GB VM
-    tools/frame/build.sh all              # Docker image (once), build, package
-    export FRAME_HOST=steamos@<frame>.local
-    tools/frame/deploy.sh --game-dir "Burnout 3 Takedown"   # first time: the package, your game files, the Steam title
-    tools/frame/deploy.sh                 # later: the package only
+You need Git, Python 3.10 or newer, and Docker with a working Linux ARM64
+container environment. On an Apple silicon Mac, Colima can provide it:
+`colima start --memory 4 --cpu 4`. Linux ARM64 Docker works natively. An
+x86-64 Linux host or Windows WSL2 also needs ARM64 emulation in its Docker
+engine; the commands below select `linux/arm64`, not an x86-64 build. This
+isn't a cross-compiler setup, and the recorded builds used ARM64 containers.
+
+```sh
+git clone --branch steam-frame-vr https://github.com/astromaddie/takedawn.git
+git clone --branch steam-frame-vr https://github.com/astromaddie/xboxrecomp.git
+cd takedawn
+python3 -m venv .venv
+.venv/bin/python3 -m pip install capstone
+```
+
+Put your extracted North America retail Xbox disc in
+`Burnout 3 Takedown/` inside this checkout, with `default.xbe` directly inside
+that folder. The supported executable has SHA-256
+`9f497acd82adb8edfb72cc31aeeb35010b45d32b13a3f1fc6540717ff24d13f9`.
+No disc files or generated game code are included in either repository.
+
+```sh
+shasum -a 256 "Burnout 3 Takedown/default.xbe"
+SPLIT=250 ./regen.sh
+DOCKER_DEFAULT_PLATFORM=linux/arm64 JOBS=2 tools/frame/build.sh all
+```
+
+`regen.sh` uses `.venv` automatically. It generates the C on the host;
+`SPLIT=250` keeps each source file small enough for a 4 GB build VM. The
+Dockerfile is included at `tools/frame/Dockerfile`. `all` builds its image,
+compiles the game, then stages the package. Later rebuilds can use `build`
+and `package` separately with the same environment variables. `JOBS` controls
+game compiler parallelism; it doesn't limit dependency builds in the image.
+
+Keep the toolkit beside the game as `../xboxrecomp`. If you choose a different
+sibling folder, set `XBOXRECOMP_DIR` to its absolute host path for `regen.sh`,
+and `XBOXRECOMP_NAME` to its folder name for `build.sh`.
+
+The executable is `build-frame/bin/burnout3`; the installable directory is
+`build-frame/package/Takedawn`. Check that `build-frame/configure.log` says
+both `Vulkan backend on` and `OpenXR on the Vulkan backend on`, and that
+`file build-frame/package/Takedawn/burnout3` reports an ARM aarch64 ELF.
+`XBOXRECOMP_VK_XR=ON` by itself isn't enough if Vulkan was not found.
+
+Put the Frame in Developer Mode, set up SSH key access and quit this game
+before deploying. Replace the host below with your own Frame's address:
+
+```sh
+export FRAME_HOST=steamos@your-frame.local
+tools/frame/deploy.sh --game-dir "Burnout 3 Takedown"
+# Later updates keep the existing game data:
+tools/frame/deploy.sh
+```
 
 The image is Ubuntu 22.04 (glibc 2.35; the program needs 2.34, the Frame's
 Steam Linux Runtime 4 has 2.41) with clang 15, SDL3 and sdl2-compat, the

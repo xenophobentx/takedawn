@@ -4,6 +4,14 @@
 
 <h1 align="center">Takedawn</h1>
 
+This fork's `steam-frame-vr` branch adds native Linux ARM64 VR for Steam
+Frame: per-eye Vulkan rendering, head tracking, a separate HUD panel and
+Frame controller input with rumble. Start with the
+[Steam Frame build guide](docs/steam-frame.md). It uses the matching
+[`steam-frame-vr` toolkit](https://github.com/astromaddie/xboxrecomp/tree/steam-frame-vr),
+not the upstream toolkit's `takedawn` branch. The desktop and Android
+instructions below describe the inherited Takedawn ports.
+
 <p align="center">
   An unofficial static recompilation of the original Xbox version of <i>Burnout 3: Takedown</i>:<br>
   a native program for Mac, Windows, Linux, the Steam Deck and Android handhelds.<br>
@@ -492,14 +500,17 @@ stereo 3D around you: every picture the game draws gets drawn again for each
 eye, and you can look around the car. The HUD sits on its own panel in front
 of you. Menus, the garage and films show on a big screen.
 
-It's early, but it plays well and holds 120 Hz with the game at its usual
-60. There's no download for it; you build it yourself:
+The recorded race checks held a 120 Hz headset loop while the game kept its
+usual 60 Hz simulation. See the guide for the measured settings and limits.
+There's no Frame download; build it from the two matching source branches:
 
-1. Check out the xboxrecomp toolkit's `takedawn` branch next to this
-   repository as `../xboxrecomp`. You need Docker (Colima on a Mac is fine).
-2. `SPLIT=250 ./regen.sh`, then `tools/frame/build.sh all`.
+1. Follow [the prerequisites and clone commands](docs/steam-frame.md#build-and-install).
+   Both repositories need their `steam-frame-vr` branch. You need Python with
+   Capstone, an ARM64 Docker environment and your own supported disc files.
+2. `SPLIT=250 ./regen.sh`, then
+   `DOCKER_DEFAULT_PLATFORM=linux/arm64 JOBS=2 tools/frame/build.sh all`.
 3. Put the Frame in Developer Mode with your ssh key on it, then run
-   `FRAME_HOST=steamos@<your Frame>.local tools/frame/deploy.sh --game-dir "<your unpacked disc>"`.
+   `FRAME_HOST=steamos@your-frame.local tools/frame/deploy.sh --game-dir "<your unpacked disc>"`.
    That copies the build and your game files over, adds "Devkit Game:
    TakedawnVR" to the Frame's Steam library and asks SteamVR for 120 Hz.
 4. Start it from the Steam library on the Frame (started over ssh it gets no

@@ -4,8 +4,8 @@
 #
 #   tools/frame/build.sh [image|build|package|all]
 #
-# Expects the toolkit beside this checkout as ../xboxrecomp (the takedawn
-# branch of xenophobentx/xboxrecomp; another folder name in XBOXRECOMP_NAME),
+# Expects the toolkit beside this checkout as ../xboxrecomp (the steam-frame-vr
+# branch of astromaddie/xboxrecomp; another folder name in XBOXRECOMP_NAME),
 # Docker (Colima on a Mac: colima start --memory 4 --cpu 4), and the
 # generated code from ./regen.sh (SPLIT=250 keeps each file small enough for
 # a 4 GB build VM). Output: build-frame/bin/burnout3 and the
