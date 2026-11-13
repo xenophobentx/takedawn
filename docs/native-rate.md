@@ -120,6 +120,15 @@ animating at the display's rate meanwhile.
 - The timers are found as they are set up and kept in a list; one is
   rewritten only while its + 0x1C holds exactly the old step, so memory
   reused for something else is left alone unless it holds that very float.
+- A timer's time is its whole steps (+ 0xC) times the step global, read
+  at every tick (`sub_001B5AC0`), so changing the global (at a freeze, and
+  when the setting goes on or off) would rescale every timer's time by
+  N/60 at once. Its step count is rescaled with it, rounded up, so the time
+  stays where it was. Without that the front end's clock (game timer
+  `0x4AE1E0`, time `0x4AE200`; also the pads' idle clock) jumped ×2.8 in
+  the pause menu: a race restarted from there opened its page "in the
+  future", never took its intro down at the GO, later pages piled on it,
+  and the game could crash in the front end some races later.
 - A scene's own period (the front end asks for 1/30 s) is replaced by 1/N:
   High refresh decides the steps everywhere the short step is in force, so
   the stepper's count is not used there.

@@ -186,18 +186,46 @@ static uint32_t short_ms(void)
     return (uint32_t)(1000.0 / s_hz + 0.5);
 }
 
+/*
+ * A timer's time is its whole steps times the step global, read afresh at
+ * every tick (sub_001B5AC0: + 0x20 = + 0xC * [0x49C120] + the part step
+ * + 0x10 * [0x49C120] / + 0x18). So a new step global rescales every
+ * timer's time at once, 170/60 or 60/170, unless its step count is
+ * rescaled with it. The game object's timer 0x4AE1E0 is the front end's
+ * clock ([0x567170 + 0x10]: its time 0x4AE200; a page keeps the clock's
+ * time it came in at, sub_000146E0) and the clock the pads' last input is
+ * stamped with (the idle pause). A race restarted from the pause menu came
+ * in on the shipped step's time (frozen), then the clock fell back to a
+ * third of it when the race ran on, and the race page, apparently opened tens of
+ * seconds later than "now", never took its intro down at the GO (the
+ * panels stayed on, every later page piled on them, and the game later
+ * crashed in the front end). So the count follows: the time stays where
+ * it was, rounded up to the next whole step (never back).
+ */
+static void keep_time(uint32_t t, float from, float to)
+{
+    uint32_t c = MEM32(t + 0xC);
+
+    if ((int32_t)c > 0)
+        MEM32(t + 0xC) = (uint32_t)ceil((double)c * from / to - 1e-6);
+}
+
 /* The step globals and every timer holding `from` get `to`. */
 static void retime(float from, float to, uint32_t to_ms)
 {
-    int i;
+    int i, global = 0;
 
     if (MEMF(STEP_S_G) == from) {
         MEMF(STEP_S_G) = to;
         MEM32(STEP_MS_G) = to_ms;
+        global = 1;
     }
     for (i = 0; i < s_ntimers; i++)
-        if (MEMF(s_timers[i] + 0x1C) == from)
+        if (MEMF(s_timers[i] + 0x1C) == from) {
             MEMF(s_timers[i] + 0x1C) = to;
+            if (global)
+                keep_time(s_timers[i], from, to);
+        }
 }
 
 static void regime(int on);
@@ -279,6 +307,8 @@ static void regime(int on)
     for (i = 0; i < s_ntimers; i++)
         if (MEMF(s_timers[i] + 0x1C) == from) {
             MEMF(s_timers[i] + 0x1C) = to;
+            if (from != to)
+                keep_time(s_timers[i], from, to);
             n++;
         }
     s_short = on;
