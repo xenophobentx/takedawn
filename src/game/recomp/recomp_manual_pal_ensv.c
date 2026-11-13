@@ -14,6 +14,7 @@
 #include "../soundbank.h"
 #include "../traffic_bp.h"
 #include "../hirefresh.h"
+#include "../simrate.h"
 
 /* Custom music (BO-108, BO-230): NTSC-U sub_001D0554, sub_0030211F,
  * sub_001537C0, sub_00155420. */
@@ -57,7 +58,7 @@ extern void sub_000369D0_gen(void);
 extern void sub_0013F280_gen(void);
 extern void sub_00188AF0_gen(void);
 
-void sub_000166B0(void) { bo3_update(sub_000166B0_gen); }   /* NTSC-U sub_000165F0 */
+void sub_000166B0(void) { bo3_sim_before_update(); bo3_update(sub_000166B0_gen); }   /* NTSC-U sub_000165F0 */
 void sub_001E19A0(void) { bo3_frame_sync_dirty(sub_001E19A0_gen); }   /* NTSC-U sub_001E15E0 */
 void sub_001DD640(void) { bo3_frame_get_ltm(sub_001DD640_gen); }   /* NTSC-U sub_001DD280 */
 void sub_000305E0(void) { bo3_draw_vehicle(sub_000305E0_gen); }   /* NTSC-U sub_000303D0 */
@@ -329,4 +330,20 @@ void sub_000CB0A0(void) { bo3_stay_line_text(sub_000CB0A0_gen); }
 extern void sub_000CA430_gen(void);
 void sub_000CA430(void) { bo3_stay_line_first(sub_000CA430_gen); }
 void sub_000A9E80(void) { bo3_quickplay_record(sub_000A9E80_gen); }    /* NTSC-U sub_000A9A90 */
+
+/* The simulation at the display's rate and the loading screen's least time
+ * (../simrate.c). */
+extern void sub_001B5C20_gen(void);
+extern void sub_001B5E20_gen(void);
+extern void sub_0015E890_gen(void);
+extern void sub_0015C470_gen(void);
+extern void sub_00159DC0_gen(void);
+extern void sub_001AA4A0_gen(void);
+
+void sub_001B5C20(void) { bo3_sim_set_period(sub_001B5C20_gen); }   /* NTSC-U sub_001B5880 */
+void sub_001B5E20(void) { bo3_sim_timer_init(sub_001B5E20_gen); }   /* NTSC-U sub_001B5A80 */
+void sub_0015E890(void) { bo3_sim_camera(sub_0015E890_gen); }   /* NTSC-U sub_0015E550 */
+void sub_0015C470(void) { bo3_sim_camera_0(sub_0015C470_gen); }   /* NTSC-U sub_0015C130 */
+void sub_00159DC0(void) { bo3_sim_camera_13(sub_00159DC0_gen); }   /* NTSC-U sub_00159A80 */
+void sub_001AA4A0(void) { bo3_load_hold(sub_001AA4A0_gen); }   /* NTSC-U sub_001AA100 */
 #endif

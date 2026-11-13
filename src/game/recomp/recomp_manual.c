@@ -289,6 +289,7 @@ void sub_00111680(void) { bo3_traffic_bp_remove(sub_00111680_gen); }
  * count. As shipped unless graphics.high_refresh is in force (the swap is only
  * counted). */
 #include "../hirefresh.h"
+#include "../simrate.h"
 
 extern void sub_000165F0_gen(void);
 extern void sub_001E15E0_gen(void);
@@ -304,7 +305,7 @@ extern void sub_001CA530_gen(void);
 extern void sub_00188750_gen(void);
 extern void sub_0003FA20_gen(void);
 
-void sub_000165F0(void) { bo3_update(sub_000165F0_gen); }
+void sub_000165F0(void) { bo3_sim_before_update(); bo3_update(sub_000165F0_gen); }
 void sub_001E15E0(void) { bo3_frame_sync_dirty(sub_001E15E0_gen); }
 void sub_001DD280(void) { bo3_frame_get_ltm(sub_001DD280_gen); }
 void sub_000303D0(void) { bo3_draw_vehicle(sub_000303D0_gen); }
@@ -374,6 +375,24 @@ void sub_000CAD00(void) { bo3_stay_line_text(sub_000CAD00_gen); }
 extern void sub_000CA090_gen(void);
 void sub_000CA090(void) { bo3_stay_line_first(sub_000CA090_gen); }
 void sub_000A9A90(void) { bo3_quickplay_record(sub_000A9A90_gen); }    /* NTSC-U sub_000A9A90 */
+
+/* The simulation at the display's rate (graphics.native_rate) and the
+ * loading screen's least time (game.loading_min), ../simrate.c: the
+ * stepper's period, the timers' set-up, the chase camera, cameras 0/14 and
+ * 13, and the stage loader. As shipped while they are off. */
+extern void sub_001B5880_gen(void);
+extern void sub_001B5A80_gen(void);
+extern void sub_0015E550_gen(void);
+extern void sub_0015C130_gen(void);
+extern void sub_00159A80_gen(void);
+extern void sub_001AA100_gen(void);
+
+void sub_001B5880(void) { bo3_sim_set_period(sub_001B5880_gen); }
+void sub_001B5A80(void) { bo3_sim_timer_init(sub_001B5A80_gen); }
+void sub_0015E550(void) { bo3_sim_camera(sub_0015E550_gen); }
+void sub_0015C130(void) { bo3_sim_camera_0(sub_0015C130_gen); }
+void sub_00159A80(void) { bo3_sim_camera_13(sub_00159A80_gen); }
+void sub_001AA100(void) { bo3_load_hold(sub_001AA100_gen); }
 #else
 #include "../soundtrack.h"
 #endif /* NTSC-U */
