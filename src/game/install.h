@@ -119,6 +119,11 @@ void bo3_package_start(int argc, char **argv);
  * or NULL. */
 const char *bo3_manifest_path(const char *path);
 
+/* --install-languages <image-or-folder> [--dest <dir>] [--check]: a
+ * European (PAL) disc's languages into <data>/Languages/<disc> (langpack.c
+ * has the lists and reads them). The same protocol, step "languages". */
+int bo3_install_languages_main(int argc, char **argv);
+
 /* Find the data (above) and go there. `xbe_named`: case 1. `data_arg`:
  * --data's, or NULL. Flags: BO3_DATA_QUIET, nothing is printed and nothing
  * fails (the bug report, which says itself what is missing);
@@ -152,6 +157,16 @@ int bo3_data_status_main(int argc, char **argv);
 #if defined(__linux__) && !defined(__ANDROID__)
 int bo3_steam_art_available(void);
 int bo3_steam_art_run(char *line, unsigned n);
+#endif
+
+/* The overlay's "Add languages from a European disc": whether the setup program
+ * is there, and opening it beside the game (its More languages section) and
+ * waiting for it. `line` gets the sentence to show; returns 2 when the window
+ * asked for the game to restart (its Restart the game), 1 when the languages
+ * are installed, 0 otherwise. */
+#if !defined(__ANDROID__)
+int bo3_add_languages_available(void);
+int bo3_add_languages_run(char *line, unsigned n);
 #endif
 
 /* The folder enhance.toml is read from: the per-user settings folder

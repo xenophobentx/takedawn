@@ -49,6 +49,9 @@
 #ifdef Q_OS_LINUX
 #include <unistd.h>
 #endif
+#ifdef Q_OS_UNIX
+#include <signal.h>
+#endif
 #ifdef Q_OS_WIN
 #include <windows.h>
 #endif
@@ -188,6 +191,20 @@ QString WithTail(const QString& code, const QString& advice, const QString& deta
   return advice + "\n\n" + lines.mid(std::max<qsizetype>(0, lines.size() - 3)).join('\n');
 }
 
+// Whether the game that opened this window (--game-pid) is still running.
+bool ProcessAlive(qint64 pid) {
+#ifdef Q_OS_WIN
+  HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, DWORD(pid));
+  if (!h) return false;
+  DWORD code = 0;
+  const bool alive = GetExitCodeProcess(h, &code) && code == STILL_ACTIVE;
+  CloseHandle(h);
+  return alive;
+#else
+  return kill(pid_t(pid), 0) == 0 || errno == EPERM;
+#endif
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------- the window
@@ -271,6 +288,7 @@ InstallerWindow::InstallerWindow(const LaunchConfig& config, QWidget* parent) : 
   flow->setSpacing(10);
   flow->addWidget(BuildDiscSection());
   flow->addWidget(BuildInstallSection());
+  flow->addWidget(BuildLanguagesSection());
   flow->addStretch(1);
   auto* scroll = scroll_ = new QScrollArea;
   scroll->setFrameShape(QFrame::NoFrame);
@@ -337,14 +355,16 @@ InstallerWindow::InstallerWindow(const LaunchConfig& config, QWidget* parent) : 
   }
   browser_->SetNativeOffered(!couch_);
   connect(browser_, &DiscBrowser::Chosen, this, [this](const QString& path) {
-    const bool dest = browse_dest_;
+    const bool dest = browse_dest_, langs = browse_langs_;
     CloseBrowser();
     if (dest) SetDest(path);
+    else if (langs) SetLanguagesDisc(path);
     else SetDisc(path);
   });
   connect(browser_, &DiscBrowser::Cancelled, this, &InstallerWindow::CloseBrowser);
   connect(browser_, &DiscBrowser::NativeRequested, this, [this] {
     if (browse_dest_) NativeDestDialog();
+    else if (browse_langs_) NativeLanguagesDialog();
     else NativeImageDialog();
   });
   connect(change_, &QToolButton::clicked, this, &InstallerWindow::ChangeDest);
@@ -607,6 +627,235 @@ QWidget* InstallerWindow::BuildInstallSection() {
   return section;
 }
 
+// More languages: shown once the game's data is installed. The two European
+// (PAL) discs carry French, German and Italian, and Spanish, Dutch and Swedish;
+// the game copies those files from the player's own disc beside its data
+// (--install-languages) and its settings then offer them (Game, Language).
+QWidget* InstallerWindow::BuildLanguagesSection() {
+  QVBoxLayout* cur = nullptr;
+  langs_section_ = MakeSection(&cur);
+  auto* heading = new QLabel(tr("More languages"));
+  theme::StyleHeading(heading);
+  cur->addWidget(heading);
+
+  auto* card_frame = new QFrame;
+  card_frame->setObjectName("card");
+  auto* card = new QHBoxLayout(card_frame);
+  card->setContentsMargins(14, 12, 14, 12);
+  card->setSpacing(12);
+  langs_glyph_ = new StepGlyph;
+  card->addWidget(langs_glyph_, 0, Qt::AlignTop);
+  auto* texts = new QVBoxLayout;
+  texts->setSpacing(4);
+  langs_status_ = new QLabel;
+  langs_status_->setWordWrap(true);
+  langs_status_->setTextFormat(Qt::RichText);
+  langs_status_->setMinimumWidth(300);  // as the disc card's: a wrapped label asked for a tiny width
+  langs_status_->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+  langs_file_ = new ElidedLabel;
+  langs_file_->setVisible(false);
+  langs_progress_ = new HeatProgressBar;
+  langs_progress_->setRange(0, 1000);
+  langs_progress_->setVisible(false);
+  texts->addWidget(langs_status_);
+  texts->addWidget(langs_file_);
+  texts->addWidget(langs_progress_);
+  texts->addStretch(1);
+  card->addLayout(texts, 1);
+  auto* buttons = new QVBoxLayout;
+  buttons->setSpacing(8);
+  langs_browse_ = MakeToolButton(tr("Choose European disc..."));
+  langs_browse_->setToolTip(tr("The .iso of your own European (PAL) Burnout 3: Takedown disc, or the folder its "
+                               "files were extracted to."));
+  langs_install_ = MakeToolButton(tr("Add languages"));
+  for (QToolButton* b : {langs_browse_, langs_install_}) b->setMinimumWidth(150);
+  buttons->addWidget(langs_browse_);
+  buttons->addWidget(langs_install_);
+  buttons->addStretch(1);
+  card->addLayout(buttons);
+  cur->addWidget(card_frame);
+
+  connect(langs_browse_, &QToolButton::clicked, this, &InstallerWindow::BrowseLanguagesDisc);
+  connect(langs_install_, &QToolButton::clicked, this, &InstallerWindow::InstallLanguages);
+  langs_section_->setVisible(false);
+  return langs_section_;
+}
+
+// Each European disc's languages, by its folder under <data>/Languages: this
+// window is a program of its own, so it names them again (the game's are in
+// src/game/langpack.c, under BO3_LANGPACK_DIR).
+static const struct {
+  const char* subdir;
+  const char* names;
+} kLangDiscs[] = {
+    {"FrDeIt", QT_TRANSLATE_NOOP("InstallerWindow", "French, German and Italian")},
+    {"EsNlSv", QT_TRANSLATE_NOOP("InstallerWindow", "Spanish, Dutch and Swedish")},
+};
+
+QStringList InstallerWindow::LanguagesInstalledNames() const {
+  QStringList out;
+  if (data_root_.isEmpty()) return out;
+  for (const auto& d : kLangDiscs)
+    if (QFileInfo::exists(data_root_ + "/Languages/" + d.subdir + "/.complete")) out << tr(d.names);
+  return out;
+}
+
+bool InstallerWindow::LanguagesInstalled() const {
+  return LanguagesInstalledNames().size() == int(sizeof kLangDiscs / sizeof kLangDiscs[0]);
+}
+
+void InstallerWindow::BrowseLanguagesDisc() {
+  if (LanguagesRunning()) return;
+  if (use_browser_) {
+    OpenBrowser();
+    browse_langs_ = true;  // after OpenBrowser, which starts a disc choice afresh
+    return;
+  }
+  NativeLanguagesDialog();
+}
+
+void InstallerWindow::NativeLanguagesDialog() {
+  const QString start = !langs_disc_.isEmpty() ? QFileInfo(langs_disc_).absolutePath()
+                        : browse_langs_ && !browser_->CurrentFolder().isEmpty() ? browser_->CurrentFolder()
+                                                                                 : QDir::homePath();
+  const QString path = QFileDialog::getOpenFileName(this, tr("Choose your Burnout 3: Takedown (PAL) disc image"), start,
+                                                    tr("Disc images (*.iso *.xiso);;All files (*)"));
+  if (path.isEmpty()) return;
+  if (browse_langs_) CloseBrowser();
+  SetLanguagesDisc(path);
+}
+
+// The game checks the disc at once, as it does the game's disc: accepted, or why not.
+void InstallerWindow::SetLanguagesDisc(const QString& path) {
+  if (LanguagesRunning()) return;
+  langs_disc_ = path;
+  langs_valid_ = false;
+  langs_message_.clear();
+  auto* proc = langs_proc_ = new DriverProcess(this);
+  auto ok = std::make_shared<bool>(false);
+  connect(proc, &DriverProcess::EventReceived, this, [this, ok](const Event& e) {
+    if (e.step != "languages") return;
+    if (e.kind == Event::Kind::Ok) *ok = true;
+    else if (e.kind == Event::Kind::Fail) langs_message_ = e.text;
+  });
+  connect(proc, &DriverProcess::Finished, this, [this, proc, ok](const DriverProcess::Result& result) {
+    proc->deleteLater();
+    if (langs_proc_ == proc) langs_proc_ = nullptr;
+    langs_valid_ = *ok;
+    if (!*ok && langs_message_.isEmpty()) {
+      langs_message_ = result.started ? tr("This version of the game cannot add languages.") : result.start_error;
+    }
+    AppendLog("languages: " + (*ok ? QString("disc accepted") : langs_message_));
+    RefreshLanguages();
+  });
+  const QStringList args{"--install-languages", path, "--check"};
+  AppendLog("$ " + program_ + " " + args.join(' '));
+  proc->Start(program_, args, ChildEnvironment(), QString());
+  RefreshLanguages();
+}
+
+void InstallerWindow::InstallLanguages() {
+  if (LanguagesRunning() || !langs_valid_ || data_root_.isEmpty()) return;
+  langs_message_.clear();
+  langs_progress_->setValue(0);
+  auto* proc = langs_proc_ = new DriverProcess(this);
+  auto ok = std::make_shared<bool>(false);
+  connect(proc, &DriverProcess::EventReceived, this, [this, ok](const Event& e) {
+    if (e.step != "languages") return;
+    if (e.kind == Event::Kind::Progress) langs_progress_->setValue(int(e.fraction * 1000.0));
+    else if (e.kind == Event::Kind::Ok || e.kind == Event::Kind::Skip) *ok = true;
+    else if (e.kind == Event::Kind::Fail) langs_message_ = e.text;
+    if (e.kind == Event::Kind::Log || e.kind == Event::Kind::Fail || e.kind == Event::Kind::Ok) {
+      AppendLog("languages: " + e.text);
+    }
+  });
+  connect(proc, &DriverProcess::Finished, this, [this, proc, ok](const DriverProcess::Result& result) {
+    proc->deleteLater();
+    if (langs_proc_ == proc) langs_proc_ = nullptr;
+    if (!*ok && langs_message_.isEmpty()) {
+      langs_message_ = result.cancelled ? tr("Stopped. Press Add languages to go on.")
+                       : result.started ? tr("The languages could not be added.") : result.start_error;
+    }
+    RefreshLanguages();
+    SetPhase(phase_);  // Play waited for the copy
+    if (*ok && config_.from_game) {
+      // The running game reads the languages at its start only: said where it cannot be missed.
+      SetStatus(tr("Languages added. Press Restart the game to use them."));
+      if (!config_.test) {
+        QMessageBox::information(this, windowTitle(),
+                                 tr("The languages are added.\n\nThe game needs a restart to use them: "
+                                    "press Restart the game here, then choose a language in its settings under "
+                                    "Game, Language."));
+      }
+    }
+  });
+  // Where the game's data is, as the window was told; the files go beside it.
+  const QStringList args{"--install-languages", langs_disc_, "--dest", data_root_};
+  AppendLog("$ " + program_ + " " + args.join(' '));
+  proc->Start(program_, args, ChildEnvironment(), QString());
+  RefreshLanguages();
+  SetPhase(phase_);
+}
+
+void InstallerWindow::RefreshLanguages() {
+  if (!langs_section_) return;
+  const bool running = LanguagesRunning();
+  const bool installed = !running && LanguagesInstalled();
+  const bool copying = running && langs_valid_;
+  QString html;
+  using S = StepGlyph::State;
+  S glyph = S::Pending;
+  if (copying) {
+    html = Span(theme::kEntry, tr("Adding the disc's languages..."), true);
+    glyph = S::Running;
+  } else if (running) {
+    html = Span(theme::kEntry, tr("Checking the disc..."), true);
+    glyph = S::Running;
+  } else if (installed) {
+    html = Span(theme::kLit, tr("All the European languages are installed."), true) + "<br>" +
+           Span(theme::kDim, config_.from_game
+                                 ? tr("Press Restart the game, then choose one in its settings under Game, "
+                                      "Language.")
+                                 : tr("Choose one in the game's settings: Game, Language."));
+    glyph = S::Done;
+  } else if (!langs_message_.isEmpty()) {
+    html = Span(theme::kWarnText, langs_valid_ ? tr("The languages could not be added.")
+                                               : tr("This disc cannot be used for the languages."), true) +
+           "<br>" + langs_message_.toHtmlEscaped();
+    glyph = S::Failed;
+  } else if (langs_valid_) {
+    html = Span(theme::kLit, tr("Burnout 3: Takedown, Europe (PAL): accepted."), true) + "<br>" +
+           Span(theme::kDim, tr("Press Add languages (0.4 to 0.7 GB)."));
+    glyph = S::Done;
+  } else {
+    const QStringList have = LanguagesInstalledNames();
+    html = Span(theme::kLit, tr("French, German, Italian, Spanish, Dutch, Swedish, from your European discs"),
+                true) + "<br>" +
+           (have.isEmpty() ? QString()
+                           : Span(theme::kDim, tr("Installed: %1. ").arg(have.join(tr("; "))))) +
+           Span(theme::kDim, tr("The .iso of your own European (PAL) Xbox disc of the game, or its extracted "
+                                "files: either disc. Only the language files are copied; the disc is only "
+                                "read."));
+  }
+  langs_status_->setText(html);
+  langs_glyph_->SetState(glyph);
+  const bool show_file = !langs_disc_.isEmpty() && !installed;
+  langs_file_->setVisible(show_file);
+  if (show_file) langs_file_->SetFullText(QDir::toNativeSeparators(langs_disc_));
+  langs_progress_->setVisible(copying);
+  langs_progress_->SetAnimated(copying);
+  langs_browse_->setVisible(!installed);
+  langs_install_->setVisible(!installed);
+  langs_browse_->setEnabled(!running);
+  langs_install_->setEnabled(!running && langs_valid_);
+  if (config_.from_game && phase_ == Phase::Done) {
+    // The running game reads the languages at its start: the main button restarts it.
+    play_->setText(tr("Restart the game"));
+    play_->setVisible(installed);
+    if (installed) play_->setFocus();
+  }
+}
+
 QWidget* InstallerWindow::BuildDetails() {
   auto* host = new QWidget;
   auto* layout = new QVBoxLayout(host);
@@ -797,6 +1046,26 @@ QStringList InstallerWindow::StatusArgs() const {
 void InstallerWindow::Start() {
   if (started_) return;
   started_ = true;
+  if (config_.from_game && config_.game_pid > 0) {
+    // Opened from the running game: when the player closes it, this window is the
+    // launcher again (Play), as if it had been started on its own.
+    game_watch_.setInterval(1000);
+    connect(&game_watch_, &QTimer::timeout, this, [this] {
+      if (ProcessAlive(config_.game_pid)) return;
+      game_watch_.stop();
+      config_.from_game = false;
+      AppendLog("game: closed");
+      if (phase_ == Phase::Done) {
+        play_->setText(tr("Play"));
+        play_->setVisible(true);
+        play_->setEnabled(!LanguagesRunning());
+        SetStatus(tr("The game was closed. Press Play to start it."));
+        RefreshLanguages();
+        SettleFocus();
+      }
+    });
+    game_watch_.start();
+  }
   if (!LocateProgram()) {
     Break("program-missing", tr("Looked beside %1.").arg(QCoreApplication::applicationFilePath()));
     return;
@@ -1289,6 +1558,7 @@ void InstallerWindow::OpenBrowser() {
 
 void InstallerWindow::CloseBrowser() {
   browse_dest_ = false;
+  browse_langs_ = false;
   browser_->SetFolderMode(false);
   stack_->setCurrentWidget(main_page_);
   RefreshHints();
@@ -1824,10 +2094,16 @@ void InstallerWindow::Succeed() {
   status_code_.clear();
   progress_->setValue(progress_->maximum());
   SetPhase(Phase::Done);
-  play_->setVisible(true);
-  play_->setFocus();
   RefreshSpace();
-  SetStatus(tr("Ready. Press Play to start the game."));
+  if (config_.from_game) {
+    // The game is running already and opened this for More languages: no second copy.
+    SetStatus(tr("The game is open. Add the languages below, then close this window."));
+    if (langs_browse_->isVisible()) langs_browse_->setFocus();
+  } else {
+    play_->setVisible(true);
+    play_->setFocus();
+    SetStatus(tr("Ready. Press Play to start the game."));
+  }
   clock_label_->setText(run_millis_ > 0 ? ElapsedText() : QString());
   RefreshLook();
   RefreshHints();
@@ -2125,6 +2401,13 @@ void InstallerWindow::Play() {
   ++play_count_;
   if (late_upscale_) DismissUpscaleOffer();
   if (config_.test) return;
+  if (config_.from_game) {
+    // "Restart the game": the game that opened this waits for it to end and,
+    // with this status, restarts itself as its own Restart does.
+    hide();
+    QCoreApplication::exit(kRestartGame);
+    return;
+  }
   const QStringList args = DataArgs();
 #ifdef Q_OS_LINUX
   // This process becomes the game, as the game became this window: whoever
@@ -2288,6 +2571,11 @@ void InstallerWindow::SetPhase(Phase phase) {
   // Once installed the big button is only for the late offer, and only when ticked.
   primary_->setVisible(phase != Phase::Done || (late && upscale_box_->isChecked()));
   if (late) primary_->setText(tr("Upscale menu pictures"));
+  // More languages once the game's data is in place; Play waits for their copy
+  // (on Linux Play becomes the game, which would cut it short).
+  if (langs_section_) langs_section_->setVisible(phase == Phase::Done);
+  if (play_) play_->setEnabled(!LanguagesRunning());
+  RefreshLanguages();
   if (auto* caption = findChild<QLabel*>("destCaption")) {
     caption->setText(phase == Phase::Done ? tr("Installed in") : tr("Installs to"));
   }
