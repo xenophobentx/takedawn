@@ -89,7 +89,7 @@ to them. When one of those is chosen, the kernel is told nothing (it keeps
 reporting English to the North American program) and a path hook
 (`xbox_PathRedirectHook`, chained like the mod folders') reads
 
-    Data\GlobalUs.bin       -> Languages/<disc>/Data/Global{Fr,Ge,It,Sp}.bin
+    Data\GlobalUs.bin       -> Languages/ntscu/Global{Fr,Ge,It,Sp}.bin (see below)
     Data\HeadUs.bin         -> Languages/<disc>/Data/Head{Fr,Ge,It,Sp}.bin
     ovid\englis<n>.xmv      -> .../ovid/{french,german,italia,spanis}<n>.xmv
     ovid\Tr{C,D}_ENG.xmv    -> .../ovid/Tr{C,D}_{FRA,GER,ITA,SPA}.xmv
@@ -98,6 +98,20 @@ reporting English to the North American program) and a path hook
 only where the manifest lists the counterpart, spelled as the manifest has
 it, so a case-sensitive file system finds it. It runs before the mod
 folders: a mod's file still comes first.
+
+**The text table** is not read as the disc has it. Every European
+`Global<xx>.bin` (all six languages) has 3986 strings against `GlobalUs.bin`'s
+3985: the extra one is index 2850, `DISCONNECT` (a European line of the idle
+disconnect message), and every string after it sits one place on. Read raw,
+the North American program shows the wrong line from 2850 on: "NEW CRASH
+EVENT" for "NEW CRASH EVENTS", the crashbreaker line with a `%1` it never
+fills for "TAKEDOWNS", a sentence for the on-screen keyboard's letters. So at
+start `langpack.c` writes `Languages/ntscu/Global<xx>.bin`, the installed
+table without entry 2850 (one offset fewer, the others 4 bytes down), and
+serves that; the installed file stays as the manifest has it. With that entry
+gone the 3985 line up to the last, the rest differing only as translations do
+(`1.000`, dd/mm). A table that is not the one described (count, offset table,
+entry 2850 `DISCONNECT`) is read as it is, with a line in the log.
 
 **The tutorials' narration** is not in the films (`TrC_*.xmv` and `TrD_*.xmv`
 are video only) but in `ovid\movie.xwb`, the same file on both discs, which

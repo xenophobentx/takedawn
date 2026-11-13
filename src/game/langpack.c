@@ -52,6 +52,7 @@
 #include <direct.h>
 #define lp_getcwd _getcwd
 #else
+#include <sys/stat.h>
 #include <unistd.h>
 #define lp_getcwd getcwd
 #endif
@@ -214,11 +215,159 @@ static const char *counterpart(const char *rel)
     return NULL;
 }
 
+/*
+ * The European text tables have one string more than the North American
+ * program asks for: 3986 against GlobalUs.bin's 3985, all six languages
+ * alike. The extra one is index 2850, "DISCONNECT" (a European line of the
+ * idle disconnect message), and every string after it sits one place on: the
+ * program asking for "NEW CRASH EVENTS" got the European "NEW CRASH EVENT",
+ * for "TAKEDOWNS" the crashbreaker line with a %1 it never fills, for the
+ * on-screen keyboard's letters a sentence. Without that entry the 3985 line
+ * up to the last (the rest differ only as translations do: 1.000, dd/mm).
+ *
+ * So the program reads a copy without it: <data>/Languages/ntscu/
+ * Global<two>.bin, made here from the installed file, which stays as the
+ * manifest has it. The table: 8 bytes, the count (+ 8), the table's offset
+ * (+ 12, 16), then the count's offsets from the file's start, then the
+ * strings (UTF-16, two zero bytes after each). The copy drops one offset and
+ * moves the strings 4 bytes down; the extra string's bytes stay, unread.
+ * Made only from a table that is the one described (the count, the offset
+ * table where it should be, entry 2850 "DISCONNECT"); any other is read as
+ * it is.
+ */
+#define GT_US_COUNT 3985u
+#define GT_EXTRA    2850u
+
+static char s_global[1024];             /* the copy; empty: none, the file as it is */
+
+static uint32_t rd32(const unsigned char *p)
+{
+    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+}
+
+static void wr32(unsigned char *p, uint32_t v)
+{
+    p[0] = (unsigned char)v;
+    p[1] = (unsigned char)(v >> 8);
+    p[2] = (unsigned char)(v >> 16);
+    p[3] = (unsigned char)(v >> 24);
+}
+
+static unsigned char *read_all(const char *path, size_t *len)
+{
+    FILE *f = fopen(path, "rb");
+    unsigned char *b = NULL;
+    long n;
+
+    if (!f)
+        return NULL;
+    if (fseek(f, 0, SEEK_END) == 0 && (n = ftell(f)) > 0 && n < (64L << 20)
+        && fseek(f, 0, SEEK_SET) == 0 && (b = malloc((size_t)n)) != NULL
+        && fread(b, 1, (size_t)n, f) != (size_t)n) {
+        free(b);
+        b = NULL;
+    }
+    fclose(f);
+    if (b)
+        *len = (size_t)n;
+    return b;
+}
+
+/* The table `b` with entry GT_EXTRA dropped, in place; 0 when it is not the
+ * table described above. *len becomes the copy's length. */
+static int drop_extra(unsigned char *b, size_t *len)
+{
+    static const char want[] = "DISCONNECT";
+    uint32_t n, i, o;
+    size_t table, k;
+
+    if (*len < 16 || rd32(b + 12) != 16)
+        return 0;
+    n = rd32(b + 8);
+    table = 16 + (size_t)n * 4;
+    if (n != GT_US_COUNT + 1 || table > *len || rd32(b + 16) != table)
+        return 0;
+    o = rd32(b + 16 + GT_EXTRA * 4);
+    if (o < table || o + sizeof want * 2 > *len)
+        return 0;
+    for (k = 0; k < sizeof want; k++)   /* the terminator too */
+        if (b[o + k * 2] != (unsigned char)want[k] || b[o + k * 2 + 1])
+            return 0;
+    for (i = 0; i < n; i++)
+        if (rd32(b + 16 + i * 4) < table || rd32(b + 16 + i * 4) >= *len)
+            return 0;
+    /* The offsets after the extra one move up a place; all of them 4 down. */
+    memmove(b + 16 + GT_EXTRA * 4, b + 16 + (GT_EXTRA + 1) * 4, (n - GT_EXTRA - 1) * 4);
+    for (i = 0; i < n - 1; i++)
+        wr32(b + 16 + i * 4, rd32(b + 16 + i * 4) - 4);
+    wr32(b + 8, n - 1);
+    memmove(b + table - 4, b + table, *len - table);
+    *len -= 4;
+    return 1;
+}
+
+static void make_global(const char *cwd)
+{
+    char src[1200], dir[1000];
+    unsigned char *b;
+    size_t len;
+    FILE *f;
+    const char *rel;
+
+    s_global[0] = 0;
+    rel = counterpart("Data/GlobalUs.bin");
+    if (!rel)
+        return;
+    snprintf(src, sizeof src, "%s/%s", s_root, rel);
+    b = read_all(src, &len);
+    if (!b) {
+        XR_NOTICE("[LANG] %s could not be read: the text is read from it as it is\n", src);
+        return;
+    }
+    if (!drop_extra(b, &len)) {
+        XR_NOTICE("[LANG] %s is not the European table this was made for (3986 strings, "
+                  "2850 \"DISCONNECT\"): read as it is\n", src);
+        free(b);
+        return;
+    }
+    snprintf(dir, sizeof dir, "%s/%s/ntscu", cwd, BO3_LANGPACK_DIR);
+#if defined(_WIN32)
+    _mkdir(dir);
+#else
+    mkdir(dir, 0755);
+#endif
+    snprintf(s_global, sizeof s_global, "%s/Global%s.bin", dir, k_langs[s_lang].two);
+    f = fopen(s_global, "wb");
+    if (!f || fwrite(b, 1, len, f) != len) {
+        XR_NOTICE("[LANG] %s could not be written: the text is read from %s as it is "
+                  "(one place off from 2850)\n", s_global, src);
+        s_global[0] = 0;
+    }
+    if (f && fclose(f) != 0)
+        s_global[0] = 0;
+    free(b);
+    if (s_global[0])
+        XR_NOTICE("[LANG] text: %s without its entry %u (%u strings, as GlobalUs.bin)\n",
+                  rel, GT_EXTRA, GT_US_COUNT);
+}
+
 static const char *redirect(const char *path)
 {
     const char *rel = path ? disc_rel(path) : NULL;
-    const char *file = rel && *rel ? counterpart(rel) : NULL;
+    const char *file;
 
+    if (rel && s_global[0] && same_path(rel, "Data/GlobalUs.bin")) {
+#if defined(_WIN32)
+        snprintf(t_out, sizeof t_out, "\\\\?\\%s", s_global);
+        for (char *c = t_out + 4; *c; c++)
+            if (*c == '/')
+                *c = '\\';
+#else
+        snprintf(t_out, sizeof t_out, "%s", s_global);
+#endif
+        return t_out;
+    }
+    file = rel && *rel ? counterpart(rel) : NULL;
     if (file) {
 #if defined(_WIN32)
         snprintf(t_out, sizeof t_out, "\\\\?\\%s\\%s", s_root, file);
@@ -282,6 +431,7 @@ void bo3_langpack_init(void)
         return;
     }
     snprintf(s_root, sizeof s_root, "%s/%s", cwd, k_discs[k_langs[s_lang].disc].dir);
+    make_global(cwd);
     if (xbox_PathRedirectHook != redirect) {
         s_prev = xbox_PathRedirectHook;
         xbox_PathRedirectHook = redirect;
